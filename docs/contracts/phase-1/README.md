@@ -1,8 +1,8 @@
 # Phase 1 API Contracts
 
 Owner: Architecture Team
-Last Updated: 2026-04-22
-Change Summary: Added the backend session-bootstrap, profile, and client-shell contracts for the current Phase 1 web entry flow, authenticated home-feed landing, the live social flow for stories, vibes, search, follows, public profiles, reposts, likers, responsive comment interactions, story music composition helpers, and the new encrypted chat contract.
+Last Updated: 2026-07-28
+Change Summary: Added the Marketplace MVP contract and marked Story contracts as deferred launch references.
 
 ## Contracts
 
@@ -13,6 +13,7 @@ Change Summary: Added the backend session-bootstrap, profile, and client-shell c
 - `CLIENT_SHELL_API.md`
 - `CAMPUS_COMMUNITIES_MY_API.md`
 - `CHAT_MESSAGING_API.md`
+- `MARKETPLACE_API.md`
 - `SOCIAL_FEED_API.md`
 - `SOCIAL_CREATE_POST_API.md`
 - `SOCIAL_STORIES_API.md`
@@ -23,3 +24,5 @@ Change Summary: Added the backend session-bootstrap, profile, and client-shell c
 - `SOCIAL_VIBES_API.md`
 - `RESOURCES_LIST_API.md`
 - `RESOURCES_CREATE_API.md`
+
+`SOCIAL_STORIES_API.md` and `SOCIAL_STORY_MUSIC_API.md` are implementation references and are disabled for the initial public MVP.

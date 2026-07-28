@@ -1,8 +1,14 @@
 {
+  "auth": {
+    "providers": {
+      "emailPassword": true,
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "Vyb",
+        "supportEmail": "ceoutkarshpatel@gmail.com"
+      }
+    }
+  },
   "dataconnect": {
     "source": "packages/dataconnect"
-  },
-  "storage": {
-    "rules": "storage.rules"
   }
 }

@@ -2,7 +2,9 @@
 
 Owner: Architecture Team
 Last Updated: 2026-04-22
-Change Summary: Accepted Openverse-backed royalty-free story music search through a web helper route and client-side `ffmpeg.wasm` export for one selected story asset in Phase 1.
+Change Summary: Retained the accepted implementation decision but deferred its rollout while Stories are disabled for the marketplace-first MVP.
+
+> Rollout status: Deferred. This ADR still governs the implementation if Stories are enabled later; it is not part of the initial public launch or capacity budget.
 
 ## 1. Metadata
 

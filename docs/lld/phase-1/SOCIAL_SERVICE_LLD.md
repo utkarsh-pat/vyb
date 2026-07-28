@@ -1,8 +1,10 @@
 # Social Module LLD
 
 Owner: Social Platform
-Last Updated: 2026-05-12
-Change Summary: Added Community Connect target-post authorization across feed interactions.
+Last Updated: 2026-07-28
+Change Summary: Kept the implemented social design as a reference while moving Stories out of the initial public MVP and gating Vibes/video by tenant capacity.
+
+> Launch status: text and image feed capabilities are MVP. Stories, story music, and their endpoints are implemented/deferred and remain disabled with `stories_enabled=false` for the initial public rollout. Vibes/video require `video_beta=true` for an allowlisted tenant/cohort. The canonical system behavior and rollout gates are defined in `docs/architecture/LLD.md` and `docs/product/MVP_PHASED_ROLLOUT.md`.
 
 ## 1. Metadata
 
@@ -11,7 +13,7 @@ Change Summary: Added Community Connect target-post authorization across feed in
 - Runtime: `apps/backend`
 - Phase: Phase 1
 - Date: 2026-04-22
-- Status: Active
+- Status: Active with launch-gated subsections
 - Linked SRS section: 2.4 Campus Square Feed and 2.6 Moderation
 - Linked HLD section: Phase 1 Module Map, Media Architecture, Observability
 - Linked ADRs: `ADR_002_STORY_MUSIC_SEARCH_AND_CLIENT_EXPORT.md`
@@ -26,9 +28,9 @@ In scope:
 
 - text and image posts
 - video vibes
-- time-limited stories
+- time-limited stories as deferred implementation, not initial launch scope
 - immersive story viewer behaviors, including segmented progress, own-story add affordance, seen-state rings, and viewer audio playback
-- royalty-free story music search plus single-asset client-side story music composition before publish
+- royalty-free story music search plus single-asset client-side story music composition retained behind the disabled Stories flag
 - public profile discovery by campus user ID
 - follow and unfollow graph
 - feed reads by tenant and community
@@ -81,7 +83,7 @@ Out of scope:
 
 ### `POST /v1/posts`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified membership required
 - request schema: tenant id, optional community id, body, media references, visibility
 - response schema: live published post payload
@@ -92,7 +94,7 @@ Out of scope:
 
 ### `PATCH /v1/posts/{postId}`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified membership required and author-only
 - request schema: optional `title`, `body`, `location`
 - response schema: updated published post payload
@@ -102,7 +104,7 @@ Out of scope:
 
 ### `DELETE /v1/posts/{postId}`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified membership required and author-only
 - request schema: none
 - response schema: `postId`, `deleted`
@@ -112,7 +114,7 @@ Out of scope:
 
 ### `GET /v1/feed`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified membership required
 - request schema: tenant id, optional community id, cursor, limit
 - response schema: paginated published posts
@@ -122,7 +124,7 @@ Out of scope:
 
 ### `GET /v1/vibes`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified membership required
 - request schema: tenant id, cursor, limit
 - response schema: paginated vibe posts
@@ -131,7 +133,7 @@ Out of scope:
 
 ### `GET /v1/posts/{postId}/likes`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified membership required
 - request schema: optional `limit`
 - response schema: member list for the active post reactions
@@ -141,7 +143,7 @@ Out of scope:
 
 ### `POST /v1/stories`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified membership required
 - request schema: tenant id, media type, media payload, optional caption, and optional client-exported music-backed video reference when story music composition is used
 - response schema: created story payload with expiry
@@ -150,7 +152,7 @@ Out of scope:
 
 ### `GET /v1/stories`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified membership required
 - request schema: tenant id
 - response schema: active stories visible to the current viewer
@@ -168,7 +170,7 @@ Out of scope:
 
 ### `GET /v1/users/search`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified membership required
 - request schema: tenant id, query, limit
 - response schema: matched user summaries plus follow-state and stats
@@ -177,7 +179,7 @@ Out of scope:
 
 ### `GET /v1/users/{username}`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified membership required
 - request schema: tenant id
 - response schema: public campus profile, follow stats, and recent posts
@@ -187,7 +189,7 @@ Out of scope:
 
 ### `PUT/DELETE /v1/users/{username}/follow`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified membership required
 - request schema: tenant id
 - response schema: updated follow state and stats snapshot
@@ -196,7 +198,7 @@ Out of scope:
 
 ### `POST /v1/posts/{postId}/comments`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified membership required
 - request schema: body, optional parent comment id, optional `mediaUrl`, optional `mediaType`
 - response schema: created comment
@@ -207,7 +209,7 @@ Out of scope:
 
 ### `PUT /v1/comments/{commentId}/reactions`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified membership required
 - request schema: comment reaction type
 - response schema: current comment-like state and aggregate count snapshot
@@ -217,7 +219,7 @@ Out of scope:
 
 ### `PUT /v1/posts/{postId}/reactions`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified membership required
 - request schema: reaction type
 - response schema: current reaction state and aggregate count snapshot
@@ -227,7 +229,7 @@ Out of scope:
 
 ### `POST /v1/posts/{postId}/repost`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified membership required and completed profile
 - request schema: optional `quote`, optional `placement`
 - response schema: created repost item in feed or vibe placement
@@ -237,7 +239,7 @@ Out of scope:
 
 ### `PUT /v1/stories/{storyId}/reactions`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified membership required
 - request schema: story reaction type
 - response schema: current story-like state and aggregate count snapshot
@@ -246,7 +248,7 @@ Out of scope:
 
 ### `PUT /v1/stories/{storyId}/seen`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified membership required
 - request schema: none
 - response schema: story seen-state acknowledgement
@@ -255,7 +257,7 @@ Out of scope:
 
 ### `POST /v1/reports`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified membership required
 - request schema: `targetType`, `targetId`, `reason`
 - response schema: created report summary

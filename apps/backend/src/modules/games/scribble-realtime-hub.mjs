@@ -2269,7 +2269,9 @@ function cleanupIdleRooms() {
   }
 }
 
-setInterval(cleanupIdleRooms, 5 * 60 * 1000).unref?.();
+if (process.env.VYB_SERVERLESS_RUNTIME !== "vercel") {
+  setInterval(cleanupIdleRooms, 5 * 60 * 1000).unref?.();
+}
 
 export function getScribbleModuleHealth() {
   return {

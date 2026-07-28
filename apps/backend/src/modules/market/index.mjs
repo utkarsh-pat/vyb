@@ -32,12 +32,13 @@ function buildFallbackUsername(email, userId) {
     ?.trim() || userId;
 }
 
-function buildMarketViewer(resolved, profile) {
+function buildMarketViewer(resolved, profile, firebaseIdToken = null) {
   return {
     userId: resolved.live.user.id,
     tenantId: resolved.live.tenant.id,
     username: profile?.username ?? buildFallbackUsername(resolved.viewer.primaryEmail, resolved.live.user.id),
     displayName: profile?.fullName ?? resolved.viewer.displayName,
+    firebaseIdToken,
     role:
       resolved.live.membership?.role === "faculty" ||
       resolved.live.membership?.role === "alumni" ||
@@ -87,9 +88,10 @@ export async function handleMarketRoute({ request, response, url, context }) {
 
   const profile = await getProfileByUserId({
     tenantId: resolved.live.tenant.id,
-    userId: resolved.live.user.id
+    userId: resolved.live.user.id,
+    firebaseIdToken: context.actor.firebaseIdToken ?? null
   }).catch(() => null);
-  const viewer = buildMarketViewer(resolved, profile);
+  const viewer = buildMarketViewer(resolved, profile, context.actor.firebaseIdToken ?? null);
 
   if (request.method === "GET" && url.pathname === "/v1/market") {
     try {

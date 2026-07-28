@@ -1,226 +1,207 @@
 # Vyb Master Plan
 
 Owner: Product and Engineering
-Last Updated: 2026-05-12
-Change Summary: Set Community Connect V1 as the current focused implementation slice while keeping the Phase 1 modular monolith path.
+Last Updated: 2026-07-28
+Status: Marketplace-first MVP execution plan
 
-## 1. Why We Are Building This
+## 1. Product Thesis
 
-Campus life is fragmented across WhatsApp groups, Telegram channels, classroom drives, DMs, and informal networks. Vyb aims to become the unified operating system for verified college life by combining:
+Vyb wins by becoming the trusted utility layer for campus life, not by copying every social-media feature. The first retention loop is:
 
-- identity and trusted communities
-- academic utility
-- campus social engagement
-- future commerce and growth tools
+```text
+verified identity -> useful campus/community content -> Marketplace/resources/chat action -> return
+```
 
-## 2. Current Strategic Position
+Stories are not required to validate this loop. Marketplace is.
 
-We are in architecture and foundation mode.
+## 2. Current Reality
 
-What is decided:
+Already present in the repository:
 
-- Phase 1 backend ships as a modular monolith
-- all public backend traffic enters through one backend runtime
-- PostgreSQL via Firebase Data Connect is the system of record
-- Firebase Storage will hold uploaded media and files
-- Firebase Auth is the identity provider
-- the platform is multi-tenant, with KIET Group of Institutions Delhi-NCR currently serving only as the first onboarded college and `@kiet.edu` as the only live approved auth domain for now
-- the Phase 1 client is responsive web, but the backend and shared packages must stay native-ready
-- unknown college domains must go through an admin-reviewed join-request flow
-- wallet, competitions, and anonymous features are deferred until the base is stable
+- Next.js web/PWA and native Kotlin/Compose Android clients;
+- modular Node backend with identity, campus, social, market, chat, resources, events, notifications, moderation, and games modules;
+- Firebase Auth/FCM/Storage integrations;
+- Firebase Data Connect schemas and generated SDKs;
+- fresh Firebase/Data Connect production configuration; legacy migration code is not part of the launch path;
+- feed, Vibes, Stories, chat, Marketplace, resources, events, games, notifications, and profile surfaces;
+- Cloud Run and Vercel deployment assets.
 
-What is not started yet:
+Current risk:
 
-- production-ready business flows for college join requests
-- extracted moderation and high-volume transcoding worker fleets
+- implemented screens exceed production readiness;
+- new infrastructure still requires full deployment and verification;
+- local development fallbacks must remain disabled in production;
+- the old Vercel backend must not be connected to the new frontend;
+- media and Marketplace hot paths need launch hardening;
+- older documents describe Android as future, Marketplace as Phase 3, and Stories as required Phase 1.
 
-## 3. Core Product Thesis
+## 3. Locked MVP Scope
 
-Students do not stay for empty social feeds. They stay where the network is trusted and useful. Therefore the launch wedge is:
+Must ship:
 
-- verified campus identity
-- community spaces by batch, branch, and hostel
-- useful notes and resources
-- simple campus feed
+- identity/profile/tenant;
+- official communities;
+- text/image feed;
+- Marketplace;
+- direct chat;
+- resources;
+- notifications;
+- moderation/admin/audit;
+- web/PWA and Android.
 
-## 4. Phase Plan
+Gated:
 
-### Phase 1: Identity and Utility
+- events;
+- Vibes/video;
+- games.
 
-Goal:
+Deferred:
 
-- create a trustworthy campus network with useful daily value
+- Stories/story music;
+- payments/wallet/escrow;
+- anonymous Nook;
+- group chat;
+- AI/ranking/competitions.
 
-Scope:
+## 4. Execution Workstreams
 
-- authentication
-- tenant onboarding
-- college join-request review queue
-- memberships and communities
-- Community Connect V1 with community as the primary Connect tab and private E2EE chats as the secondary tab
-- Campus Square feed with posts, stories, immersive vibes, threaded comments, baseline repost/report flows, and single-asset story music composition
-- one-to-one encrypted campus messaging with inbox search, market deal cards, and low-cost realtime presence or typing fanout
-- Resource Vault
-- moderation
-- admin operations
+### A. Data convergence
 
-Exit criteria:
+- keep Firebase SQL Connect schema and connector operations compiled;
+- verify Firebase issuer/audience and server-side membership resolution;
+- start the canonical production database empty and seed only approved launch data;
+- store all new user media in R2;
+- remove production dual-write and JSON fallback.
 
-- a verified student can join a college cluster
-- a verified student can open Connect and see official campus communities as the primary surface
-- a verified student can open a community detail view for feed, resources, members, and events
-- a verified community member can publish a text post directly from the community detail feed
-- an unknown-domain student can submit a college join request
-- an admin can approve, reject, or send back a college join request
-- a user can post to the correct community
-- a user can comment, reply, and react inside the live campus feed
-- a user can publish a story, add another story from the same own-story bubble, open the immersive story viewer, and browse the dedicated vibes lane
-- a supported client can compose one music-backed story clip and play back the published story audio inside the viewer
-- a verified student can open the encrypted inbox, start a one-to-one campus chat, and exchange realtime messages with read and typing state
-- a user can upload and browse notes
-- moderation can review and remove reported content
-- the system runs as `web + backend`, not a fleet of early services
+### B. Platform hardening
 
-### Phase 2: Engagement Refinement
+- production Cloud Run backend;
+- pooled/bounded database connections;
+- direct upload intent;
+- outbox plus managed delivery;
+- global rate limiting and idempotency;
+- backup, PITR gate, restore drill;
+- structured dashboards, alerts, budgets, and kill switches.
 
-Goal:
+### C. Marketplace completion
 
-- increase habit formation and campus participation
+- cursor/detail endpoints;
+- UUID/amount/state cleanup;
+- unique saves and idempotent contact;
+- Chat-owned conversation creation;
+- report/block/prohibited category policy;
+- moderation/admin tools;
+- safety messaging and analytics.
 
-Scope:
+### D. Client launch
 
-- ranking refinement
-- creator tooling refinement for vibes and reposts
-- reactions refinement
-- polls
-- anonymous Nook after policy approval
+- align web and Android contracts;
+- disable Stories;
+- gate video/events/games;
+- Play internal/closed/production tracks;
+- crash and performance instrumentation;
+- accessibility, low-network, update, and rollback QA.
 
-### Phase 3: Economy
+### E. Campus operations
 
-Goal:
+- domain/admin/official community bootstrap;
+- content/resource/Marketplace seed plan;
+- ambassador training;
+- moderation and support roster;
+- university escalation and incident communications.
 
-- unlock trusted peer-to-peer and reward flows
+## 5. Build Order
 
-Scope:
+1. architecture/SRS/LLD approval;
+2. fresh Data Connect/Cloud SQL provisioning and seed tooling;
+3. auth/tenant/RLS hardening;
+4. direct media upload and storage adapter;
+5. Marketplace V2 application layer and schema;
+6. chat/contact integration;
+7. outbox, notifications, rate limits, idempotency;
+8. moderation/admin;
+9. web/Android compatibility and feature flags;
+10. backup/load/security/incident tests;
+11. first-campus rollout;
+12. second-campus tenant isolation;
+13. 20,000–30,000-user gate.
 
-- marketplace
-- competitions
-- wallet
+## 6. Milestones
 
-### Phase 4: AI Growth
+### M0 — Architecture complete
 
-Goal:
+- canonical docs updated;
+- scope and launch gates approved;
+- cost budget approved.
 
-- turn Vyb into a personal growth layer, not just a campus network
+### M1 — Production foundation
 
-Scope:
+- one writer per domain;
+- Cloud Run production topology;
+- RLS and direct uploads;
+- no ephemeral fallback;
+- backups and outbox.
 
-- AI roadmap generation
-- streaks
-- resource and mentor recommendations
+### M2 — Marketplace-safe MVP
 
-## 5. Documentation Process
+- target API/schema complete;
+- moderation and Chat integration;
+- prohibited content and safety policy;
+- web/Android contract tests.
 
-Before implementation:
+### M3 — Closed beta
 
-- update SRS
-- update HLD if architecture changes
-- write LLD
-- write ADR if infra or dependency changes
+- 50–150 trusted testers;
+- seven stable days;
+- operational metrics and support ready.
 
-During implementation:
+### M4 — First university
 
-- update progress in this document
-- capture major decisions
+- 500–1,500 closed beta, then 3,000–7,000 broad release;
+- seeded utility;
+- phase gates met.
 
-After implementation:
+### M5 — Multi-university
 
-- update what shipped
-- update next actions
-- record risks and follow-ups
+- second and third tenant;
+- 20,000–30,000 users;
+- PITR and media cost path enabled;
+- 30-day SLO compliance.
 
-## 6. Current Completed Work
+## 7. Decision Log
 
-- product direction aligned around explicit domain boundaries
-- multi-surface client strategy defined for web now and native later
-- documentation foundation created
-- non-negotiable engineering rules defined
-- Phase 1 LLDs created for identity, campus, social, and resources
-- workspace tooling scaffolded with pnpm workspaces and Turbo
-- responsive PWA-first web shell scaffolded
-- professional SSR home page and responsive auth shell are now implemented for the current first-college rollout flow
-- web shell connected to backend reads with graceful fallback
-- Firebase Auth login plus secure cookie-backed web session is scaffolded
-- backend session bootstrap now verifies Firebase tokens before issuing the web session cookie
-- profile completion is now required before an authenticated user reaches the main in-app home feed
-- authenticated users now land on a responsive `/home` feed shell with stories, posts, reels-style navigation, and a separate profile/dashboard route
-- the authenticated `/home` route now reads live backend feed data instead of hardcoded placeholder posts
-- newly created campus posts now publish directly into the shared feed so other signed-in campus users can see them
-- active stories are now stored through the backend and only surface to the author plus followed campus profiles
-- a dedicated `/search` route now lets users discover people by user ID and follow or unfollow them
-- onboarding now requires a user-chosen campus user ID and the profile/dashboard route now allows changing that user ID later
-- the `/dashboard` and public `/u/[username]` profile routes now render real posts and follow counts instead of mock profile data
-- the `/vibes` route now reads real backend-backed short-form uploads instead of a fully dummy starter catalog
-- profile reads and onboarding saves now persist through Data Connect-backed tenant membership profiles
-- Data Connect service config, schema, and domain-owned connectors are scaffolded
-- Data Connect connectors compile successfully and generated admin SDKs are available
-- shared server config helpers now load root env and initialize Firebase Admin/Data Connect clients
-- repo-level deployment assets are now prepared for hosting the backend monolith on Cloud Run
-- a repo-level Cloud Build configuration now exists for optional automatic backend deployment from the `main` branch
-- a Cloud Run deployment guide and hosting ADR now document the production web plus backend rollout path
-- Phase 1 API contracts and query reviews created
-- the initial KIET tenant and `@kiet.edu` domain were seeded successfully for the current rollout
-- live identity, campus, social-create, and resources-create flows were verified against remote Data Connect
-- Phase 1 backend runtime has now been collapsed into one modular monolith app with internal domain modules
-- local development is now intended to run as `pnpm dev` or `web + backend`, not six separate terminals
-- the campus composer now uploads post/story media into Firebase Storage before publish, while Vibe video uploads keep a 40 MB gate and flow through server-side FFmpeg processing for 720p, 1080p, 1440p, and 4K playback variants when the source supports them
-- feed and vibes cards now support full-screen media viewing, likers sheets, repost and quote-repost flows, report actions, author edit/delete actions, and optimistic like feedback
-- story lanes now render unified rings with seen-state tracking, a dedicated add-story affordance on the author bubble, and an immersive viewer with segmented progress bars, tap navigation, long-press pause, story likes, embedded-audio playback, and mute control
-- the story composer now supports royalty-free music search, 15-second to 60-second clip selection, draggable music sticker placement, and client-side MP4 export for one selected story asset before publish
-- the `/vibes` route now uses an immersive theater-style mobile and desktop layout, the home feed now surfaces a dedicated vibes teaser row, and active vibe playback defaults to sound-on with tap pause/resume plus press-and-hold speed-up behavior
-- comment threads now support replies, comment likes, GIF/sticker attachments, a desktop side-panel treatment, and a mobile bottom-sheet composer
-- JSON-backed mutation fallbacks have been removed from the active identity, resources, social, and market write paths
-- the market dashboard now reads directly from Data Connect without seeding or rendering JSON-backed preview inventory
-- the campus events surface now supports dynamic category discovery, host-configurable interest versus registration versus application flows, team-entry forms, host-side review decisions, and CSV export of registrations in the current fallback-backed web implementation
+- modular monolith remains correct for the initial target;
+- Cloud Run is the only production backend; no Vercel backend adapter remains;
+- Firebase Auth remains; SQL Connect/Cloud SQL PostgreSQL is canonical;
+- dual-write is forbidden;
+- R2 is the user-media store and egress budget is a first-class metric;
+- Marketplace moves into MVP;
+- Stories move out of initial launch;
+- broad video waits for capacity and egress evidence;
+- Marketplace does not move money;
+- tenant isolation and moderation gates are product requirements, not later hardening.
 
-## 7. Current Next Actions
+## 8. Top Risks
 
-1. ship Community Connect V1 docs, contracts, query reviews, and first web/backend slice
-2. enrich `/v1/communities/my` and add community detail/member endpoints with tenant-safe authorization
-3. replace the Connect community placeholder with official community cards and responsive empty/loading/error states
-4. complete community thread UX with secured comments, replies, reactions, and burst limits
-5. prepare indexed event rows for high-volume community event feeds and add moderation review queues for community resources/events
-6. extend backend token verification beyond session bootstrap to the rest of the authenticated API edge
-7. implement the college join-request submission and admin decision workflow
-8. add backend-edge rate limiting and richer structured error metadata
-9. add moderation publish and review flows for posts, stories, vibes, resources, and community-scoped content
-10. introduce a simple admin surface for onboarding and moderation operations
+| Risk | Control |
+|---|---|
+| database divergence | one production writer and no runtime fallback |
+| cross-tenant data leak | backend authorization + RLS + two-tenant tests |
+| media bill spike | direct upload, video flags, storage adapter, budget alerts |
+| unsafe Marketplace | category policy, rate limits, report/block, moderation, no payments |
+| empty launch | seeded communities/resources/market and ambassadors |
+| realtime loss after horizontal scale | managed fanout and durable reconciliation |
+| notification loss | transactional outbox and managed retries |
+| Android release lock-in | staged Play tracks, feature flags, previous-version compatibility |
+| scope creep | Stories/video/payments remain explicitly gated |
+| weak operations | launch commander, runbook, dashboards, restore/incident drills |
 
-## 8. Decision Log Snapshot
+## 9. Documents That Govern Execution
 
-- Community V1 uses the existing `/messages` route family as a compatibility path for the Connect surface: Community becomes the primary tab and private E2EE Chats remain the second tab.
-- Community V1 does not introduce E2EE group rooms or uncontrolled community chat; reviewable community content and moderation take priority.
-- Community-scoped social interactions must resolve the owning post before comments, reactions, reposts, edits, deletes, or liker-list reads so forged ids cannot cross the community boundary.
-- Community-scoped posts use verified identity only in Phase 1; anonymous comments are disabled for community posts and reposts.
-- Community detail Resources and Events tabs render bounded community-owned records through `communityId`; resource reads/writes verify community membership and event composition hides non-member community events.
-- A dedicated vibes lane ships in Phase 1, while ranking-heavy reels expansion stays deferred
-- Phase 1 story music uses a royalty-free search provider plus client-side `ffmpeg.wasm` composition for one selected story asset instead of adding a backend transcoding service
-- Phase 1 encrypted chat stays inside the modular monolith with Firebase Realtime Database only for presence, typing, and encrypted delivery fanout, not as a second custom Socket deployable
-- Wallet is not part of Phase 1
-- Phase 1 backend is a modular monolith, not a multi-deployable service fleet
-- `deleted_at`, index strategy, unique constraints, and `user_activity` are mandatory baseline design concerns
-- desktop-quality responsive web and future native readiness are both required from the start
-- no new college or domain should go live without an auditable admin approval path
-- microservices remain a future extraction path, not a default build-time assumption
-
-## 9. Risks To Track
-
-- scope creep into Phase 2 and Phase 3 features
-- over-engineering extraction before the first campus launch
-- weak content moderation policy
-- empty feed problem if utility content is not seeded
-- operational complexity if documentation discipline slips
-- client-side story music export may be slow on low-end devices or fail under memory pressure
-- browser autoplay rules can still force muted startup on some media surfaces until the user interacts
-- browser-held E2EE keys create recovery and multi-device limitations until secure key backup or rotation flows are designed
-- Firebase Realtime Database rules and availability become part of the chat rollout checklist
+- [HLD](../architecture/HLD.md)
+- [System LLD](../architecture/LLD.md)
+- [SRS](./SRS.md)
+- [MVP Phased Rollout](./MVP_PHASED_ROLLOUT.md)
+- [Marketplace LLD](../lld/phase-1/MARKETPLACE_SERVICE_LLD.md)
+- [Capacity and Cost Model](../operations/CAPACITY_AND_COST_MODEL.md)
+- [Launch Runbook](../operations/MVP_LAUNCH_RUNBOOK.md)

@@ -10,11 +10,11 @@ import type {
   ResourceItem
 } from "@vyb/contracts";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useState, useTransition, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { CampusAvatarContent } from "./campus-avatar";
 import { buildPrimaryCampusNav, CampusDesktopNavigation, CampusMobileNavigation } from "./campus-navigation";
-import { SocialThreadSheet } from "./social-thread-sheet";
 import { useSocialPostEngagement } from "./use-social-post-engagement";
 import {
   formatBytes,
@@ -22,6 +22,11 @@ import {
   uploadSocialMediaAsset,
   type UploadedSocialMediaAsset
 } from "../lib/social-media-client";
+
+const SocialThreadSheet = dynamic(
+  () => import("./social-thread-sheet").then((module) => module.SocialThreadSheet),
+  { ssr: false }
+);
 
 type CommunityDetailTab = "feed" | "members" | "resources" | "events";
 type CommunityPanel = "chat" | "members" | "resources" | "events";

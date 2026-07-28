@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { getStorage } from "firebase-admin/storage";
+import { DeleteObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import {
-  getFirebaseAdminApp,
   getFirebaseDataConnect
 } from "../../../../../packages/config/src/index.mjs";
 import {
@@ -34,7 +33,11 @@ import {
 } from "../../../../../packages/dataconnect/marketplace-admin-sdk/esm/index.esm.js";
 import { listProfilesByUserIds } from "../identity/profile-repository.mjs";
 
-const TENANT_SCAN_LIMIT = 5000;
+const LEGACY_TENANT_SCAN_LIMIT = 5000;
+const MARKET_DASHBOARD_PRIMARY_LIMIT = readPositiveIntEnv("VYB_MARKET_DASHBOARD_PRIMARY_LIMIT", 240);
+const MARKET_DASHBOARD_RELATION_LIMIT = readPositiveIntEnv("VYB_MARKET_DASHBOARD_RELATION_LIMIT", 2000);
+const MARKET_DASHBOARD_LISTING_LIMIT = readPositiveIntEnv("VYB_MARKET_DASHBOARD_LISTING_LIMIT", 80);
+const MARKET_DASHBOARD_REQUEST_LIMIT = readPositiveIntEnv("VYB_MARKET_DASHBOARD_REQUEST_LIMIT", 50);
 const MARKET_SNAPSHOT_CACHE_TTL_MS = 5_000;
 const SAVE_LOOKUP_LIMIT = 8;
 const LEGACY_MARKET_SEED_USER_ID_PREFIX = "seed-";
@@ -56,12 +59,40 @@ const MARKET_MEDIA_PATH_EXTENSIONS = new Set([
 
 const marketSnapshotCache = new Map();
 
+function readPositiveIntEnv(name, fallback) {
+  const parsed = Number.parseInt(process.env[name] ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function getMarketplaceDc() {
   return getFirebaseDataConnect(marketplaceConnectorConfig);
 }
 
-function getMarketplaceStorageBucket() {
-  return getStorage(getFirebaseAdminApp("backend-market-storage")).bucket();
+function getR2Config() {
+  const config = {
+    accountId: process.env.R2_ACCOUNT_ID?.trim(),
+    accessKeyId: process.env.R2_ACCESS_KEY_ID?.trim(),
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY?.trim(),
+    bucket: process.env.R2_BUCKET?.trim()
+  };
+  const missing = Object.entries(config)
+    .filter(([, value]) => !value)
+    .map(([key]) => key);
+  if (missing.length > 0) {
+    throw new Error(`R2 media storage is not configured. Missing: ${missing.join(", ")}.`);
+  }
+  return config;
+}
+
+function getR2Client(config) {
+  return new S3Client({
+    region: "auto",
+    endpoint: `https://${config.accountId}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: config.accessKeyId,
+      secretAccessKey: config.secretAccessKey
+    }
+  });
 }
 
 function invalidateMarketSnapshotCache(tenantId) {
@@ -79,17 +110,6 @@ function decodeStorageObjectPath(value) {
   } catch {
     return value;
   }
-}
-
-function getFirebaseStorageObjectPath(pathname) {
-  const objectMarker = "/o/";
-  const markerIndex = pathname.indexOf(objectMarker);
-
-  if (markerIndex === -1) {
-    return null;
-  }
-
-  return decodeStorageObjectPath(pathname.slice(markerIndex + objectMarker.length));
 }
 
 function getLocalMarketMediaObjectPath(mediaUrl) {
@@ -152,9 +172,20 @@ function isSafeMarketMediaUrl(value, storagePath) {
 
   try {
     const parsed = new URL(mediaUrl);
-    const firebaseObjectPath = getFirebaseStorageObjectPath(parsed.pathname);
+    const r2PublicBaseUrl = process.env.R2_PUBLIC_BASE_URL?.trim().replace(/\/+$/u, "");
 
-    return parsed.hostname === "firebasestorage.googleapis.com" && firebaseObjectPath === storagePath;
+    if (r2PublicBaseUrl) {
+      const publicBase = new URL(r2PublicBaseUrl);
+      const expectedPath = `${publicBase.pathname.replace(/\/+$/u, "")}/${storagePath
+        .split("/")
+        .map(encodeURIComponent)
+        .join("/")}`;
+      if (parsed.origin === publicBase.origin && parsed.pathname === expectedPath) {
+        return true;
+      }
+    }
+
+    return false;
   } catch {
     return false;
   }
@@ -339,14 +370,37 @@ async function fetchLiveMarketSnapshot(tenantId) {
     listingContactsResponse,
     requestContactsResponse
   ] = await Promise.all([
-    listMarketListingsByTenant(dc, { tenantId, limit: TENANT_SCAN_LIMIT }),
-    listMarketListingMediaByTenant(dc, { tenantId, limit: TENANT_SCAN_LIMIT }),
-    listMarketRequestsByTenant(dc, { tenantId, limit: TENANT_SCAN_LIMIT }),
-    listMarketRequestMediaByTenant(dc, { tenantId, limit: TENANT_SCAN_LIMIT }),
-    listActiveMarketListingSavesByTenant(dc, { tenantId, limit: TENANT_SCAN_LIMIT }),
-    listActiveMarketListingContactsByTenant(dc, { tenantId, limit: TENANT_SCAN_LIMIT }),
-    listActiveMarketRequestContactsByTenant(dc, { tenantId, limit: TENANT_SCAN_LIMIT })
+    listMarketListingsByTenant(dc, { tenantId, limit: MARKET_DASHBOARD_PRIMARY_LIMIT }),
+    listMarketListingMediaByTenant(dc, { tenantId, limit: MARKET_DASHBOARD_RELATION_LIMIT }),
+    listMarketRequestsByTenant(dc, { tenantId, limit: MARKET_DASHBOARD_PRIMARY_LIMIT }),
+    listMarketRequestMediaByTenant(dc, { tenantId, limit: MARKET_DASHBOARD_RELATION_LIMIT }),
+    listActiveMarketListingSavesByTenant(dc, { tenantId, limit: MARKET_DASHBOARD_RELATION_LIMIT }),
+    listActiveMarketListingContactsByTenant(dc, { tenantId, limit: MARKET_DASHBOARD_RELATION_LIMIT }),
+    listActiveMarketRequestContactsByTenant(dc, { tenantId, limit: MARKET_DASHBOARD_RELATION_LIMIT })
   ]);
+
+  if (
+    listingsResponse.data.marketListings.length >= MARKET_DASHBOARD_PRIMARY_LIMIT ||
+    requestsResponse.data.marketRequests.length >= MARKET_DASHBOARD_PRIMARY_LIMIT ||
+    listingMediaResponse.data.marketListingMediaRecords.length >= MARKET_DASHBOARD_RELATION_LIMIT ||
+    requestMediaResponse.data.marketRequestMediaRecords.length >= MARKET_DASHBOARD_RELATION_LIMIT ||
+    savesResponse.data.marketListingSaves.length >= MARKET_DASHBOARD_RELATION_LIMIT ||
+    listingContactsResponse.data.marketListingContacts.length >= MARKET_DASHBOARD_RELATION_LIMIT ||
+    requestContactsResponse.data.marketRequestContacts.length >= MARKET_DASHBOARD_RELATION_LIMIT
+  ) {
+    console.info("[market] dashboard-window-limit-reached", {
+      tenantId,
+      primaryLimit: MARKET_DASHBOARD_PRIMARY_LIMIT,
+      relationLimit: MARKET_DASHBOARD_RELATION_LIMIT,
+      listings: listingsResponse.data.marketListings.length,
+      requests: requestsResponse.data.marketRequests.length,
+      listingMedia: listingMediaResponse.data.marketListingMediaRecords.length,
+      requestMedia: requestMediaResponse.data.marketRequestMediaRecords.length,
+      saves: savesResponse.data.marketListingSaves.length,
+      listingContacts: listingContactsResponse.data.marketListingContacts.length,
+      requestContacts: requestContactsResponse.data.marketRequestContacts.length
+    });
+  }
 
   return {
     listings: listingsResponse.data.marketListings,
@@ -474,7 +528,7 @@ function buildDashboard(snapshot, viewer, profileMap = null) {
         isSaved: savedListingIds.has(item.id)
       };
     })
-  );
+  ).slice(0, MARKET_DASHBOARD_LISTING_LIMIT);
 
   const requests = sortNewest(
     activeRequests.map((item) => {
@@ -503,7 +557,7 @@ function buildDashboard(snapshot, viewer, profileMap = null) {
         responseCount: Number(requestResponseCounts.get(item.id) ?? 0)
       };
     })
-  );
+  ).slice(0, MARKET_DASHBOARD_REQUEST_LIMIT);
 
   return {
     tenantId: viewer.tenantId,
@@ -521,13 +575,13 @@ function buildDashboard(snapshot, viewer, profileMap = null) {
 
 async function getLiveListingMediaRecords(tenantId, listingId) {
   const dc = getMarketplaceDc();
-  const response = await listMarketListingMediaByTenant(dc, { tenantId, limit: TENANT_SCAN_LIMIT });
+  const response = await listMarketListingMediaByTenant(dc, { tenantId, limit: LEGACY_TENANT_SCAN_LIMIT });
   return response.data.marketListingMediaRecords.filter((item) => !item.deletedAt && item.listingId === listingId);
 }
 
 async function getLiveRequestMediaRecords(tenantId, requestId) {
   const dc = getMarketplaceDc();
-  const response = await listMarketRequestMediaByTenant(dc, { tenantId, limit: TENANT_SCAN_LIMIT });
+  const response = await listMarketRequestMediaByTenant(dc, { tenantId, limit: LEGACY_TENANT_SCAN_LIMIT });
   return response.data.marketRequestMediaRecords.filter((item) => !item.deletedAt && item.requestId === requestId);
 }
 
@@ -538,8 +592,13 @@ async function deleteMarketMediaAssets(assets, owner) {
     return;
   }
 
-  const bucket = getMarketplaceStorageBucket();
-  await Promise.allSettled(removable.map((asset) => bucket.file(asset.storagePath).delete({ ignoreNotFound: true })));
+  const r2 = getR2Config();
+  const client = getR2Client(r2);
+  await Promise.allSettled(
+    removable.map((asset) =>
+      client.send(new DeleteObjectCommand({ Bucket: r2.bucket, Key: asset.storagePath }))
+    )
+  );
 }
 
 async function requireOwnedActiveLiveListing(viewer, listingId) {
@@ -583,7 +642,6 @@ export async function getLiveMarketDashboard(viewer) {
       .map((item) => item.requesterUserId)
   ];
   const profileMap = await buildProfileByUserIdMap(viewer.tenantId, profileUserIds);
-
   return buildDashboard(snapshot, viewer, profileMap);
 }
 

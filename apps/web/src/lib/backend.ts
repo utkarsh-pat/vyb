@@ -97,7 +97,6 @@ import type {
   UserSearchResponse
 } from "@vyb/contracts";
 import type { DevSession } from "./dev-session";
-import { invokeBackendRoute, isBackendConnectionError } from "./backend-bridge";
 import { getInternalApiKey } from "./internal-api-key";
 import { buildResourceFileDownloadUrl } from "./resource-files-server";
 
@@ -112,6 +111,23 @@ export type UploadedSocialMediaAsset = {
 const API_BASE_URL =
   process.env.VYB_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 const BACKEND_REQUEST_TIMEOUT_MS = Number(process.env.VYB_BACKEND_REQUEST_TIMEOUT_MS ?? 8000);
+const BACKEND_SLOW_REQUEST_MS = Number(process.env.VYB_WEB_BACKEND_SLOW_REQUEST_MS ?? 1000);
+const BACKEND_LOG_TIMINGS = process.env.VYB_WEB_BACKEND_LOG_TIMINGS === "1";
+const BACKEND_BRIDGE_ENABLED =
+  process.env.NODE_ENV !== "production" && process.env.VYB_WEB_BACKEND_BRIDGE !== "0";
+
+type BackendBridgeRequest = {
+  path: string;
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string;
+};
+
+type BackendBridgeModule = {
+  invokeBackendRoute: (request: BackendBridgeRequest) => Promise<Response>;
+};
+
+let backendBridgePromise: Promise<BackendBridgeModule> | null = null;
 
 export class BackendRequestError extends Error {
   statusCode: number;
@@ -129,6 +145,77 @@ export class BackendRequestError extends Error {
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isBackendConnectionError(error: unknown): error is Error {
+  return error instanceof Error && (
+    error.name === "AbortError" ||
+    /fetch failed|econnrefused|enotfound|etimedout|socket hang up|aborted/i.test(error.message)
+  );
+}
+
+function shouldLogBackendTiming(durationMs: number, statusCode?: number) {
+  if (BACKEND_LOG_TIMINGS) {
+    return true;
+  }
+
+  if (typeof statusCode === "number" && statusCode >= 500) {
+    return true;
+  }
+
+  return (
+    Number.isFinite(BACKEND_SLOW_REQUEST_MS) &&
+    BACKEND_SLOW_REQUEST_MS > 0 &&
+    durationMs >= BACKEND_SLOW_REQUEST_MS
+  );
+}
+
+function logBackendTiming({
+  method,
+  path,
+  durationMs,
+  attempt,
+  statusCode,
+  serverTiming,
+  error
+}: {
+  method: string;
+  path: string;
+  durationMs: number;
+  attempt: number;
+  statusCode?: number;
+  serverTiming?: string | null;
+  error?: unknown;
+}) {
+  if (!shouldLogBackendTiming(durationMs, statusCode)) {
+    return;
+  }
+
+  const message = error instanceof Error ? error.message : null;
+  const isWarning = (typeof statusCode === "number" && statusCode >= 500) || Boolean(error);
+  const log = isWarning ? console.warn : console.info;
+
+  log("[web/backend] request timing", {
+    method,
+    path,
+    statusCode: statusCode ?? null,
+    durationMs,
+    attempt,
+    apiBaseUrl: API_BASE_URL,
+    serverTiming: serverTiming ?? null,
+    error: message
+  });
+}
+
+async function invokeBackendBridge(request: BackendBridgeRequest) {
+  if (!BACKEND_BRIDGE_ENABLED) {
+    throw new Error("The in-process backend bridge is disabled for this runtime.");
+  }
+
+  const bridgeModulePath = [".", "backend-bridge"].join("/");
+  backendBridgePromise ??= import(bridgeModulePath) as Promise<BackendBridgeModule>;
+  const bridge = await backendBridgePromise;
+  return bridge.invokeBackendRoute(request);
 }
 
 function buildBackendHeaders(viewer?: DevSession): Record<string, string> {
@@ -215,6 +302,7 @@ async function requestBackendResponse(
     const timeout = Number.isFinite(BACKEND_REQUEST_TIMEOUT_MS) && BACKEND_REQUEST_TIMEOUT_MS > 0
       ? setTimeout(() => controller.abort(), BACKEND_REQUEST_TIMEOUT_MS)
       : null;
+    const attemptStartedAt = Date.now();
 
     try {
       const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -224,8 +312,18 @@ async function requestBackendResponse(
         cache: "no-store",
         signal: controller.signal
       });
+      const durationMs = Date.now() - attemptStartedAt;
 
-      if (response.status >= 500 && allowBridgeFallback && method === "GET") {
+      logBackendTiming({
+        method,
+        path,
+        durationMs,
+        attempt: attempt + 1,
+        statusCode: response.status,
+        serverTiming: response.headers.get("server-timing")
+      });
+
+      if (response.status >= 500 && allowBridgeFallback && BACKEND_BRIDGE_ENABLED && method === "GET") {
         console.warn("[web/backend] upstream returned server error, falling back to in-process bridge", {
           method,
           path,
@@ -233,7 +331,7 @@ async function requestBackendResponse(
           status: response.status
         });
 
-        return invokeBackendRoute({
+        return invokeBackendBridge({
           path,
           method,
           headers,
@@ -248,6 +346,14 @@ async function requestBackendResponse(
       }
 
       lastConnectionError = error;
+      logBackendTiming({
+        method,
+        path,
+        durationMs: Date.now() - attemptStartedAt,
+        attempt: attempt + 1,
+        error
+      });
+
       if (error instanceof Error && error.name === "AbortError") {
         break;
       }
@@ -263,11 +369,12 @@ async function requestBackendResponse(
   }
 
   if (lastConnectionError) {
-    if (!allowBridgeFallback) {
+    if (!allowBridgeFallback || !BACKEND_BRIDGE_ENABLED) {
       console.error("[web/backend] upstream unavailable for direct-only request", {
         method,
         path,
         apiBaseUrl: API_BASE_URL,
+        bridgeEnabled: BACKEND_BRIDGE_ENABLED,
         message: lastConnectionError.message
       });
       throw lastConnectionError;
@@ -280,7 +387,7 @@ async function requestBackendResponse(
       message: lastConnectionError.message
     });
 
-    return invokeBackendRoute({
+    return invokeBackendBridge({
       path,
       method,
       headers,
@@ -293,17 +400,110 @@ async function requestBackendResponse(
 
 type BackendRequestOptions = {
   allowBridgeFallback?: boolean;
+  cacheTtlMs?: number;
 };
 
 const CHAT_REALTIME_BACKEND_OPTIONS: BackendRequestOptions = {
   allowBridgeFallback: false
 };
 
+type BackendJsonCacheEntry<T> = {
+  expiresAt: number;
+  value?: T;
+  promise?: Promise<T>;
+};
+
+const backendJsonCache = new Map<string, BackendJsonCacheEntry<unknown>>();
+
+function buildBackendJsonCacheKey(path: string, viewer?: DevSession) {
+  if (!viewer) {
+    return `anonymous:${path}`;
+  }
+
+  return [
+    viewer.tenantId,
+    viewer.userId,
+    viewer.membershipId,
+    viewer.role,
+    path
+  ].join(":");
+}
+
+function invalidateBackendJsonCache(viewer: DevSession | undefined, pathPrefixes: string[]) {
+  if (pathPrefixes.length === 0) {
+    return;
+  }
+
+  const viewerPrefix = viewer
+    ? [
+        viewer.tenantId,
+        viewer.userId,
+        viewer.membershipId,
+        viewer.role
+      ].join(":")
+    : "anonymous";
+
+  for (const key of backendJsonCache.keys()) {
+    if (!key.startsWith(`${viewerPrefix}:`)) {
+      continue;
+    }
+
+    if (pathPrefixes.some((prefix) => key.slice(viewerPrefix.length + 1).startsWith(prefix))) {
+      backendJsonCache.delete(key);
+    }
+  }
+}
+
+function readCacheTtl(value: unknown) {
+  const ttl = typeof value === "number" ? value : 0;
+  return Number.isFinite(ttl) && ttl > 0 ? ttl : 0;
+}
+
 export async function fetchBackendJson<T>(
   path: string,
   viewer?: DevSession,
   options?: BackendRequestOptions
 ): Promise<T> {
+  const cacheTtlMs = readCacheTtl(options?.cacheTtlMs);
+  if (cacheTtlMs > 0) {
+    const cacheKey = buildBackendJsonCacheKey(path, viewer);
+    const now = Date.now();
+    const cached = backendJsonCache.get(cacheKey) as BackendJsonCacheEntry<T> | undefined;
+
+    if (cached && cached.expiresAt > now) {
+      if (cached.value !== undefined) {
+        return cached.value;
+      }
+
+      if (cached.promise) {
+        return cached.promise;
+      }
+    }
+
+    const promise = fetchBackendJson<T>(path, viewer, {
+      ...options,
+      cacheTtlMs: 0
+    });
+    backendJsonCache.set(cacheKey, {
+      expiresAt: now + cacheTtlMs,
+      promise
+    });
+
+    try {
+      const value = await promise;
+      backendJsonCache.set(cacheKey, {
+        expiresAt: Date.now() + cacheTtlMs,
+        value
+      });
+      return value;
+    } catch (error) {
+      if (backendJsonCache.get(cacheKey)?.promise === promise) {
+        backendJsonCache.delete(cacheKey);
+      }
+      throw error;
+    }
+  }
+
   const response = await requestBackendResponse(path, {
     viewer,
     allowBridgeFallback: options?.allowBridgeFallback
@@ -445,18 +645,18 @@ function buildClientShellFallback(): ClientShellResponse {
 
 export async function getClientShellData() {
   try {
-    return await fetchBackendJson<ClientShellResponse>("/v1/client-shell");
+    return await fetchBackendJson<ClientShellResponse>("/v1/client-shell", undefined, { cacheTtlMs: 60_000 });
   } catch {
     return buildClientShellFallback();
   }
 }
 
 export async function getViewerProfile(viewer: DevSession) {
-  return fetchBackendJson<ProfileResponse>("/v1/profile", viewer);
+  return fetchBackendJson<ProfileResponse>("/v1/profile", viewer, { cacheTtlMs: 10_000 });
 }
 
 export async function getViewerMe(viewer: DevSession) {
-  return fetchBackendJson<MeResponse>("/v1/me", viewer);
+  return fetchBackendJson<MeResponse>("/v1/me", viewer, { cacheTtlMs: 10_000 });
 }
 
 export async function bootstrapViewerSession(payload: SessionBootstrapRequest) {
@@ -512,7 +712,7 @@ export async function getCampusStories(viewer: DevSession) {
     tenantId: viewer.tenantId
   });
 
-  return fetchBackendJson<StoryListResponse>(`/v1/stories?${params.toString()}`, viewer);
+  return fetchBackendJson<StoryListResponse>(`/v1/stories?${params.toString()}`, viewer, { cacheTtlMs: 5_000 });
 }
 
 export async function searchCampusUsers(viewer: DevSession, query: string, limit = 12) {
@@ -532,7 +732,7 @@ export async function getSuggestedCampusUsers(viewer: DevSession, limit = 5) {
     limit: String(limit)
   });
 
-  return fetchBackendJson<UserSearchResponse>(`/v1/users/search?${params.toString()}`, viewer);
+  return fetchBackendJson<UserSearchResponse>(`/v1/users/search?${params.toString()}`, viewer, { cacheTtlMs: 15_000 });
 }
 
 export async function getCampusUserProfile(viewer: DevSession, username: string) {
@@ -571,7 +771,9 @@ export async function updateViewerUsername(viewer: DevSession, payload: UpdateUs
     throw await buildBackendRequestError(response, "/v1/profile/username");
   }
 
-  return readResponseJson<UpdateUsernameResponse>(response);
+  const value = await readResponseJson<UpdateUsernameResponse>(response);
+  invalidateBackendJsonCache(viewer, ["/v1/profile", "/v1/me"]);
+  return value;
 }
 
 export async function createCampusStory(viewer: DevSession, payload: {
@@ -581,6 +783,10 @@ export async function createCampusStory(viewer: DevSession, payload: {
   mediaStoragePath?: string | null;
   mediaMimeType?: string | null;
   mediaSizeBytes?: number | null;
+  allowAnonymousComments?: boolean;
+  visibility?: "public" | "followers" | "community";
+  communityId?: string | null;
+  compositionJson?: string | null;
 }) {
   return postBackendJson<CreateStoryResponse>(
     "/v1/stories",
@@ -717,7 +923,7 @@ export async function getCampusCourses(viewer: DevSession, limit = 20) {
     limit: String(limit)
   });
 
-  return fetchBackendJson<ListCoursesResponse>(`/v1/courses?${params.toString()}`, viewer);
+  return fetchBackendJson<ListCoursesResponse>(`/v1/courses?${params.toString()}`, viewer, { cacheTtlMs: 60_000 });
 }
 
 export async function getCampusResources(
@@ -752,11 +958,11 @@ export async function getCampusResources(
 }
 
 export async function getMyCampusCommunities(viewer: DevSession) {
-  return fetchBackendJson<CommunitiesMyResponse>("/v1/communities/my", viewer);
+  return fetchBackendJson<CommunitiesMyResponse>("/v1/communities/my", viewer, { cacheTtlMs: 10_000 });
 }
 
 export async function getCommunityDetail(viewer: DevSession, slug: string) {
-  return fetchBackendJson<CommunityDetailResponse>(`/v1/communities/${encodeURIComponent(slug)}`, viewer);
+  return fetchBackendJson<CommunityDetailResponse>(`/v1/communities/${encodeURIComponent(slug)}`, viewer, { cacheTtlMs: 10_000 });
 }
 
 export async function getCommunityMembers(viewer: DevSession, slug: string, limit = 24, cursor?: string | null) {
@@ -783,12 +989,14 @@ export async function updateCommunityViewerState(
   slug: string,
   payload: UpdateCommunityViewerStateRequest
 ) {
-  return mutateBackendJson<CommunityViewerStateResponse>(
+  const value = await mutateBackendJson<CommunityViewerStateResponse>(
     `/v1/communities/${encodeURIComponent(slug)}/me`,
     "PATCH",
     payload,
     viewer
   );
+  invalidateBackendJsonCache(viewer, ["/v1/communities/my", `/v1/communities/${encodeURIComponent(slug)}`]);
+  return value;
 }
 
 export async function createCommunityInvite(viewer: DevSession, slug: string, origin?: string | null) {
@@ -802,13 +1010,15 @@ export async function createCommunityInvite(viewer: DevSession, slug: string, or
 }
 
 export async function redeemCommunityInvite(viewer: DevSession, slug: string, inviteCode: string) {
-  return postBackendJson<CommunityInviteRedemptionResponse>(
+  const value = await postBackendJson<CommunityInviteRedemptionResponse>(
     `/v1/communities/${encodeURIComponent(slug)}/invites/redeem`,
     {
       inviteCode
     },
     viewer
   );
+  invalidateBackendJsonCache(viewer, ["/v1/communities/my", `/v1/communities/${encodeURIComponent(slug)}`]);
+  return value;
 }
 
 export async function getViewerActivity(viewer: DevSession, limit = 20) {

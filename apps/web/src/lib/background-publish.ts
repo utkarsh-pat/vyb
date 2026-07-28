@@ -24,6 +24,7 @@ export type BackgroundPublishTask = {
   progress: number;
   status: BackgroundPublishTaskStatus;
   createdAt: string;
+  scheduledFor: string | null;
   completedAt: string | null;
   successMessage: string | null;
   errorMessage: string | null;
@@ -34,6 +35,7 @@ type StoryUploadAsset = {
   file: File;
   mediaType: "image" | "video";
   mimeType: string | null;
+  compositionJson?: string | null;
 };
 
 type StoryMusicBackgroundPayload = {
@@ -53,12 +55,17 @@ export type BackgroundPublishRequest =
       videoFile: File;
       isAnonymous: boolean;
       allowAnonymousComments: boolean;
+      visibility: "public" | "followers" | "community";
+      communityId: string | null;
     }
   | {
       kind: "story";
       caption: string;
       storyAssets: StoryUploadAsset[];
       storyMusic: StoryMusicBackgroundPayload | null;
+      allowAnonymousComments: boolean;
+      visibility: "public" | "followers" | "community";
+      communityId: string | null;
     }
   | {
       kind: "post";
@@ -67,6 +74,8 @@ export type BackgroundPublishRequest =
       mediaFiles: File[];
       isAnonymous: boolean;
       allowAnonymousComments: boolean;
+      visibility: "public" | "followers" | "community";
+      communityId: string | null;
     };
 
 const AUTO_DISMISS_SUCCESS_MS = 7000;
@@ -78,6 +87,7 @@ const payloadByTaskId = new Map<string, BackgroundPublishRequest>();
 const queuedTaskIds: string[] = [];
 let activeTaskId: string | null = null;
 let restoreQueuePromise: Promise<void> | null = null;
+let scheduledPumpTimer: number | null = null;
 
 type PersistedBackgroundPublishRecord = {
   id: string;
@@ -441,7 +451,9 @@ async function runVibePublish(taskId: string, input: Extract<BackgroundPublishRe
         : undefined,
       location: input.collegeName,
       isAnonymous: input.isAnonymous,
-      allowAnonymousComments: input.allowAnonymousComments
+      allowAnonymousComments: input.allowAnonymousComments,
+      visibility: input.visibility,
+      communityId: input.communityId
     },
     "Could not publish Vibe."
   );
@@ -485,7 +497,8 @@ async function runStoryPublish(taskId: string, input: Extract<BackgroundPublishR
       {
         file: composed.file,
         mediaType: "video",
-        mimeType: composed.file.type || "video/mp4"
+        mimeType: composed.file.type || "video/mp4",
+        compositionJson: input.storyAssets[0]?.compositionJson ?? null
       }
     ];
   }
@@ -563,7 +576,8 @@ async function runStoryPublish(taskId: string, input: Extract<BackgroundPublishR
         mediaUrl: uploaded?.url ?? "",
         mediaStoragePath: uploaded?.storagePath ?? null,
         mediaMimeType: uploaded?.mimeType ?? asset.mimeType ?? null,
-        mediaSizeBytes: uploaded?.sizeBytes ?? null
+        mediaSizeBytes: uploaded?.sizeBytes ?? null,
+        compositionJson: asset.compositionJson ?? null
       };
     })
   );
@@ -591,7 +605,11 @@ async function runStoryPublish(taskId: string, input: Extract<BackgroundPublishR
         mediaStoragePath: asset.mediaStoragePath ?? null,
         mediaMimeType: asset.mediaMimeType ?? null,
         mediaSizeBytes: asset.mediaSizeBytes ?? null,
-        caption: trimmedCaption || null
+        caption: trimmedCaption || null,
+        compositionJson: asset.compositionJson ?? null,
+        allowAnonymousComments: input.allowAnonymousComments,
+        visibility: input.visibility,
+        communityId: input.communityId
       },
       "Could not publish Story."
     );
@@ -670,7 +688,9 @@ async function runPostPublish(taskId: string, input: Extract<BackgroundPublishRe
       mediaAssets: uploadedMediaAssets.length > 0 ? uploadedMediaAssets : undefined,
       location: input.collegeName,
       isAnonymous: input.isAnonymous,
-      allowAnonymousComments: input.allowAnonymousComments
+      allowAnonymousComments: input.allowAnonymousComments,
+      visibility: input.visibility,
+      communityId: input.communityId
     },
     "Could not publish post."
   );
@@ -705,7 +725,35 @@ function pumpBackgroundPublishQueue() {
     return;
   }
 
-  const nextTaskId = queuedTaskIds.shift() ?? null;
+  if (scheduledPumpTimer !== null && typeof window !== "undefined") {
+    window.clearTimeout(scheduledPumpTimer);
+    scheduledPumpTimer = null;
+  }
+
+  const now = Date.now();
+  const dueIndex = queuedTaskIds.findIndex((taskId) => {
+    const task = tasks.find((item) => item.id === taskId);
+    return !task?.scheduledFor || new Date(task.scheduledFor).getTime() <= now;
+  });
+
+  if (dueIndex === -1) {
+    const nextScheduledAt = queuedTaskIds
+      .map((taskId) => tasks.find((item) => item.id === taskId)?.scheduledFor)
+      .filter((value): value is string => Boolean(value))
+      .map((value) => new Date(value).getTime())
+      .filter(Number.isFinite)
+      .sort((left, right) => left - right)[0];
+
+    if (nextScheduledAt && typeof window !== "undefined") {
+      scheduledPumpTimer = window.setTimeout(
+        pumpBackgroundPublishQueue,
+        Math.min(Math.max(nextScheduledAt - now, 1_000), 2_147_000_000)
+      );
+    }
+    return;
+  }
+
+  const [nextTaskId] = queuedTaskIds.splice(dueIndex, 1);
   if (!nextTaskId) {
     return;
   }
@@ -754,7 +802,11 @@ export function restoreBackgroundPublishQueue() {
       const restoredTask: BackgroundPublishTask = {
         ...record.task,
         status: "queued",
-        detail: `Resuming ${record.task.kind} upload after refresh...`,
+        detail:
+          record.task.scheduledFor &&
+          new Date(record.task.scheduledFor).getTime() > Date.now()
+            ? `Scheduled for ${new Date(record.task.scheduledFor).toLocaleString()}.`
+            : `Resuming ${record.task.kind} upload after refresh...`,
         progress: Math.max(0.02, Math.min(record.task.progress || 0.02, 0.18)),
         completedAt: null,
         successMessage: null,
@@ -788,16 +840,23 @@ export function isBackgroundPublishTaskActive(status: BackgroundPublishTaskStatu
   return status === "queued" || status === "preparing" || status === "uploading" || status === "publishing";
 }
 
-export function enqueueBackgroundPublish(input: BackgroundPublishRequest) {
+export function enqueueBackgroundPublish(
+  input: BackgroundPublishRequest,
+  options: { scheduledFor?: string | null } = {}
+) {
   const taskId = createTaskId();
+  const scheduledFor = options.scheduledFor ?? null;
   const task: BackgroundPublishTask = {
     id: taskId,
     kind: input.kind,
     title: buildTaskTitle(input),
-    detail: buildTaskQueuedDetail(input),
+    detail: scheduledFor
+      ? `Scheduled for ${new Date(scheduledFor).toLocaleString()}.`
+      : buildTaskQueuedDetail(input),
     progress: 0.02,
     status: "queued",
     createdAt: new Date().toISOString(),
+    scheduledFor,
     completedAt: null,
     successMessage: null,
     errorMessage: null,
@@ -807,7 +866,13 @@ export function enqueueBackgroundPublish(input: BackgroundPublishRequest) {
   tasks.unshift(task);
   payloadByTaskId.set(taskId, input);
   queuedTaskIds.push(taskId);
-  appendTaskLog(taskId, "Queue", buildTaskQueuedDetail(input));
+  appendTaskLog(
+    taskId,
+    "Queue",
+    scheduledFor
+      ? `Scheduled for ${new Date(scheduledFor).toLocaleString()}.`
+      : buildTaskQueuedDetail(input)
+  );
   void persistTaskRecord(taskId);
   notifyListeners();
   pumpBackgroundPublishQueue();

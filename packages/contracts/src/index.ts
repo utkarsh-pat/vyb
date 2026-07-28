@@ -4,6 +4,7 @@ export type ResourceType = "notes" | "pyq" | "guide";
 export type PostKind = "text" | "image" | "video";
 export type PublishStatus = "draft" | "pending" | "published" | "removed";
 export type FeedPlacement = "feed" | "vibe";
+export type PostVisibility = "public" | "followers" | "community";
 export type ReactionKind = "fire" | "support" | "like" | "love" | "insight" | "funny";
 export type StoryReactionKind = "like";
 
@@ -320,6 +321,7 @@ export interface FeedCard {
   isSaved: boolean;
   isAnonymous: boolean;
   allowAnonymousComments: boolean;
+  visibility: PostVisibility;
   viewerCanManage: boolean;
   viewerReactionType: ReactionKind | null;
   createdAt: string;
@@ -347,6 +349,7 @@ export interface CreatePostRequest {
   placement?: FeedPlacement;
   isAnonymous?: boolean;
   allowAnonymousComments?: boolean;
+  visibility?: PostVisibility;
   title?: string | null;
   body: string;
   mediaUrl?: string | null;
@@ -377,6 +380,7 @@ export interface CreatePostResponse {
 export interface StoryCard {
   id: string;
   tenantId: string;
+  communityId: string | null;
   userId: string;
   username: string;
   displayName: string;
@@ -384,6 +388,8 @@ export interface StoryCard {
   mediaType: "image" | "video";
   mediaUrl: string;
   caption: string;
+  compositionJson?: string | null;
+  visibility: PostVisibility;
   createdAt: string;
   expiresAt: string;
   isOwn: boolean;
@@ -398,9 +404,12 @@ export interface StoryListResponse {
 
 export interface CreateStoryRequest {
   tenantId: string;
+  communityId?: string | null;
+  visibility?: PostVisibility;
   mediaType: "image" | "video";
   mediaUrl: string;
   caption?: string | null;
+  compositionJson?: string | null;
 }
 
 export interface CreateStoryResponse {

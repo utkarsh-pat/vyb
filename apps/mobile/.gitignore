@@ -1,4 +1,5 @@
 node_modules/
+.gradle/
 .expo/
 dist/
 npm-debug.*
@@ -13,5 +14,6 @@ android/.gradle/
 android/app/.cxx/
 android/app/build/
 android/build/
+local.properties
 ios/build/
 ios/Pods/

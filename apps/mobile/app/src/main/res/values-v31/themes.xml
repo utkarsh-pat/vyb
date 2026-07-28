@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Vyb.Starting" parent="Theme.Vyb">
+        <item name="android:windowSplashScreenBackground">@color/vyb_splash_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/vyb_logo</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/vyb_splash_background</item>
+        <item name="android:windowSplashScreenAnimationDuration">500</item>
+    </style>
+</resources>

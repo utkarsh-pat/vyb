@@ -1,11 +1,14 @@
 # Vyb Complete System Test Cases
 
 Owner: QA, Product, Engineering, Security
+Last Updated: 2026-07-28
 Generated from current repository routes, UI components, SRS, HLD, chat review docs, API routes, and a Browser smoke pass of `/login` on desktop and mobile.
+
+> MVP gate profile: Marketplace, identity/tenant, text-image feed, one-to-one chat, resources, notifications, moderation, web/PWA, and Android are release-blocking. Story/story-music tests are deferred regression tests while `stories_enabled=false`. Vibe/video, events, and games are release-blocking only for tenants where their feature flag is enabled.
 
 ## 1. Scope
 
-This test suite covers Vyb web, backend, Data Connect-facing APIs, Firebase Auth/Storage boundaries, realtime WebSocket behavior, chat E2EE, PWA/browser behavior, desktop responsive views, and phone responsive views.
+This test suite covers Vyb web, Android, backend, canonical PostgreSQL/RLS behavior, Firebase Auth and media boundaries, realtime behavior, chat E2EE, PWA/browser behavior, desktop responsive views, and phone responsive views. Legacy Data Connect, Firestore, and JSON paths are migration/regression surfaces and must not be treated as production fallbacks.
 
 Primary surfaces:
 
@@ -333,14 +336,16 @@ Fields: College read-only, College email read-only, User ID, First name, Last na
 | MKT-004 | Composer title/category | Blank, normal, long, invalid category tamper. | Required validation; server rejects invalid/tampered values. |
 | MKT-005 | Sale fields | Condition, price `0`, `1`, huge, letters, notes, meetup. | Digits sanitized; price/bounds enforced. |
 | MKT-006 | Buying/lend fields | Budget, rental fee, urgency/need notes. | Optional/required behavior correct by mode. |
-| MKT-007 | Media upload | Add/remove/reorder multiple images/videos, invalid/oversize. | Preview and server storage safe; no orphan media on failed submit. |
+| MKT-007 | Media upload | Add/remove/reorder one to four images, invalid/oversize. | Direct upload intent, safe preview, ready-media check, and no orphan media on failed submit. |
 | MKT-008 | Create/edit/delete | Owner creates, edits, deletes listing/request. | Only owner allowed; list/detail updates. |
 | MKT-009 | Save | Save/unsave listing/request. | Persists refresh; no duplicate save rows. |
 | MKT-010 | Sold | Owner marks sold; non-owner tries via API. | Owner succeeds; non-owner 403. |
-| MKT-011 | Contact | Send blank, normal, XSS, long message. | Blank blocked; message creates intended contact/chat seed safely. |
+| MKT-011 | Contact | Use allowed first-contact template; tamper recipient/message/target. | Server resolves recipient, rejects self/blocked/foreign target, and idempotently creates or reuses the intended chat. |
 | MKT-012 | Detail/media viewer | Open details, carousel thumbs, next/previous, close. | No background scroll leak; phone full view usable. |
 | MKT-013 | Resize sidebars | Drag left/right resize on desktop, refresh. | Width clamps and persists; no mobile resize handles. |
 | MKT-014 | Tenant isolation | Access other tenant listing/request/media path. | 403/404; no cross-tenant media. |
+| MKT-015 | Safety and moderation | Publish prohibited categories; report/block listing or seller. | Prohibited post rejected/removed, report audited, block prevents contact. |
+| MKT-016 | Pagination/idempotency | Insert inventory while paging; repeat create/save/contact keys. | Stable cursor without duplicates/skips; repeated key has one side effect. |
 
 ## 15. Events And Event Host
 

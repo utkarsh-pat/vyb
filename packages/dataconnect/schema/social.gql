@@ -102,6 +102,7 @@ type PostSave @table(name: "post_saves", singular: "postSave", plural: "postSave
 type Story @table(name: "stories", singular: "story", plural: "stories", key: ["id"]) {
   id: UUID! @default(expr: "uuidV4()")
   tenant: Tenant!
+  community: Community
   userId: UUID! @col(name: "user_id")
   username: String!
   displayName: String! @col(name: "display_name")
@@ -111,6 +112,8 @@ type Story @table(name: "stories", singular: "story", plural: "stories", key: ["
   mediaMimeType: String @col(name: "media_mime_type")
   mediaSizeBytes: Int64 @col(name: "media_size_bytes")
   caption: String
+  compositionJson: String @col(name: "composition_json")
+  visibility: String! @default(value: "public")
   createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
   updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
   expiresAt: Timestamp! @col(name: "expires_at")

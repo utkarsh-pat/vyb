@@ -65,7 +65,7 @@ Out of scope:
 
 ### `GET /v1/communities/my`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified tenant membership required
 - request schema: no body; optional `include` query may later accept `summary`
 - response schema: tenant summary, viewer membership summary, grouped `communities[]`
@@ -75,7 +75,7 @@ Out of scope:
 
 ### `GET /v1/communities/{slug}`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified tenant membership required; member-only communities require active `community_memberships` row
 - request schema: path param `slug`
 - response schema: tenant summary, community summary, viewer community role/status, counts and latest activity summary
@@ -85,7 +85,7 @@ Out of scope:
 
 ### `GET /v1/communities/{slug}/members`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified tenant membership required; community visibility rules enforced
 - request schema: path param `slug`, optional `cursor`, optional `limit`
 - response schema: community id/slug, `items[]`, `nextCursor`
@@ -96,7 +96,7 @@ Out of scope:
 
 ### `GET /v1/feed?communityId={id}`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified tenant membership plus community read permission
 - request schema: existing feed query params plus `communityId`
 - response schema: existing paginated feed response
@@ -106,7 +106,7 @@ Out of scope:
 
 ### `POST /v1/posts` with `communityId`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified tenant membership plus active membership in the target community
 - request schema: existing social post payload with `communityId`, `placement: "feed"`, and V1 text-post fields
 - response schema: created feed item
@@ -116,7 +116,7 @@ Out of scope:
 
 ### Community-scoped social interactions
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified tenant membership plus active membership in the target post's community
 - covered endpoints: post likes list, post reactions, comments, comment reactions, reposts, author edits, and author deletes
 - authorization rule: backend must load the target post from the supplied post id or comment id, then reject with `FORBIDDEN_COMMUNITY` when the viewer is not an active member of that community

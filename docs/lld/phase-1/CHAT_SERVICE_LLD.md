@@ -70,7 +70,7 @@ Out of scope:
 
 ### `GET /v1/chats`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified membership required
 - request schema: tenant-scoped inbox read for current viewer
 - response schema: conversation previews plus participant summaries and viewer key metadata
@@ -79,7 +79,7 @@ Out of scope:
 
 ### `POST /v1/chats`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified membership required
 - request schema: recipient user ID or username plus optional market deal seed or vibe-share seed
 - response schema: created or existing one-to-one conversation with peer key metadata
@@ -88,7 +88,7 @@ Out of scope:
 
 ### `GET /v1/chats/{conversationId}`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified membership required and participant-only
 - request schema: optional message limit and before cursor
 - response schema: conversation detail, participant summaries, encrypted message records, and read markers
@@ -97,7 +97,7 @@ Out of scope:
 
 ### `POST /v1/chats/{conversationId}/messages`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified membership required and participant-only
 - request schema: `messageKind`, ciphertext envelope, optional encrypted attachment metadata, optional reply target
 - response schema: stored message record and refreshed conversation preview
@@ -106,7 +106,7 @@ Out of scope:
 
 ### `PUT /v1/chats/{conversationId}/read`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified membership required and participant-only
 - request schema: `messageId`
 - response schema: conversation read acknowledgement
@@ -115,7 +115,7 @@ Out of scope:
 
 ### `PUT /v1/chats/messages/{messageId}/reactions`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified membership required and participant-only
 - request schema: one emoji reaction
 - response schema: active reaction snapshot
@@ -124,7 +124,7 @@ Out of scope:
 
 ### `PUT /v1/chats/keys`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified membership required
 - request schema: public key, algorithm, key version
 - response schema: active published key summary
@@ -133,7 +133,7 @@ Out of scope:
 
 ### `POST /v1/chats/media/upload`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified membership required
 - request schema: encrypted file bytes plus MIME and file name metadata
 - response schema: encrypted attachment storage reference

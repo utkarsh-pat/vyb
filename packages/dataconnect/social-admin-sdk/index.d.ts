@@ -208,6 +208,7 @@ export interface CreateStoryReactionVariables {
 export interface CreateStoryVariables {
   id: UUIDString;
   tenantId: UUIDString;
+  communityId?: UUIDString | null;
   userId: UUIDString;
   username: string;
   displayName: string;
@@ -217,6 +218,8 @@ export interface CreateStoryVariables {
   mediaMimeType?: string | null;
   mediaSizeBytes?: Int64String | null;
   caption?: string | null;
+  compositionJson?: string | null;
+  visibility?: string;
   expiresAt: TimestampString;
 }
 
@@ -319,6 +322,7 @@ export interface GetStoryByIdData {
   story?: {
     id: UUIDString;
     tenantId: UUIDString;
+    communityId?: UUIDString | null;
     userId: UUIDString;
     username: string;
     displayName: string;
@@ -328,6 +332,8 @@ export interface GetStoryByIdData {
     mediaMimeType?: string | null;
     mediaSizeBytes?: Int64String | null;
     caption?: string | null;
+    compositionJson?: string | null;
+    visibility: string;
     createdAt: TimestampString;
     expiresAt: TimestampString;
   } & Story_Key;
@@ -626,6 +632,7 @@ export interface ListStoriesByTenantData {
   stories: ({
     id: UUIDString;
     tenantId: UUIDString;
+    communityId?: UUIDString | null;
     userId: UUIDString;
     username: string;
     displayName: string;
@@ -635,6 +642,8 @@ export interface ListStoriesByTenantData {
     mediaMimeType?: string | null;
     mediaSizeBytes?: Int64String | null;
     caption?: string | null;
+    compositionJson?: string | null;
+    visibility: string;
     createdAt: TimestampString;
     expiresAt: TimestampString;
   } & Story_Key)[];

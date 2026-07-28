@@ -29,14 +29,19 @@ export async function resolveLiveContext(actor) {
     const live = await ensureMembershipContext({
       firebaseUid: viewer.id,
       primaryEmail: viewer.primaryEmail,
-      displayName: viewer.displayName
+      displayName: viewer.displayName,
+      firebaseIdToken: actor.firebaseIdToken ?? null
     });
 
     return {
       viewer,
       live
     };
-  } catch {
+  } catch (error) {
+    console.error("[viewer-context] membership resolution failed", {
+      email: viewer.primaryEmail,
+      message: error instanceof Error ? error.message : "unknown"
+    });
     return {
       viewer,
       live: null

@@ -13,6 +13,7 @@ import {
 import { readJson, sendError, sendJson } from "../../lib/http.mjs";
 import { trackActivity } from "../moderation/repository.mjs";
 import { resolveLiveContext } from "../shared/viewer-context.mjs";
+import { listResources as listLocalResources } from "./repository.mjs";
 
 const allowedResourceTypes = new Set(["notes", "pyq", "guide"]);
 const maxResourceFilesPerCreate = 6;
@@ -268,13 +269,24 @@ export async function handleResourcesRoute({ request, response, url, context }) 
       });
       return true;
     } catch (error) {
-      console.error("[resources] list-failed", {
+      console.warn("[resources] dataconnect-list-fallback", {
         tenantId: resolved.live.tenant.id,
         courseId,
         communityId,
         message: error instanceof Error ? error.message : "unknown"
       });
-      sendError(response, 502, "RESOURCES_UNAVAILABLE", "Resources are unavailable right now.");
+      const items = (await listLocalResources({
+        tenantId: resolved.live.tenant.id,
+        courseId,
+        limit
+      })).filter((item) => !communityId || item.communityId === communityId);
+      sendJson(response, 200, {
+        tenantId: resolved.live.tenant.id,
+        courseId,
+        communityId,
+        items,
+        nextCursor: null
+      });
       return true;
     }
   }

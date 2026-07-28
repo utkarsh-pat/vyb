@@ -1,8 +1,10 @@
 # API Contract
 
 Owner: Architecture Team
-Last Updated: 2026-04-22
-Change Summary: Documented the Phase 1 same-origin helper route that powers royalty-free story music search and proxied audio fetch for client-side MP4 export.
+Last Updated: 2026-07-28
+Change Summary: Marked story music as deferred with Stories disabled for the marketplace-first MVP.
+
+> Status: Deferred implementation reference. This helper must not be enabled or treated as launch-critical while `stories_enabled=false`.
 
 ## Endpoint Definition
 

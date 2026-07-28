@@ -1,65 +1,84 @@
 # Vyb
 
-Owner: Product and Engineering
-Last Updated: 2026-04-29
-Change Summary: Documented server-side Vibe video processing with adaptive playback variants.
+Verified, multi-tenant campus network with a responsive Next.js web/PWA, native Android app, and one modular Node backend.
 
-Multi-tenant campus platform architecture with a responsive web client in Phase 1 and a future native mobile client.
+## MVP Direction
 
-## Current State
+The launch MVP is utility-first:
 
-- Documentation foundation is in place
-- Multi-surface client strategy is defined
-- Repo scaffolding is prepared for backend, web, mobile, and shared packages
-- A PWA-first responsive web shell is scaffolded in `apps/web`
-- The web shell can now read backend data with graceful fallback
-- The web shell now supports Firebase Auth login plus a secure cookie-backed viewer session for posts/resources
-- Authenticated users now land on a responsive `/home` feed surface after onboarding, while `/dashboard` is reserved for profile-style account details
-- A single backend runtime now hosts identity, campus, social, and resources modules for Phase 1
-- Data Connect schema and domain-owned connectors are scaffolded under `packages/dataconnect`
-- Active identity, social, and resources mutations now use Firebase Data Connect as the authoritative persistence path
-- Firebase Data Connect admin SDKs are generated and the schema/connectors compile successfully
-- Identity, campus, social, and resources modules now fail closed when Data Connect writes are unavailable instead of mutating local JSON stores
-- Campus post and story media upload to Firebase Storage before publish requests; Vibe videos keep a 40 MB gate and are processed server-side into adaptive playback variants before publish metadata is registered
-- The live social surface now supports full-screen post and vibe viewing, likers sheets, repost/report/delete actions, optimistic likes, and responsive threaded comments with replies plus GIF/sticker attachments
-- Social feed and vibe surfaces now receive low-cost WebSocket fanout for post, comment, and reaction updates without constant database polling
-- The story composer now supports royalty-free music search, 15/30/45/60-second clip trimming, draggable music sticker placement, and client-side MP4 export for a single story asset
-- The story lane and viewer now support own-story add affordances, seen-state rings, progress playback, story likes, embedded-audio playback, and mute or unmute controls
-- The dedicated `/vibes` theater now supports immersive desktop and mobile playback, default active audio-on behavior, tap pause or resume, and press-and-hold 2x playback
-- The `vyb` Data Connect service is deployed in `asia-south1` on project `vybnet-e2242`
-- Firebase Admin now isolates Data Connect connectors per app instance to avoid cross-connector operation cache collisions
-- Vyb remains the product brand; any college-specific config in this repo is only rollout reference data for the first onboarded tenant
-- Local dev can fall back to a configured tenant slug/domain for the current first onboarded college while the stricter domain lookup path is still being hardened
-- Unknown college domains are intended to flow into an admin-reviewed college join-request workflow instead of creating tenants automatically
-- The repo now includes Cloud Run deployment assets for the backend monolith and a deployment guide for the current `vybnet-e2242` project
-- Direct chat rooms use backend WebSocket events for immediate message delivery, with slower reconciliation refreshes reserved for missed-event recovery
+- verified university identity and official communities;
+- text/image feed;
+- campus Marketplace;
+- one-to-one chat;
+- resources;
+- notifications, moderation, and admin controls;
+- web/PWA and Android.
 
-## Starter Commands
+Stories are disabled for the initial public rollout. Video/Vibes, events, and games are feature-gated. Payments, wallet, escrow, anonymous posting, and group chat are out of scope.
 
-- `pnpm dev`
-- `pnpm dev:web`
-- `pnpm dev:backend`
-- `node scripts/run-firebase-cli.mjs dataconnect:sdk:generate`
-- `node scripts/bootstrap-dataconnect.mjs --tenant-name "Your College" --tenant-slug your-college --domain yourcollege.edu`
+The target is 20,000–30,000 registered users across two to three universities.
 
-## Production Hosting
+Canonical production ownership is `ceoutkarshpatel@gmail.com`, Google/Firebase
+project `vybnet`, and GitHub repository `utkarsh-pat/vyb`. See
+[Fresh Production Ownership](./docs/operations/FRESH_ACCOUNT_OWNERSHIP.md).
 
-- `apps/web` is intended to ship on Vercel
-- `apps/backend` is intended to ship on Google Cloud Run
-- the repo root [Dockerfile](/e:/CAMPUS%20LOOP/Dockerfile:1) builds the backend monolith container for Cloud Run
-- [cloudbuild.backend.yaml](/e:/CAMPUS%20LOOP/cloudbuild.backend.yaml:1) can be used by a Cloud Build trigger so `main` branch pushes automatically redeploy the backend
-- deployment steps live in [docs/process/CLOUD_RUN_BACKEND_DEPLOYMENT.md](/e:/CAMPUS%20LOOP/docs/process/CLOUD_RUN_BACKEND_DEPLOYMENT.md:1)
+## Architecture
 
-## Core Directories
+- `apps/web`: Next.js 16 web/PWA on Vercel;
+- `apps/mobile`: Kotlin/Jetpack Compose Android app;
+- `apps/backend`: modular-monolith Node backend on Cloud Run;
+- Firebase Auth for identity and FCM/Crashlytics;
+- Firebase SQL Connect backed by Cloud SQL PostgreSQL as the canonical transactional store;
+- Cloudflare R2 for new user-uploaded media;
+- PostgreSQL transactional outbox plus managed task delivery;
+- strict tenant isolation in backend authorization and SQL Connect operations.
 
-- `apps/web` for the Next.js web client
-- `apps/mobile` for the future native mobile client
-- `apps/backend` for the Phase 1 modular-monolith backend
-- `packages/contracts` for API contracts
-- `packages/validation` for shared schemas
-- `packages/app-core` for client-safe shared business-flow logic
-- `packages/design-tokens` for shared design language and the canonical Locked-In theme used by all web features
-- `packages/ui-web` for web-only UI primitives
-- `packages/ui-native` for native-only UI primitives
-- `packages/dataconnect` for database connectors and operations
-- `docs` for the living architecture and product documentation
+There is one production database writer and one production backend. Local JSON stores are development-only and must never be enabled on Cloud Run.
+
+## Start
+
+```bash
+pnpm install
+pnpm dev
+```
+
+Useful checks:
+
+```bash
+pnpm check
+pnpm build
+pnpm test:e2e
+pnpm --filter @vyb/backend test:notifications
+```
+
+Android:
+
+```bash
+cd apps/mobile
+./gradlew assembleDebug
+```
+
+## Documentation
+
+Start here:
+
+1. [High Level Design](./docs/architecture/HLD.md)
+2. [System Low Level Design](./docs/architecture/LLD.md)
+3. [Software Requirements](./docs/product/SRS.md)
+4. [Marketplace Module LLD](./docs/lld/phase-1/MARKETPLACE_SERVICE_LLD.md)
+5. [MVP Phased Rollout](./docs/product/MVP_PHASED_ROLLOUT.md)
+6. [Capacity and Cost Model](./docs/operations/CAPACITY_AND_COST_MODEL.md)
+7. [MVP Launch Runbook](./docs/operations/MVP_LAUNCH_RUNBOOK.md)
+8. [Production Infrastructure Specification](./docs/operations/PRODUCTION_INFRASTRUCTURE_SPEC.md)
+
+The documentation hub is [docs/README.md](./docs/README.md).
+
+## Production Topology
+
+- Vercel hosts `apps/web`;
+- Cloud Run hosts the only public custom backend;
+- there is no Vercel backend deployment;
+- secrets use provider environment/Secret Manager and service identity;
+- no service-account JSON or R2 secret belongs in a client or commit.
+
+Deployment instructions are in [CLOUD_RUN_BACKEND_DEPLOYMENT.md](./docs/process/CLOUD_RUN_BACKEND_DEPLOYMENT.md).

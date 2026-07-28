@@ -5,14 +5,21 @@ import {
   updateUserProfile as updateUserProfileMutation
 } from "../../../../../packages/dataconnect/identity-admin-sdk/esm/index.esm.js";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const TENANT_PROFILE_LIMIT = 5000;
 const TENANT_PROFILE_CACHE_TTL_MS = 15_000;
 const directoryName = path.dirname(fileURLToPath(import.meta.url));
-const avatarStorePath = path.resolve(directoryName, "../../data/avatar-store.json");
-const profileSettingsStorePath = path.resolve(directoryName, "../../data/profile-settings-store.json");
+const avatarStorePath =
+  process.env.VYB_SERVERLESS_RUNTIME === "vercel"
+    ? path.join(os.tmpdir(), "vyb", "avatar-store.json")
+    : path.resolve(directoryName, "../../data/avatar-store.json");
+const profileSettingsStorePath =
+  process.env.VYB_SERVERLESS_RUNTIME === "vercel"
+    ? path.join(os.tmpdir(), "vyb", "profile-settings-store.json")
+    : path.resolve(directoryName, "../../data/profile-settings-store.json");
 const SOCIAL_LINK_KEYS = ["linkedin", "github", "instagram", "email", "twitter", "codeforces", "leetcode"];
 const defaultAvatarStore = {
   avatars: {}
@@ -897,8 +904,7 @@ export async function searchProfiles({ tenantId, query, limit = 12, excludedUser
 
 export async function updateUsername({ tenantId, userId, username }) {
   const existing = await getRawProfileByUserAndTenant({ tenantId, userId });
-  const currentProfile = mapMembershipProfile(existing);
-  if (!existing || !currentProfile) {
+  if (!existing) {
     return null;
   }
 
@@ -909,10 +915,7 @@ export async function updateUsername({ tenantId, userId, username }) {
     throw error;
   }
 
-  const takenBy = await getRawProfileByUsername({
-    tenantId,
-    username: normalizedUsername
-  });
+  const takenBy = await getRawProfileByUsername({ tenantId, username: normalizedUsername });
   if (takenBy && takenBy.userId !== userId) {
     const error = new Error("That user ID is already taken.");
     error.code = "USERNAME_TAKEN";

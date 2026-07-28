@@ -1,5 +1,4 @@
-import { getStorage } from "firebase-admin/storage";
-import { getFirebaseAdminApp } from "../../../../../packages/config/src/index.mjs";
+import { getR2Bucket } from "../../lib/r2-bucket.mjs";
 
 const CHAT_PRIVACY_VISIBILITY_OPTIONS = new Set(["Everyone", "My Contacts", "Nobody"]);
 const CHAT_PRIVACY_SETTINGS_CACHE_TTL_MS = 15 * 1000;
@@ -13,7 +12,7 @@ export const DEFAULT_CHAT_PRIVACY_SETTINGS = Object.freeze({
 const chatPrivacySettingsCache = new Map();
 
 function getChatBucket() {
-  return getStorage(getFirebaseAdminApp("backend-chat-storage")).bucket();
+  return getR2Bucket();
 }
 
 function buildChatPrivacySettingsStoragePath(tenantId, userId) {

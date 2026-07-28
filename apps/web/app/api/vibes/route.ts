@@ -237,6 +237,8 @@ export async function POST(request: Request) {
         location?: string | null;
         isAnonymous?: boolean;
         allowAnonymousComments?: boolean;
+        visibility?: "public" | "followers" | "community";
+        communityId?: string | null;
         mediaAssets?: VibeMediaAssetInput[];
       }
     | null;
@@ -313,11 +315,12 @@ export async function POST(request: Request) {
       {
         tenantId: viewer.tenantId,
         membershipId: viewer.membershipId,
-        communityId: null,
+        communityId: payload.visibility === "community" ? payload.communityId ?? null : null,
         placement: "vibe",
         kind: "video",
         isAnonymous: payload.isAnonymous === true,
         allowAnonymousComments: payload.allowAnonymousComments !== false,
+        visibility: payload.visibility ?? "public",
         title: payload.title ?? "",
         body: payload.body ?? "",
         mediaUrl: payload.mediaUrl.trim(),

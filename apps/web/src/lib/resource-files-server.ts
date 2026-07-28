@@ -3,8 +3,8 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import type { ResourceFileSummary } from "@vyb/contracts";
-import { getFirebaseAdminStorageBucket } from "./firebase-admin-server";
 import { loadWorkspaceRootEnv } from "./server-env";
 
 const MAX_RESOURCE_FILES = 6;
@@ -36,6 +36,13 @@ const EXTENSION_BY_MIME: Record<string, string> = Object.fromEntries(
 
 const ALLOWED_RESOURCE_MIME_TYPES = new Set(Object.values(MIME_BY_EXTENSION));
 
+type R2Config = {
+  accountId: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  bucket: string;
+};
+
 export type PersistedResourceFile = ResourceFileSummary & {
   storagePath: string;
   url: string;
@@ -52,9 +59,32 @@ function normalizeMimeType(value: string) {
   return value.split(";")[0]?.trim().toLowerCase() || "application/octet-stream";
 }
 
-function getConfiguredStorageBucket() {
+function getR2Config() {
   loadWorkspaceRootEnv();
-  return process.env.FIREBASE_STORAGE_BUCKET ?? process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ?? null;
+  const config = {
+    accountId: process.env.R2_ACCOUNT_ID?.trim(),
+    accessKeyId: process.env.R2_ACCESS_KEY_ID?.trim(),
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY?.trim(),
+    bucket: process.env.R2_BUCKET?.trim()
+  };
+  const missing = Object.entries(config)
+    .filter(([, value]) => !value)
+    .map(([key]) => key);
+  if (missing.length > 0) {
+    throw new Error(`R2 media storage is not configured. Missing: ${missing.join(", ")}.`);
+  }
+  return config as R2Config;
+}
+
+function getR2Client(config: R2Config) {
+  return new S3Client({
+    region: "auto",
+    endpoint: `https://${config.accountId}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: config.accessKeyId,
+      secretAccessKey: config.secretAccessKey
+    }
+  });
 }
 
 function getLocalResourceFileRoot() {
@@ -70,27 +100,23 @@ function getLocalResourceFileRoot() {
   return path.join(configuredRoot, "vyb-resource-files");
 }
 
-function isFirebaseStorageFailure(error: unknown) {
+function isLocalDevelopmentStorageFailure(error: unknown) {
+  if (process.env.NODE_ENV === "production") {
+    return false;
+  }
+
   if (!(error instanceof Error)) {
     return false;
   }
 
   const message = error.message.toLowerCase();
   return (
-    message.includes("default credentials") ||
-    message.includes("could not load the default credentials") ||
-    message.includes("firebase storage is not configured") ||
+    message.includes("r2 media storage is not configured") ||
     message.includes("enoent") ||
     message.includes("permission") ||
     message.includes("unauthorized") ||
-    message.includes("invalid_grant")
+    message.includes("credentials")
   );
-}
-
-function ensureStorageConfigured() {
-  if (!getConfiguredStorageBucket()) {
-    throw new Error("Firebase Storage is not configured yet.");
-  }
 }
 
 function sanitizeFileName(value: string) {
@@ -235,22 +261,22 @@ export async function persistResourceFiles(input: {
       const storagePath = `resources/${input.tenantId}/${communitySegment}/${input.userId}/${assetId}.${extension}`;
 
       try {
-        ensureStorageConfigured();
-
-        const bucket = getFirebaseAdminStorageBucket();
-        await bucket.file(storagePath).save(buffer, {
-          resumable: false,
-          metadata: {
-            contentType: mimeType,
-            cacheControl: RESOURCE_FILE_CACHE_CONTROL,
-            metadata: {
+        const r2 = getR2Config();
+        await getR2Client(r2).send(
+          new PutObjectCommand({
+            Bucket: r2.bucket,
+            Key: storagePath,
+            Body: buffer,
+            ContentType: mimeType,
+            CacheControl: RESOURCE_FILE_CACHE_CONTROL,
+            Metadata: {
               originalFileName: fileName,
               tenant_id: input.tenantId,
               uploader_id: input.userId,
               community_id: input.communityId ?? ""
             }
-          }
-        });
+          })
+        );
 
         return {
           id: assetId,
@@ -261,7 +287,7 @@ export async function persistResourceFiles(input: {
           url: buildResourceFileDownloadUrl(storagePath)
         };
       } catch (error) {
-        if (!isFirebaseStorageFailure(error)) {
+        if (!isLocalDevelopmentStorageFailure(error)) {
           throw error;
         }
 
@@ -288,10 +314,12 @@ export async function readResourceFileBuffer(storagePath: string) {
   try {
     return await readFile(resolveLocalResourceFilePath(storagePath));
   } catch {
-    ensureStorageConfigured();
-    const bucket = getFirebaseAdminStorageBucket();
-    const [buffer] = await bucket.file(storagePath).download();
-    return buffer;
+    const r2 = getR2Config();
+    const result = await getR2Client(r2).send(new GetObjectCommand({ Bucket: r2.bucket, Key: storagePath }));
+    if (!result.Body) {
+      throw new Error("Resource file body is missing.");
+    }
+    return Buffer.from(await result.Body.transformToByteArray());
   }
 }
 
@@ -311,11 +339,15 @@ export async function deleteResourceFiles(files: Array<{ storagePath?: string | 
   );
 
   try {
-    ensureStorageConfigured();
-    const bucket = getFirebaseAdminStorageBucket();
-    await Promise.allSettled(removable.map((file) => bucket.file(file.storagePath as string).delete({ ignoreNotFound: true })));
+    const r2 = getR2Config();
+    const client = getR2Client(r2);
+    await Promise.allSettled(
+      removable.map((file) =>
+        client.send(new DeleteObjectCommand({ Bucket: r2.bucket, Key: file.storagePath as string }))
+      )
+    );
   } catch (error) {
-    if (!isFirebaseStorageFailure(error)) {
+    if (!isLocalDevelopmentStorageFailure(error)) {
       throw error;
     }
   }

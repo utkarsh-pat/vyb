@@ -2,6 +2,7 @@
 
 import type { ChatConversationPreview, ChatIdentitySummary, FeedCard, PostLikerItem, ProfileSocialLinks, ReactionKind, StoryCard, UserSearchItem } from "@vyb/contracts";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { startTransition, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { buildDefaultAvatarUrl, CampusAvatarContent, useResolvedAvatarUrl } from "./campus-avatar";
@@ -10,11 +11,11 @@ import { SocialPostLightbox } from "./social-post-lightbox";
 import { SocialPostLikersSheet } from "./social-post-likers-sheet";
 import { SocialPostRepostSheet } from "./social-post-repost-sheet";
 import { SocialPostShareSheet, type SocialShareTarget } from "./social-post-share-sheet";
-import { SocialThreadSheet } from "./social-thread-sheet";
 import { buildPrimaryCampusNav, CampusDesktopNavigation, CampusMobileNavigation } from "./campus-navigation";
 import { useSocialPostEngagement } from "./use-social-post-engagement";
 import { VybLogoLockup, VybLogoMark } from "./vyb-logo";
 import { MediaCarousel } from "./media-carousel";
+import { StoryCompositionFrame } from "./story-composition-frame";
 import {
   closeAppHistoryLayer,
   hasAppRouteOriginForCurrentRoute,
@@ -50,6 +51,11 @@ import {
   type CampusSocialLinkKey,
   type PostDisplayPreference
 } from "./campus-settings-storage";
+
+const SocialThreadSheet = dynamic(
+  () => import("./social-thread-sheet").then((module) => module.SocialThreadSheet),
+  { ssr: false }
+);
 
 function timeAgo(dateString: string) {
   const date = new Date(dateString);
@@ -2567,16 +2573,18 @@ export function CampusHomeShell({
             <div className="vyb-story-viewer-media-wrap">
               <div className="vyb-story-viewer-media">
                 {selectedStory.mediaType === "video" ? (
-                  <video
-                    className="vyb-story-viewer-video"
-                    ref={storyVideoRef}
-                    src={selectedStory.mediaUrl}
-                    autoPlay
-                    muted={isStoryMuted}
-                    playsInline
-                    loop={false}
-                    preload="metadata"
-                  />
+                  <StoryCompositionFrame compositionJson={selectedStory.compositionJson}>
+                    <video
+                      className="vyb-story-viewer-video"
+                      ref={storyVideoRef}
+                      src={selectedStory.mediaUrl}
+                      autoPlay
+                      muted={isStoryMuted}
+                      playsInline
+                      loop={false}
+                      preload="metadata"
+                    />
+                  </StoryCompositionFrame>
                 ) : (
                   <img className="vyb-story-viewer-image" src={selectedStory.mediaUrl} alt={selectedStory.username} />
                 )}

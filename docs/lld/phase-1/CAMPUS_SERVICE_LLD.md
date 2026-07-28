@@ -53,7 +53,7 @@ Out of scope:
 
 ### `GET /v1/communities/my`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified membership required
 - response schema: active tenant summary and communities grouped by type
 - error schema: unauthorized, no active membership
@@ -61,7 +61,7 @@ Out of scope:
 
 ### `POST /v1/college-join-requests`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: authenticated user required
 - request schema: college name, address, website, requester contact fields, requested domains
 - response schema: request id, status, normalized domain summary

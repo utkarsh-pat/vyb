@@ -137,7 +137,8 @@ export async function handleIdentityRoute({ request, response, url, context }) {
       console.info("[identity] session-bootstrap:start", {
         hasDisplayName: requireNonEmptyString(payload?.displayName)
       });
-      const decoded = await getFirebaseAdminAuth().verifyIdToken(payload.idToken.trim(), true);
+      const firebaseAuth = getFirebaseAdminAuth();
+      const decoded = await firebaseAuth.verifyIdToken(payload.idToken.trim(), true);
       const email = normalizeEmail(decoded.email);
 
       if (!email) {
@@ -168,12 +169,28 @@ export async function handleIdentityRoute({ request, response, url, context }) {
         return true;
       }
 
+      if (decoded.role !== "authenticated") {
+        const userRecord = await firebaseAuth.getUser(decoded.uid);
+        await firebaseAuth.setCustomUserClaims(decoded.uid, {
+          ...(userRecord.customClaims ?? {}),
+          role: "authenticated"
+        });
+        sendError(
+          response,
+          409,
+          "FIREBASE_TOKEN_REFRESH_REQUIRED",
+          "Authentication permissions were updated. Refresh the Firebase token and retry."
+        );
+        return true;
+      }
+
       const displayName =
         normalizeOptionalString(payload.displayName) ?? decoded.name ?? buildFallbackDisplayName(email);
       const resolved = await resolveLiveContext({
         id: decoded.uid,
         email,
-        displayName
+        displayName,
+        firebaseIdToken: payload.idToken.trim()
       });
 
       if (!resolved?.live?.tenant || !resolved.live.membership) {
@@ -208,10 +225,21 @@ export async function handleIdentityRoute({ request, response, url, context }) {
         return true;
       }
 
-      const storedProfile = await getProfileByUserId({
-        tenantId: resolved.live.tenant.id,
-        userId: resolved.live.user.id
-      });
+      let storedProfile = null;
+      try {
+        storedProfile = await getProfileByUserId({
+          tenantId: resolved.live.tenant.id,
+          userId: resolved.live.user.id,
+          firebaseIdToken: payload.idToken.trim()
+        });
+      } catch (error) {
+        if (!(error instanceof Error) || !/database is not available|data connect|service unavailable/i.test(error.message)) {
+          throw error;
+        }
+        console.warn("[identity] profile lookup unavailable; continuing with incomplete Firestore profile.", {
+          message: error.message
+        });
+      }
       const session = buildSessionPayload({
         userId: decoded.uid,
         email,
@@ -326,7 +354,8 @@ export async function handleIdentityRoute({ request, response, url, context }) {
 
     const profile = await getProfileByUserId({
       tenantId: resolved.live?.tenant?.id ?? null,
-      userId: resolved.live?.user?.id ?? null
+      userId: resolved.live?.user?.id ?? null,
+      firebaseIdToken: context.actor.firebaseIdToken ?? null
     });
     sendJson(
       response,
@@ -395,7 +424,8 @@ export async function handleIdentityRoute({ request, response, url, context }) {
         hostelName: normalizeOptionalString(normalizedPayload.hostelName),
         phoneNumber: normalizePhoneNumber(normalizedPayload.phoneNumber),
         bio: normalizeOptionalString(normalizedPayload.bio),
-        avatarUrl: normalizeOptionalString(normalizedPayload.avatarUrl)
+        avatarUrl: normalizeOptionalString(normalizedPayload.avatarUrl),
+        firebaseIdToken: context.actor.firebaseIdToken ?? null
       };
       if (Object.prototype.hasOwnProperty.call(normalizedPayload, "socialLinks")) {
         profileInput.socialLinks = normalizedPayload.socialLinks;
@@ -449,7 +479,8 @@ export async function handleIdentityRoute({ request, response, url, context }) {
       const profile = await updateUsername({
         tenantId: resolved.live.tenant.id,
         userId: resolved.live.user.id,
-        username: parsed.data.username
+        username: parsed.data.username,
+        firebaseIdToken: context.actor.firebaseIdToken ?? null
       });
 
       if (!profile) {

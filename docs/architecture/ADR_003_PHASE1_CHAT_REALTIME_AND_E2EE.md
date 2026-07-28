@@ -18,7 +18,7 @@ Change Summary: Updated the accepted Phase 1 realtime implementation to backend-
 - The engineering rulebook forbids casually extracting a second deployable backend service in Phase 1.
 - The user explicitly wants low cost, effectively free realtime where possible.
 - Message bodies should be encrypted before they leave the client and backend-owned systems should only persist ciphertext.
-- The current platform already uses Firebase services and a modular-monolith backend with Data Connect as the system of record.
+- The platform uses Firebase services and a modular-monolith backend. ADR-004 keeps canonical transactional data in Firebase Data Connect/Cloud SQL PostgreSQL.
 
 ## 3. Decision
 

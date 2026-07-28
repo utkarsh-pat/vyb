@@ -50,7 +50,7 @@ Out of scope:
 
 ### `POST /v1/resources`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified membership required; active community membership required when `communityId` is present
 - request schema: tenant id, optional course id, optional community id, title, description, type, file references
 - response schema: created resource with file metadata
@@ -59,7 +59,7 @@ Out of scope:
 
 ### `GET /v1/resources`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified membership required; active community membership required when `communityId` is present
 - request schema: tenant id, optional course id, optional community id, cursor, limit, sort
 - response schema: paginated resource list
@@ -68,7 +68,7 @@ Out of scope:
 
 ### `GET /v1/resources/{resourceId}`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: verified membership required
 - response schema: resource detail with file metadata
 - error schema: not found, unauthorized scope

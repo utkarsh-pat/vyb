@@ -26,6 +26,10 @@ import {
 } from "../lib/story-music";
 import { CampusAvatarContent } from "./campus-avatar";
 import { buildPrimaryCampusNav, CampusDesktopNavigation } from "./campus-navigation";
+import {
+  StoryBuilder,
+  type StoryOverlayMetadata,
+} from "./story-builder";
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
 type CampusUploadShellProps = {
@@ -33,10 +37,12 @@ type CampusUploadShellProps = {
   viewerEmail: string;
   viewerName: string;
   viewerUsername: string;
+  communities?: Array<{ id: string; name: string; type: string }>;
 };
 
 type CreationMode = "choice" | "story" | "vibe" | "moment";
 type PublishableCreationMode = Exclude<CreationMode, "choice">;
+type PostVisibility = "public" | "followers" | "community";
 
 type StoryComposerAsset = {
   id: string;
@@ -44,6 +50,8 @@ type StoryComposerAsset = {
   file: File;
   kind: "image" | "video";
   durationSeconds: number | null;
+  overlayMetadata?: StoryOverlayMetadata | null;
+  compositionJson?: string | null;
 };
 
 /* ─── Constants ─────────────────────────────────────────────────────────── */
@@ -56,8 +64,8 @@ const VIBE_TARGET_ASPECT_RATIO = 9 / 16;
 const VIBE_ASPECT_RATIO_TOLERANCE = 0.08;
 
 const CREATION_MODE_OPTIONS: Array<{ value: PublishableCreationMode; label: string }> = [
-  { value: "story", label: "Story" },
   { value: "moment", label: "Post" },
+  { value: "story", label: "Story" },
   { value: "vibe", label: "Vibe" }
 ];
 
@@ -197,6 +205,22 @@ function IcoChevronDown() {
   );
 }
 
+function IcoSettings() {
+  return (
+    <Ico>
+      <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path
+        d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.05.05-2.83 2.83-.05-.05A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21h-4v-.08A1.7 1.7 0 0 0 8.5 19.4a1.7 1.7 0 0 0-1.88.34l-.05.05-2.83-2.83.05-.05A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3v-4h.08A1.7 1.7 0 0 0 4.6 8.5a1.7 1.7 0 0 0-.34-1.88l-.05-.05 2.83-2.83.05.05A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.08A1.7 1.7 0 0 0 15.5 4.6a1.7 1.7 0 0 0 1.88-.34l.05-.05 2.83 2.83-.05.05A1.7 1.7 0 0 0 19.4 9c.15.37.36.7.6 1 .3.3.7.4 1.1.4h.08v4h-.08A1.7 1.7 0 0 0 19.4 15Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.45"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Ico>
+  );
+}
+
 function IcoTrash() {
   return (
     <Ico>
@@ -305,6 +329,7 @@ export function CampusUploadShell({
   viewerEmail,
   viewerName,
   viewerUsername,
+  communities = [],
 }: CampusUploadShellProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -330,6 +355,12 @@ export function CampusUploadShell({
   const [isPublishing, setIsPublishing] = useState(false);
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [allowAnonymousComments, setAllowAnonymousComments] = useState(true);
+  const [postVisibility, setPostVisibility] = useState<PostVisibility>("public");
+  const [communityId, setCommunityId] = useState("");
+  const [isPostSettingsOpen, setIsPostSettingsOpen] = useState(false);
+  const [isUtilityMenuOpen, setIsUtilityMenuOpen] = useState(false);
+  const [isScheduleMenuOpen, setIsScheduleMenuOpen] = useState(false);
+  const [scheduledFor, setScheduledFor] = useState<string | null>(null);
 
   /* ── Vibe (single video) ─────────────────────────────────────────────── */
   const [vibeVideoUrl, setVibeVideoUrl] = useState<string | null>(null);
@@ -345,6 +376,7 @@ export function CampusUploadShell({
   const [activeStoryAssetId, setActiveStoryAssetId] = useState<string | null>(null);
   const [momentImages, setMomentImages] = useState<{ id: string; url: string; file: File }[]>([]);
   const [isStoryMusicLibraryOpen, setIsStoryMusicLibraryOpen] = useState(false);
+  const [isStoryBuilderOpen, setIsStoryBuilderOpen] = useState(false);
   const [storyMusicQuery, setStoryMusicQuery] = useState("");
   const [storyMusicTracks, setStoryMusicTracks] = useState<StoryMusicTrack[]>([]);
   const [isStoryMusicLoading, setIsStoryMusicLoading] = useState(false);
@@ -375,16 +407,6 @@ export function CampusUploadShell({
   const canPostAnonymously = mode === "vibe" || mode === "moment";
   const composerDisplayName = canPostAnonymously && isAnonymous ? "Anonymous Vyber" : viewerName;
   const composerUsername = canPostAnonymously && isAnonymous ? "anonymous" : viewerUsername;
-  const composerPillLabel =
-    mode === "story"
-      ? "Story"
-      : mode === "vibe"
-        ? isAnonymous
-          ? "Anonymous Vibe"
-          : "Public Vibe"
-        : isAnonymous
-          ? "Anonymous Post"
-          : "Post";
   const composerInitials = canPostAnonymously && isAnonymous ? "AN" : avatarInitials;
 
   const activeStoryAsset = useMemo(
@@ -418,6 +440,24 @@ export function CampusUploadShell({
     return false;
   }, [mode, vibeVideoUrl, caption, momentImages, storyAssets]);
 
+  const scheduleOptions = useMemo(() => {
+    const now = new Date();
+    const inOneHour = new Date(now.getTime() + 60 * 60 * 1000);
+    const evening = new Date(now);
+    evening.setHours(20, 0, 0, 0);
+    if (evening.getTime() <= now.getTime()) {
+      evening.setDate(evening.getDate() + 1);
+    }
+    const tomorrowMorning = new Date(now);
+    tomorrowMorning.setDate(tomorrowMorning.getDate() + 1);
+    tomorrowMorning.setHours(9, 0, 0, 0);
+    return [
+      { label: "In 1 hour", value: inOneHour.toISOString() },
+      { label: "Evening", value: evening.toISOString() },
+      { label: "Tomorrow morning", value: tomorrowMorning.toISOString() }
+    ];
+  }, []);
+
   /* ── progress simulator for demo (real upload doesn't expose events) ─── */
   useEffect(() => {
     if (!draftParam) {
@@ -426,6 +466,35 @@ export function CampusUploadShell({
 
     setCaption((current) => (current.trim().length > 0 ? current : draftParam));
   }, [draftParam]);
+
+  useEffect(() => {
+    if (draftParam || typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      const raw = window.localStorage.getItem(`vybnet-post-draft:${viewerUsername}`);
+      if (!raw) {
+        return;
+      }
+      const draft = JSON.parse(raw) as {
+        caption?: string;
+        isAnonymous?: boolean;
+        allowAnonymousComments?: boolean;
+        postVisibility?: PostVisibility;
+        communityId?: string;
+      };
+      setCaption((current) => current.trim() ? current : draft.caption ?? "");
+      setIsAnonymous(Boolean(draft.isAnonymous));
+      setAllowAnonymousComments(draft.allowAnonymousComments !== false);
+      if (draft.postVisibility === "followers" || draft.postVisibility === "community") {
+        setPostVisibility(draft.postVisibility);
+      }
+      setCommunityId(draft.communityId ?? "");
+    } catch {
+      // Ignore malformed device-local drafts.
+    }
+  }, [draftParam, viewerUsername]);
 
   useEffect(() => {
     if (storyAssets.length === 0) {
@@ -522,9 +591,27 @@ export function CampusUploadShell({
     router.replace(returnTo);
   }
 
+  function handleSaveDraft() {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(
+        `vybnet-post-draft:${viewerUsername}`,
+        JSON.stringify({
+          caption,
+          isAnonymous,
+          allowAnonymousComments,
+          postVisibility,
+          communityId,
+          savedAt: new Date().toISOString()
+        })
+      );
+    }
+    router.replace(returnTo);
+  }
+
   function handleModeChange(nextMode: PublishableCreationMode) {
     stopStoryMusicPreview();
     setIsStoryMusicLibraryOpen(false);
+    setIsPostSettingsOpen(false);
     setMessage(null);
     if (nextMode === "story") {
       setIsAnonymous(false);
@@ -682,6 +769,33 @@ export function CampusUploadShell({
     });
   }
 
+  function applyStoryBuilderResult(result: {
+    file: File;
+    overlayMetadata: StoryOverlayMetadata | null;
+    compositionJson: string | null;
+  }) {
+    if (!activeStoryAsset) return;
+    setStoryAssets((assets) =>
+      assets.map((asset) => {
+        if (asset.id !== activeStoryAsset.id) return asset;
+        if (asset.url.startsWith("blob:")) URL.revokeObjectURL(asset.url);
+        return {
+          ...asset,
+          file: result.file,
+          url: URL.createObjectURL(result.file),
+          overlayMetadata: result.overlayMetadata,
+          compositionJson: result.compositionJson,
+        };
+      }),
+    );
+    setIsStoryBuilderOpen(false);
+    setStoryMusicStatus(
+      activeStoryAsset.kind === "image"
+        ? "Story design flattened and ready to publish."
+        : "Video overlay design saved as editable metadata.",
+    );
+  }
+
   function removeMomentImage(index: number) {
     setMomentImages((prev) => {
       const next = [...prev];
@@ -787,7 +901,7 @@ export function CampusUploadShell({
   }
 
   /* ── Publish ────────────────────────────────────────────────────────── */
-  async function handlePublish() {
+  async function handlePublish(nextScheduledFor: string | null = null) {
     if (mode === "vibe") {
       if (!vibeVideoFile) {
         setMessage("Add a video before posting.");
@@ -797,6 +911,11 @@ export function CampusUploadShell({
 
     if (mode === "moment" && !caption.trim() && momentImages.length === 0) {
       setMessage("Add a caption or photo before posting.");
+      return;
+    }
+    if (postVisibility === "community" && !communityId) {
+      setMessage("Choose a community before publishing.");
+      setIsPostSettingsOpen(true);
       return;
     }
     if (mode === "story" && storyAssets.length === 0) {
@@ -815,8 +934,10 @@ export function CampusUploadShell({
           collegeName,
           videoFile: vibeVideoFile,
           isAnonymous,
-          allowAnonymousComments
-        });
+          allowAnonymousComments,
+          visibility: postVisibility,
+          communityId: postVisibility === "community" ? communityId : null
+        }, { scheduledFor: nextScheduledFor });
       } else if (mode === "story") {
         enqueueBackgroundPublish({
           kind: "story",
@@ -824,7 +945,8 @@ export function CampusUploadShell({
           storyAssets: storyAssets.map((asset) => ({
             file: asset.file,
             mediaType: asset.kind,
-            mimeType: asset.file.type || null
+            mimeType: asset.file.type || null,
+            compositionJson: asset.compositionJson ?? null
           })),
           storyMusic:
             storyMusicTrack && activeStoryAsset
@@ -836,8 +958,11 @@ export function CampusUploadShell({
                   trimStartSeconds: storyMusicTrimSeconds,
                   stickerPosition: storyMusicStickerPosition
                 }
-              : null
-        });
+                : null,
+          allowAnonymousComments,
+          visibility: postVisibility,
+          communityId: postVisibility === "community" ? communityId : null
+        }, { scheduledFor: nextScheduledFor });
       } else {
         enqueueBackgroundPublish({
           kind: "post",
@@ -845,10 +970,15 @@ export function CampusUploadShell({
           collegeName,
           mediaFiles: momentImages.map((asset) => asset.file),
           isAnonymous,
-          allowAnonymousComments
-        });
+          allowAnonymousComments,
+          visibility: postVisibility,
+          communityId: postVisibility === "community" ? communityId : null
+        }, { scheduledFor: nextScheduledFor });
       }
 
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem(`vybnet-post-draft:${viewerUsername}`);
+      }
       router.replace(returnTo);
     } catch (err) {
       setIsPublishing(false);
@@ -879,18 +1009,6 @@ export function CampusUploadShell({
         {/* ── Header ────────────────────────────────────────────────────── */}
         <div className="cs-header">
           <div className="cs-header-brand">
-            {mode !== "choice" && (
-              <button
-                type="button"
-                className="cs-back-btn"
-                onClick={handleClose}
-                aria-label="Back"
-              >
-                <svg viewBox="0 0 24 24" className="cs-icon" aria-hidden="true">
-                  <path d="M19 12H5M12 5l-7 7 7 7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </button>
-            )}
             <span className="cs-header-label">{getModeLabel(mode)}</span>
           </div>
 
@@ -914,6 +1032,19 @@ export function CampusUploadShell({
                   <IcoChevronDown />
                 </span>
               </div>
+            )}
+            {mode !== "choice" && (
+              <button
+                type="button"
+                className={`cs-settings-btn${isPostSettingsOpen ? " is-active" : ""}`}
+                onClick={() => setIsPostSettingsOpen(true)}
+                disabled={isPublishing}
+                aria-label={`${getModeLabel(mode)} settings`}
+                aria-haspopup="dialog"
+                aria-expanded={isPostSettingsOpen}
+              >
+                <IcoSettings />
+              </button>
             )}
             <button type="button" className="cs-close-btn" onClick={handleClose} aria-label="Close">
               <IcoClose />
@@ -977,7 +1108,7 @@ export function CampusUploadShell({
 
         {/* ─── VIBE SCREEN ───────────────────────────────────────────── */}
         {mode === "vibe" && (
-          <div className="cs-vibe-screen">
+          <div className="cs-vibe-screen cs-vibe-screen--composer">
             {/* Left: 9:16 video area */}
             <div className="cs-vibe-left">
               <div
@@ -1054,7 +1185,6 @@ export function CampusUploadShell({
                   <strong>{composerDisplayName}</strong>
                   <span>@{composerUsername}</span>
                 </div>
-                <span className={`cs-user-pill${isAnonymous ? " cs-user-pill--anonymous" : ""}`}>{composerPillLabel}</span>
               </div>
 
               {/* Caption */}
@@ -1067,34 +1197,6 @@ export function CampusUploadShell({
                   rows={6}
                   disabled={isPublishing}
                 />
-              </div>
-
-              <div className="cs-privacy-row" aria-label="Vibe privacy settings">
-                <label className={`cs-anon-toggle${isAnonymous ? " is-active" : ""}`}>
-                  <input
-                    type="checkbox"
-                    checked={isAnonymous}
-                    onChange={(event) => setIsAnonymous(event.target.checked)}
-                    disabled={isPublishing}
-                  />
-                  <span className="cs-anon-toggle-copy">
-                    <strong>Anonymous</strong>
-                    <small>Hide profile</small>
-                  </span>
-                </label>
-
-                <label className={`cs-anon-toggle cs-anon-toggle--comments${allowAnonymousComments ? " is-active" : ""}`}>
-                  <input
-                    type="checkbox"
-                    checked={allowAnonymousComments}
-                    onChange={(event) => setAllowAnonymousComments(event.target.checked)}
-                    disabled={isPublishing}
-                  />
-                  <span className="cs-anon-toggle-copy">
-                    <strong>Anon comments</strong>
-                    <small>Let people hide</small>
-                  </span>
-                </label>
               </div>
 
               {/* Meta info */}
@@ -1130,11 +1232,21 @@ export function CampusUploadShell({
                 <strong>{composerDisplayName}</strong>
                 <span>@{composerUsername}</span>
               </div>
-              <span className={`cs-user-pill cs-user-pill--moment${isAnonymous ? " cs-user-pill--anonymous" : ""}`}>{composerPillLabel}</span>
             </div>
 
             {mode === "story" ? (
               <>
+                <div className="cs-moment-caption-wrap">
+                  <textarea
+                    className="cs-moment-caption"
+                    value={caption}
+                    onChange={(event) => setCaption(event.target.value)}
+                    placeholder="Add a caption for your story..."
+                    rows={4}
+                    disabled={isPublishing}
+                  />
+                </div>
+
                 <div className="cs-story-editor">
                   <div className="cs-story-preview-shell">
                     <div className="cs-story-preview-stage" ref={storyPreviewRef}>
@@ -1188,6 +1300,14 @@ export function CampusUploadShell({
                           >
                             <IcoMusic />
                             <span>{storyMusicTrack ? "Change music" : "Add music"}</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="cs-story-builder-trigger"
+                            onClick={() => setIsStoryBuilderOpen(true)}
+                            disabled={isPublishing}
+                          >
+                            Edit Story
                           </button>
                           {storyMusicTrack && (
                             <button
@@ -1317,17 +1437,6 @@ export function CampusUploadShell({
                   </div>
 
                   <div className="cs-story-editor-side">
-                    <div className="cs-moment-caption-wrap">
-                      <textarea
-                        className="cs-moment-caption"
-                        value={caption}
-                        onChange={(e) => setCaption(e.target.value)}
-                        placeholder="Add a caption for your story..."
-                        rows={5}
-                        disabled={isPublishing}
-                      />
-                    </div>
-
                     <div className="cs-moment-images cs-moment-images--story">
                       {storyAssets.map((asset) => (
                         <div
@@ -1407,32 +1516,6 @@ export function CampusUploadShell({
                     disabled={isPublishing}
                   />
                 </div>
-
-                <label className={`cs-anon-toggle${isAnonymous ? " is-active" : ""}`}>
-                  <input
-                    type="checkbox"
-                    checked={isAnonymous}
-                    onChange={(event) => setIsAnonymous(event.target.checked)}
-                    disabled={isPublishing}
-                  />
-                  <span className="cs-anon-toggle-copy">
-                    <strong>Post anonymously</strong>
-                    <small>Public viewers will only see an anonymous profile for this post.</small>
-                  </span>
-                </label>
-
-                <label className={`cs-anon-toggle cs-anon-toggle--comments${allowAnonymousComments ? " is-active" : ""}`}>
-                  <input
-                    type="checkbox"
-                    checked={allowAnonymousComments}
-                    onChange={(event) => setAllowAnonymousComments(event.target.checked)}
-                    disabled={isPublishing}
-                  />
-                  <span className="cs-anon-toggle-copy">
-                    <strong>Allow anonymous comments</strong>
-                    <small>Commenters can choose Anonymous on this post. You can turn it off before publishing.</small>
-                  </span>
-                </label>
 
                 <div className="cs-moment-images">
                   {momentImages.map((img, i) => (
@@ -1547,6 +1630,98 @@ export function CampusUploadShell({
         )}
 
         {/* ── Footer (always visible in story/vibe/moment) ───────────────── */}
+        {mode !== "choice" && isPostSettingsOpen && (
+          <div
+            className="cs-settings-backdrop"
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.currentTarget === event.target) setIsPostSettingsOpen(false);
+            }}
+          >
+            <section className="cs-settings-dialog" role="dialog" aria-modal="true" aria-labelledby="cs-post-settings-title">
+              <div className="cs-settings-dialog-head">
+                <div>
+                  <span>Publishing controls</span>
+                  <h2 id="cs-post-settings-title">{getModeLabel(mode)} settings</h2>
+                </div>
+                <button type="button" onClick={() => setIsPostSettingsOpen(false)} aria-label="Close post settings">
+                  <IcoClose />
+                </button>
+              </div>
+
+              <div className="cs-settings-toggle-list">
+                {mode !== "story" && (
+                  <label>
+                    <span>
+                      <strong>Publish anonymously</strong>
+                      <small>Your name and profile stay hidden on this {mode === "vibe" ? "vibe" : "post"}.</small>
+                    </span>
+                    <input type="checkbox" role="switch" checked={isAnonymous}
+                      disabled={isPublishing}
+                      onChange={(event) => setIsAnonymous(event.target.checked)} />
+                  </label>
+                )}
+                {mode === "story" ? (
+                  <p className="cs-settings-empty">Stories always show the verified publisher.</p>
+                ) : (
+                  <label>
+                    <span>
+                      <strong>Allow anonymous comments</strong>
+                      <small>Readers can choose to hide their identity when replying.</small>
+                    </span>
+                    <input type="checkbox" role="switch" checked={allowAnonymousComments}
+                      disabled={isPublishing}
+                      onChange={(event) => setAllowAnonymousComments(event.target.checked)} />
+                  </label>
+                )}
+              </div>
+
+              <fieldset className="cs-reach-options">
+                <legend>Who can see this {mode === "moment" ? "post" : mode}?</legend>
+                {([
+                  ["public", "Public", "Everyone in your verified campus network"],
+                  ["followers", "Followers only", "Only people who follow you"],
+                  ["community", "Community only", "Members of one selected community"],
+                ] as const).map(([value, title, description]) => (
+                  <label key={value} className={postVisibility === value ? "is-active" : ""}>
+                    <input type="radio" name="post-visibility" value={value}
+                      checked={postVisibility === value}
+                      disabled={isPublishing || (value === "community" && communities.length === 0)}
+                      onChange={() => {
+                        setPostVisibility(value);
+                      }} />
+                    <span><strong>{title}</strong><small>{description}</small></span>
+                  </label>
+                ))}
+              </fieldset>
+
+              {postVisibility === "community" && (
+                <label className="cs-community-select">
+                  <span>Choose community</span>
+                  <select value={communityId} onChange={(event) => setCommunityId(event.target.value)} disabled={isPublishing}>
+                    <option value="">Select a joined community</option>
+                    {communities.map((community) => (
+                      <option key={community.id} value={community.id}>{community.name} · {community.type}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {communities.length === 0 && <p className="cs-settings-empty">Join a community to enable community-only reach.</p>}
+              <button type="button" className="cs-settings-done"
+                disabled={postVisibility === "community" && !communityId}
+                onClick={() => setIsPostSettingsOpen(false)}>Done</button>
+            </section>
+          </div>
+        )}
+
+        {mode === "story" && isStoryBuilderOpen && activeStoryAsset && (
+          <StoryBuilder
+            asset={activeStoryAsset}
+            onApply={applyStoryBuilderResult}
+            onClose={() => setIsStoryBuilderOpen(false)}
+          />
+        )}
+
         {mode !== "choice" && (
           <div className="cs-footer">
             <div className="cs-footer-hint">
@@ -1557,18 +1732,53 @@ export function CampusUploadShell({
                   : "Up to 6 photos · Text-only posts are fine too"}
             </div>
             <div className="cs-footer-actions">
-              <button
-                type="button"
-                className="cs-cancel-btn"
-                onClick={handleClose}
-                disabled={isPublishing}
-              >
-                Cancel
-              </button>
+              <div className="cs-utility-wrap">
+                <button
+                  type="button"
+                  className="cs-utility-trigger"
+                  onClick={() => setIsUtilityMenuOpen((current) => !current)}
+                  disabled={!canPublish || isPublishing}
+                  aria-label="Open post utilities"
+                  aria-expanded={isUtilityMenuOpen}
+                >
+                  <IcoUtility />
+                </button>
+                {isUtilityMenuOpen ? (
+                  <div className="cs-utility-menu" role="menu">
+                    <button type="button" role="menuitem" onClick={handleClose}>
+                      <span className="cs-utility-action-icon cs-utility-action-icon--cancel">
+                        <IcoClose />
+                      </span>
+                      <span><strong>Cancel creation</strong><small>Discard this editing session</small></span>
+                    </button>
+                    <button type="button" role="menuitem" onClick={handleSaveDraft} disabled={!canPublish}>
+                      <span className="cs-utility-action-icon cs-utility-action-icon--draft">
+                        <IcoDraft />
+                      </span>
+                      <span><strong>Save draft</strong><small>Continue this {mode === "moment" ? "post" : mode} later</small></span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={!canPublish}
+                      onClick={() => {
+                        setScheduledFor(scheduleOptions[0]?.value ?? null);
+                        setIsUtilityMenuOpen(false);
+                        setIsScheduleMenuOpen(true);
+                      }}
+                    >
+                      <span className="cs-utility-action-icon cs-utility-action-icon--schedule">
+                        <IcoClock />
+                      </span>
+                      <span><strong>Schedule {mode === "moment" ? "post" : mode}</strong><small>Choose a future publish time</small></span>
+                    </button>
+                  </div>
+                ) : null}
+              </div>
               <button
                 type="button"
                 className={`cs-post-btn${canPublish ? " cs-post-btn--active" : ""}`}
-                onClick={handlePublish}
+                onClick={() => void handlePublish()}
                 disabled={!canPublish || isPublishing}
               >
                 {isPublishing ? "Queueing..." : `${getPublishLabel(mode)} ✦`}
@@ -1576,9 +1786,88 @@ export function CampusUploadShell({
             </div>
           </div>
         )}
+
+        {isScheduleMenuOpen ? (
+          <div className="cs-schedule-backdrop" role="presentation">
+            <div className="cs-schedule-dialog" role="dialog" aria-modal="true" aria-label={`Schedule ${mode === "moment" ? "post" : mode}`}>
+              <div className="cs-schedule-icon"><IcoClock /></div>
+              <h2>Schedule {mode === "moment" ? "post" : mode}</h2>
+              <p>Choose when Vybnet should publish this {mode === "moment" ? "post" : mode}.</p>
+              <div className="cs-schedule-options">
+                {scheduleOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={scheduledFor === option.value ? "is-active" : ""}
+                    onClick={() => setScheduledFor(option.value)}
+                  >
+                    <span className="cs-schedule-dot" />
+                    <span>
+                      <strong>{option.label}</strong>
+                      <small>
+                        {new Date(option.value).toLocaleString([], {
+                          dateStyle: "medium",
+                          timeStyle: "short"
+                        })}
+                      </small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <small className="cs-schedule-note">
+                Scheduled uploads resume when Vybnet is open and an internet connection is available.
+              </small>
+              <div className="cs-schedule-actions">
+                <button type="button" onClick={() => setIsScheduleMenuOpen(false)}>Back</button>
+                <button
+                  type="button"
+                  className="is-primary"
+                  disabled={!scheduledFor || isPublishing}
+                  onClick={() => void handlePublish(scheduledFor)}
+                >
+                  Schedule {mode === "moment" ? "Post" : mode === "story" ? "Story" : "Vibe"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
       </section>
     </main>
+  );
+}
+
+function IcoClock() {
+  return (
+    <Ico>
+      <circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M12 7.5V12l3.2 2" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </Ico>
+  );
+}
+
+function IcoUtility() {
+  return (
+    <Ico>
+      <path
+        d="M4 7h6M14 7h6M4 17h3M11 17h9M10 4v6M7 14v6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <circle cx="12" cy="7" r="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="9" cy="17" r="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+    </Ico>
+  );
+}
+
+function IcoDraft() {
+  return (
+    <Ico>
+      <path d="M4.5 7.5h15v11h-15zM7 7.5 9.2 5h5.6L17 7.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8 12h8M8 15h5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </Ico>
   );
 }

@@ -5,12 +5,13 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import ffmpegPath from "ffmpeg-static";
-import { getStorage } from "firebase-admin/storage";
-import { getFirebaseAdminApp, getFirebaseDataConnect } from "../../../../../packages/config/src/index.mjs";
+import { getFirebaseDataConnect } from "../../../../../packages/config/src/index.mjs";
+import { getR2Bucket } from "../../lib/r2-bucket.mjs";
 import {
   connectorConfig as socialConnectorConfig,
   createComment as createCommentMutation,
   createFollow as createFollowMutation,
+  createPostSave as createPostSaveMutation,
   createReaction as createReactionMutation,
   createStory as createStoryMutation,
   createStoryReaction as createStoryReactionMutation,
@@ -22,12 +23,16 @@ import {
   listCommentsByTenant as listCommentsByTenantQuery,
   listFollowersByUser as listFollowersByUserQuery,
   listFollowingByUser as listFollowingByUserQuery,
+  listActivePostSavesByPost as listActivePostSavesByPostQuery,
+  listActivePostSavesByTenant as listActivePostSavesByTenantQuery,
+  listActivePostSavesByUserAndPost as listActivePostSavesByUserAndPostQuery,
   listReactionsByPost as listReactionsByPostQuery,
   listReactionsByTenant as listReactionsByTenantQuery,
   listStoriesByTenant as listStoriesByTenantQuery,
   listStoryReactionsByStory as listStoryReactionsByStoryQuery,
   listStoryReactionsByTenant as listStoryReactionsByTenantQuery,
   softDeleteFollow as softDeleteFollowMutation,
+  softDeletePostSave as softDeletePostSaveMutation,
   softDeletePost as softDeletePostMutation,
   updateReaction as updateReactionMutation,
   updateStoryReaction as updateStoryReactionMutation
@@ -35,7 +40,10 @@ import {
 import { listProfilesByUserIds } from "../identity/profile-repository.mjs";
 
 const directoryName = path.dirname(fileURLToPath(import.meta.url));
-const fallbackStorePath = path.resolve(directoryName, "../../data/social-store.json");
+const fallbackStorePath =
+  process.env.VYB_SERVERLESS_RUNTIME === "vercel"
+    ? path.join(os.tmpdir(), "vyb", "social-store.json")
+    : path.resolve(directoryName, "../../data/social-store.json");
 const superAdminStorePath = path.resolve(directoryName, "../../data/super-admin-store.json");
 const TENANT_SCAN_LIMIT = 5000;
 const FEED_SCAN_MULTIPLIER = 4;
@@ -59,7 +67,8 @@ const defaultFallbackStore = {
   commentReactions: [],
   reactions: [],
   stories: [],
-  follows: []
+  follows: [],
+  postSaves: []
 };
 
 let fallbackStoreCache = null;
@@ -125,6 +134,7 @@ async function ensureFallbackStore() {
   fallbackStoreCache.reactions = Array.isArray(fallbackStoreCache.reactions) ? fallbackStoreCache.reactions : [];
   fallbackStoreCache.stories = Array.isArray(fallbackStoreCache.stories) ? fallbackStoreCache.stories : [];
   fallbackStoreCache.follows = Array.isArray(fallbackStoreCache.follows) ? fallbackStoreCache.follows : [];
+  fallbackStoreCache.postSaves = Array.isArray(fallbackStoreCache.postSaves) ? fallbackStoreCache.postSaves : [];
 
   return fallbackStoreCache;
 }
@@ -142,6 +152,10 @@ async function persistFallbackStore() {
 function isFallbackEligibleError(error) {
   const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
   return (
+    message.includes("database is not available") ||
+    message.includes("data connect") ||
+    message.includes("service unavailable") ||
+    message.includes("service is currently unavailable") ||
     message.includes("oauth2.googleapis.com/token") ||
     message.includes("failed to fetch a valid google oauth2 access token") ||
     message.includes("could not load the default credentials") ||
@@ -177,6 +191,7 @@ function normalizeFallbackPostRecord(item) {
     authorEmail: item.authorEmail ?? null,
     isAnonymous: Boolean(item.isAnonymous),
     allowAnonymousComments: item.allowAnonymousComments !== false,
+    visibility: item.visibility === "followers" || item.visibility === "community" ? item.visibility : "public",
     placement: item.placement ?? "feed",
     kind: item.kind ?? (item.mediaUrl ? "image" : "text"),
     mediaUrl: item.mediaUrl ?? null,
@@ -463,6 +478,7 @@ const PRIVATE_POST_FIELDS = `
   authorEmail
   isAnonymous
   allowAnonymousComments
+  visibility
   placement
   kind
   title
@@ -653,6 +669,7 @@ const CREATE_POST_PRIVATE_MUTATION = `
     $authorEmail: String
     $isAnonymous: Boolean!
     $allowAnonymousComments: Boolean!
+    $visibility: String!
     $placement: String! = "feed"
     $kind: String!
     $title: String
@@ -676,6 +693,7 @@ const CREATE_POST_PRIVATE_MUTATION = `
         authorEmail: $authorEmail
         isAnonymous: $isAnonymous
         allowAnonymousComments: $allowAnonymousComments
+        visibility: $visibility
         placement: $placement
         kind: $kind
         title: $title
@@ -686,7 +704,6 @@ const CREATE_POST_PRIVATE_MUTATION = `
         mediaSizeBytes: $mediaSizeBytes
         location: $location
         status: $status
-        visibility: "tenant"
         publishedAt_expr: "request.time"
         createdAt_expr: "request.time"
         updatedAt_expr: "request.time"
@@ -877,8 +894,8 @@ function getSocialDc() {
   return getFirebaseDataConnect(socialConnectorConfig);
 }
 
-function getFirebaseSocialBucket() {
-  return getStorage(getFirebaseAdminApp()).bucket();
+function getSocialBucket() {
+  return getR2Bucket();
 }
 
 function normalizePlacement(value) {
@@ -937,7 +954,11 @@ function isActiveStory(story) {
 }
 
 function buildDownloadUrl(bucketName, storagePath, token) {
-  return `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(storagePath)}?alt=media&token=${token}`;
+  const publicBaseUrl = process.env.R2_PUBLIC_BASE_URL?.trim().replace(/\/+$/u, "");
+  if (!publicBaseUrl) {
+    throw new Error("R2_PUBLIC_BASE_URL is required for social media URLs.");
+  }
+  return `${publicBaseUrl}/${storagePath.split("/").map(encodeURIComponent).join("/")}`;
 }
 
 function buildVariantStoragePath(storagePath, label) {
@@ -1338,7 +1359,7 @@ async function persistMediaAsset({
 
   const extension = extensionFromMimeType(decoded.mimeType, mediaType === "video" ? "mp4" : "bin");
   const storagePath = `social/${tenantId}/${assetType}/${normalizePlacement(placement)}/${userId}/${assetId}.${extension}`;
-  const bucket = getFirebaseSocialBucket();
+  const bucket = getSocialBucket();
   const file = bucket.file(storagePath);
   const token = randomUUID();
 
@@ -1371,7 +1392,7 @@ async function processStoredVibeVideo({ tenantId, userId, storagePath, mediaUrl,
     throw new Error("Vibe video must stay under 40 MB before processing.");
   }
 
-  const bucket = getFirebaseSocialBucket();
+  const bucket = getSocialBucket();
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "vyb-vibe-backend-"));
   const inputPath = path.join(tempRoot, "source-video");
 
@@ -1997,10 +2018,11 @@ function mapPostRecord(item, counts = null, profileMap = null, viewerIdentity = 
     status: item.status ?? "published",
     reactions: Number(counts?.reactions?.get(item.id) ?? item.reactions ?? 0),
     comments: Number(counts?.comments?.get(item.id) ?? item.comments ?? 0),
-    savedCount: Number(item.savedCount ?? 0),
-    isSaved: Boolean(item.isSaved),
+    savedCount: Number(counts?.saves?.get(item.id) ?? item.savedCount ?? 0),
+    isSaved: Boolean(counts?.viewerSaves?.has(item.id) ?? item.isSaved),
     isAnonymous,
     allowAnonymousComments: item.allowAnonymousComments !== false,
+    visibility: item.visibility === "followers" || item.visibility === "community" ? item.visibility : "public",
     viewerCanManage,
     viewerReactionType: counts?.viewerReactions?.get(item.id) ?? item.viewerReactionType ?? null,
     createdAt: toIsoString(item.createdAt),
@@ -2035,6 +2057,7 @@ function mapStoryRecord(item, viewerUserId = null, reactionMaps = null, viewMaps
   return {
     id: item.id,
     tenantId: item.tenantId,
+    communityId: item.communityId ?? null,
     userId: item.userId,
     username: profile?.username ?? item.username,
     displayName: profile?.fullName ?? item.displayName,
@@ -2042,6 +2065,10 @@ function mapStoryRecord(item, viewerUserId = null, reactionMaps = null, viewMaps
     mediaType: item.mediaType,
     mediaUrl: item.mediaUrl,
     caption: item.caption ?? "",
+    compositionJson: item.compositionJson ?? null,
+    visibility: item.visibility === "followers" || item.visibility === "community"
+      ? item.visibility
+      : "public",
     createdAt: toIsoString(item.createdAt),
     expiresAt: toIsoString(item.expiresAt),
     isOwn: item.userId === viewerUserId,
@@ -2049,6 +2076,39 @@ function mapStoryRecord(item, viewerUserId = null, reactionMaps = null, viewMaps
     viewerHasLiked: Boolean(reactionMaps?.viewerReactions?.get(item.id)),
     viewerHasSeen: Boolean(viewMaps?.viewerSeen?.get(item.id))
   };
+}
+
+async function buildPostSaveMaps(tenantId, postIds, viewerUserId = null) {
+  const idSet = new Set(postIds);
+  const saves = new Map();
+  const viewerSaves = new Set();
+  let records;
+
+  try {
+    const response = await listActivePostSavesByTenantQuery(getSocialDc(), {
+      tenantId,
+      limit: TENANT_SCAN_LIMIT
+    });
+    records = response.data.postSaves;
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) {
+      throw error;
+    }
+    const store = await ensureFallbackStore();
+    records = store.postSaves.filter((item) => item.tenantId === tenantId && !item.deletedAt);
+  }
+
+  for (const item of records) {
+    if (!idSet.has(item.postId)) {
+      continue;
+    }
+    saves.set(item.postId, (saves.get(item.postId) ?? 0) + 1);
+    if (viewerUserId && item.userId === viewerUserId) {
+      viewerSaves.add(item.postId);
+    }
+  }
+
+  return { saves, viewerSaves };
 }
 
 async function mapPostList(records, viewerIdentity = null, profileMap = null) {
@@ -2066,8 +2126,49 @@ async function mapPostList(records, viewerIdentity = null, profileMap = null) {
     hydratedRecords.map((item) => item.id),
     viewerIdentity?.viewerMembershipId ?? null
   );
+  const saveMaps = await buildPostSaveMaps(
+    hydratedRecords[0].tenantId,
+    hydratedRecords.map((item) => item.id),
+    viewerIdentity?.viewerUserId ?? null
+  );
+  counts.saves = saveMaps.saves;
+  counts.viewerSaves = saveMaps.viewerSaves;
 
   return hydratedRecords.map((item) => mapPostRecord(item, counts, profileMap, viewerIdentity));
+}
+
+async function filterPostsByVisibility(
+  posts,
+  { tenantId, viewerUserId = null, viewerCommunityIds = [] }
+) {
+  const communityIds = new Set(viewerCommunityIds.filter(Boolean));
+  const hasFollowersOnlyPosts = posts.some((item) => item.visibility === "followers");
+  let followedUserIds = new Set();
+
+  if (hasFollowersOnlyPosts && viewerUserId) {
+    const follows = await listFollowsByTenantForStats(tenantId);
+    followedUserIds = new Set(
+      follows
+        .filter((item) => item.followerUserId === viewerUserId)
+        .map((item) => item.followingUserId)
+    );
+  }
+
+  return posts.filter((item) => {
+    if (viewerUserId && item.authorUserId === viewerUserId) {
+      return true;
+    }
+
+    if (item.visibility === "followers") {
+      return Boolean(viewerUserId && followedUserIds.has(item.authorUserId));
+    }
+
+    if (item.visibility === "community") {
+      return Boolean(item.communityId && communityIds.has(item.communityId));
+    }
+
+    return true;
+  });
 }
 
 async function listFallbackPosts({
@@ -2078,14 +2179,16 @@ async function listFallbackPosts({
   userId = null,
   cursor = null,
   includeAnonymous = true,
-  viewerIdentity = null
+  viewerIdentity = null,
+  viewerCommunityIds = []
 }) {
   const store = await ensureFallbackStore();
   const adminStore = await readSuperAdminStore();
   const normalizedPlacement = normalizePlacement(placement);
   const parsedCursor = parsePostCursor(cursor);
+  const activeSaves = store.postSaves.filter((item) => item.tenantId === tenantId && !item.deletedAt);
 
-  return store.posts
+  const candidates = store.posts
     .map(normalizeFallbackPostRecord)
     .filter((item) => item.tenantId === tenantId)
     .filter((item) => item.status === "published")
@@ -2095,8 +2198,22 @@ async function listFallbackPosts({
     .filter((item) => (userId ? item.authorUserId === userId : true))
     .filter((item) => (includeAnonymous ? true : !item.isAnonymous))
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
-    .filter((item) => isBeforePostCursor(item, parsedCursor))
+    .filter((item) => isBeforePostCursor(item, parsedCursor));
+  const visiblePosts = await filterPostsByVisibility(candidates, {
+    tenantId,
+    viewerUserId: viewerIdentity?.viewerUserId ?? null,
+    viewerCommunityIds: communityId ? [...viewerCommunityIds, communityId] : viewerCommunityIds
+  });
+
+  return visiblePosts
     .slice(0, limit)
+    .map((item) => ({
+      ...item,
+      savedCount: activeSaves.filter((save) => save.postId === item.id).length,
+      isSaved: activeSaves.some(
+        (save) => save.postId === item.id && save.userId === viewerIdentity?.viewerUserId
+      )
+    }))
     .map((item) => mapPostRecord(item, null, null, viewerIdentity));
 }
 
@@ -2140,13 +2257,15 @@ export async function listPosts({
   userId = null,
   viewerMembershipId = null,
   viewerUserId = null,
+  viewerCommunityIds = [],
   cursor = null,
-  includeAnonymous = userId ? false : true
+  includeAnonymous = userId ? false : true,
+  firebaseIdToken = null
 }) {
   const normalizedPlacement = normalizePlacement(placement);
   const parsedCursor = parsePostCursor(cursor);
   const cursorScanLimit = parsedCursor ? Math.min(TENANT_SCAN_LIMIT, Math.max(limit * FEED_SCAN_MULTIPLIER, limit + 1)) : limit;
-  const effectiveLimit = communityId || parsedCursor ? Math.max(cursorScanLimit * FEED_SCAN_MULTIPLIER, cursorScanLimit) : cursorScanLimit;
+  const effectiveLimit = Math.max(cursorScanLimit * FEED_SCAN_MULTIPLIER, cursorScanLimit);
   const viewerIdentity = {
     viewerMembershipId,
     viewerUserId
@@ -2173,12 +2292,16 @@ export async function listPosts({
     );
 
     const adminStore = await readSuperAdminStore();
-    const filtered = response.data.posts
+    const candidates = response.data.posts
       .filter((item) => (communityId ? item.communityId === communityId : true))
       .filter((item) => !isBlockedByAdminControls(item, adminStore, viewerUserId))
       .filter((item) => (includeAnonymous ? true : !item.isAnonymous))
-      .filter((item) => isBeforePostCursor(item, parsedCursor))
-      .slice(0, limit);
+      .filter((item) => isBeforePostCursor(item, parsedCursor));
+    const filtered = (await filterPostsByVisibility(candidates, {
+      tenantId,
+      viewerUserId,
+      viewerCommunityIds: communityId ? [...viewerCommunityIds, communityId] : viewerCommunityIds
+    })).slice(0, limit);
 
     if (filtered.length === 0) {
       return listFallbackPosts({
@@ -2188,7 +2311,8 @@ export async function listPosts({
         placement: normalizedPlacement,
         userId,
         includeAnonymous,
-        viewerIdentity
+        viewerIdentity,
+        viewerCommunityIds
       });
     }
 
@@ -2220,7 +2344,8 @@ export async function listPosts({
       userId,
       cursor,
       includeAnonymous,
-      viewerIdentity
+      viewerIdentity,
+      viewerCommunityIds
     });
   }
 }
@@ -2232,9 +2357,21 @@ export async function listPostsByUser({
   placement = "feed",
   viewerMembershipId = null,
   viewerUserId = null,
-  includeAnonymous = false
+  viewerCommunityIds = [],
+  includeAnonymous = false,
+  firebaseIdToken = null
 }) {
-  return listPosts({ tenantId, userId, limit, placement, viewerMembershipId, viewerUserId, includeAnonymous });
+  return listPosts({
+    tenantId,
+    userId,
+    limit,
+    placement,
+    viewerMembershipId,
+    viewerUserId,
+    viewerCommunityIds,
+    includeAnonymous,
+    firebaseIdToken
+  });
 }
 
 export async function countPostsByUser({ tenantId, userId, placement = "feed", includeAnonymous = false }) {
@@ -2547,6 +2684,7 @@ export async function createPost(payload) {
     authorEmail: payload.authorEmail ?? null,
     isAnonymous: Boolean(payload.isAnonymous),
     allowAnonymousComments: payload.allowAnonymousComments !== false,
+    visibility: payload.visibility ?? "public",
     placement,
     kind: payload.kind,
     mediaUrl: media.mediaUrl,
@@ -2581,6 +2719,7 @@ export async function createPost(payload) {
         authorEmail: payload.authorEmail ?? null,
         isAnonymous: Boolean(payload.isAnonymous),
         allowAnonymousComments: payload.allowAnonymousComments !== false,
+        visibility: payload.visibility ?? "public",
         placement,
         kind: payload.kind,
         title: payload.title ?? "Campus update",
@@ -2598,16 +2737,18 @@ export async function createPost(payload) {
       throw error;
     }
 
-    console.warn("[social/repository] createPost falling back to local social store", {
+    if (!wroteFallbackPost) {
+      console.warn("[social/repository] createPost falling back to local social store", {
       tenantId: payload.tenantId,
       placement,
       message: error instanceof Error ? error.message : String(error)
-    });
+      });
 
-    const store = await ensureFallbackStore();
-    store.posts = [postRecord, ...store.posts.filter((item) => item.id !== id)];
-    await persistFallbackStore();
-    wroteFallbackPost = true;
+      const store = await ensureFallbackStore();
+      store.posts = [postRecord, ...store.posts.filter((item) => item.id !== id)];
+      await persistFallbackStore();
+      wroteFallbackPost = true;
+    }
   }
 
   if (!wroteFallbackPost) {
@@ -2861,10 +3002,76 @@ export async function listPostReactions({ postId, limit = 100 }) {
 }
 
 export async function togglePostSave({ tenantId, postId, userId }) {
-  void tenantId;
-  void postId;
-  void userId;
-  throw new Error("Post save support is not deployed in the current Data Connect service yet.");
+  try {
+    const existingResponse = await listActivePostSavesByUserAndPostQuery(getSocialDc(), {
+      tenantId,
+      postId,
+      userId,
+      limit: 2
+    });
+    const existing = existingResponse.data.postSaves[0] ?? null;
+    let isSaved;
+
+    if (existing) {
+      await softDeletePostSaveMutation(getSocialDc(), { id: existing.id });
+      isSaved = false;
+    } else {
+      await createPostSaveMutation(getSocialDc(), {
+        id: randomUUID(),
+        tenantId,
+        postId,
+        userId
+      });
+      isSaved = true;
+    }
+
+    const countResponse = await listActivePostSavesByPostQuery(getSocialDc(), {
+      postId,
+      limit: TENANT_SCAN_LIMIT
+    });
+    return { postId, savedCount: countResponse.data.postSaves.length, isSaved };
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) {
+      throw error;
+    }
+
+    const store = await ensureFallbackStore();
+    const existing = store.postSaves.find(
+      (item) =>
+        item.tenantId === tenantId &&
+        item.postId === postId &&
+        item.userId === userId &&
+        !item.deletedAt
+    );
+    const now = new Date().toISOString();
+    let isSaved;
+
+    if (existing) {
+      existing.deletedAt = now;
+      existing.updatedAt = now;
+      isSaved = false;
+    } else {
+      store.postSaves.push({
+        id: randomUUID(),
+        tenantId,
+        postId,
+        userId,
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null
+      });
+      isSaved = true;
+    }
+    await persistFallbackStore();
+
+    return {
+      postId,
+      savedCount: store.postSaves.filter(
+        (item) => item.tenantId === tenantId && item.postId === postId && !item.deletedAt
+      ).length,
+      isSaved
+    };
+  }
 }
 
 export async function upsertCommentReaction(payload) {
@@ -3181,20 +3388,41 @@ export async function findStoryById(storyId, { tenantId = null, viewerUserId = n
   return mapStoryRecord(item, viewerUserId, reactionMaps, viewMaps, profileMap);
 }
 
-export async function listStories({ tenantId, viewerUserId, viewerMembershipId = null }) {
-  const [storyResponse, followingResponse] = await Promise.all([
-    listStoriesByTenantQuery(getSocialDc(), {
+export async function listStories({
+  tenantId,
+  viewerUserId,
+  viewerMembershipId = null,
+  viewerCommunityIds = [],
+  firebaseIdToken = null
+}) {
+  let storyResponse;
+  let followingResponse;
+  try {
+    [storyResponse, followingResponse] = await Promise.all([
+      listStoriesByTenantQuery(getSocialDc(), {
+        tenantId,
+        limit: 200
+      }),
+      listFollowingByUserQuery(getSocialDc(), {
+        tenantId,
+        followerUserId: viewerUserId,
+        limit: TENANT_SCAN_LIMIT
+      })
+    ]);
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) {
+      throw error;
+    }
+
+    console.warn("[social/repository] story reads degraded to an empty result", {
       tenantId,
-      limit: 200
-    }),
-    listFollowingByUserQuery(getSocialDc(), {
-      tenantId,
-      followerUserId: viewerUserId,
-      limit: TENANT_SCAN_LIMIT
-    })
-  ]);
+      message: error instanceof Error ? error.message : String(error)
+    });
+    return [];
+  }
 
   const followingIds = new Set(followingResponse.data.follows.map((item) => item.followingUserId));
+  const communityIds = new Set(viewerCommunityIds);
   const records = [];
 
   for (const item of storyResponse.data.stories) {
@@ -3202,7 +3430,18 @@ export async function listStories({ tenantId, viewerUserId, viewerMembershipId =
       continue;
     }
 
-    if (item.userId !== viewerUserId && !followingIds.has(item.userId)) {
+    const isOwn = item.userId === viewerUserId;
+    const visibility = item.visibility === "followers" || item.visibility === "community"
+      ? item.visibility
+      : "public";
+    if (!isOwn && visibility === "followers" && !followingIds.has(item.userId)) {
+      continue;
+    }
+    if (
+      !isOwn &&
+      visibility === "community" &&
+      (!item.communityId || !communityIds.has(item.communityId))
+    ) {
       continue;
     }
 
@@ -3251,9 +3490,10 @@ export async function createStory(payload) {
     mediaSizeBytesOverride: payload.mediaSizeBytes ?? null
   });
 
-  await createStoryMutation(getSocialDc(), {
+  const storyRecord = {
     id,
     tenantId: payload.tenantId,
+    communityId: payload.communityId ?? null,
     userId: payload.userId,
     username: payload.username,
     displayName: payload.displayName,
@@ -3261,20 +3501,10 @@ export async function createStory(payload) {
     mediaUrl: media.mediaUrl,
     storagePath: media.storagePath,
     mediaMimeType: media.mediaMimeType,
-    mediaSizeBytes: media.mediaSizeBytes === null ? null : String(media.mediaSizeBytes),
+    mediaSizeBytes: media.mediaSizeBytes,
     caption: payload.caption ?? "",
-    expiresAt: expiresAt.toISOString()
-  });
-
-  return {
-    id,
-    tenantId: payload.tenantId,
-    userId: payload.userId,
-    username: payload.username,
-    displayName: payload.displayName,
-    mediaType: payload.mediaType,
-    mediaUrl: media.mediaUrl,
-    caption: payload.caption ?? "",
+    compositionJson: payload.compositionJson ?? null,
+    visibility: payload.visibility ?? "public",
     createdAt: createdAt.toISOString(),
     expiresAt: expiresAt.toISOString(),
     isOwn: true,
@@ -3282,6 +3512,30 @@ export async function createStory(payload) {
     viewerHasLiked: false,
     viewerHasSeen: true
   };
+
+  try {
+    await createStoryMutation(getSocialDc(), {
+      id,
+      tenantId: payload.tenantId,
+      communityId: payload.communityId ?? null,
+      userId: payload.userId,
+      username: payload.username,
+      displayName: payload.displayName,
+      mediaType: payload.mediaType,
+      mediaUrl: media.mediaUrl,
+      storagePath: media.storagePath,
+      mediaMimeType: media.mediaMimeType,
+      mediaSizeBytes: media.mediaSizeBytes === null ? null : String(media.mediaSizeBytes),
+      caption: payload.caption ?? "",
+      compositionJson: payload.compositionJson ?? null,
+      visibility: payload.visibility ?? "public",
+      expiresAt: expiresAt.toISOString()
+    });
+  } catch (error) {
+    throw error;
+  }
+
+  return storyRecord;
 }
 
 export async function upsertStoryReaction(payload) {

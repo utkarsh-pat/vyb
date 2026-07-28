@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { CampusUploadShell } from "../../src/components/campus-upload-shell";
-import { getViewerProfile } from "../../src/lib/backend";
+import { getMyCampusCommunities, getViewerProfile } from "../../src/lib/backend";
 import { getDisplayCollegeName } from "../../src/lib/college-access";
 import { readDevSessionFromCookieStore } from "../../src/lib/dev-session";
 
@@ -12,7 +12,10 @@ export default async function CreatePage() {
     redirect("/login");
   }
 
-  const profile = await getViewerProfile(viewer).catch(() => null);
+  const [profile, communityResponse] = await Promise.all([
+    getViewerProfile(viewer).catch(() => null),
+    getMyCampusCommunities(viewer).catch(() => null)
+  ]);
 
   if (!profile?.profileCompleted) {
     redirect("/onboarding");
@@ -28,6 +31,9 @@ export default async function CreatePage() {
       viewerUsername={viewerUsername}
       viewerEmail={viewer.email}
       collegeName={displayCollegeName}
+      communities={(communityResponse?.communities ?? [])
+        .filter((community) => community.isMember !== false && community.membershipStatus !== "not_member" && community.membershipStatus !== "left")
+        .map((community) => ({ id: community.id, name: community.name, type: community.type }))}
     />
   );
 }

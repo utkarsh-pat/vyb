@@ -1,4 +1,6 @@
 import { readJson, sendError, sendJson } from "../../lib/http.mjs";
+import { createHmac } from "node:crypto";
+import { getConfiguredInternalApiKey } from "../../lib/internal-auth.mjs";
 import { getProfileByUserId } from "../identity/profile-repository.mjs";
 import { resolveLiveContext } from "../shared/viewer-context.mjs";
 import {
@@ -42,13 +44,14 @@ function requireNonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-function buildChatViewer(resolved, profile) {
+function buildChatViewer(resolved, profile, firebaseIdToken = null) {
   return {
     userId: resolved.live.user.id,
     membershipId: resolved.live.membership.id,
     tenantId: resolved.live.tenant.id,
     username: profile?.username ?? resolved.viewer.primaryEmail.split("@")[0] ?? resolved.live.user.id,
-    displayName: profile?.fullName ?? resolved.viewer.displayName
+    displayName: profile?.fullName ?? resolved.viewer.displayName,
+    firebaseIdToken
   };
 }
 
@@ -67,6 +70,20 @@ function sendChatFailure(response, scope, resolved, error) {
     failure.code,
     failure.message
   );
+}
+
+function buildChatSocketUrl(request, payload) {
+  const secret = getConfiguredInternalApiKey();
+  if (!secret) {
+    throw new Error("Realtime socket signing is not configured.");
+  }
+  const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  const signature = createHmac("sha256", secret).update(encoded).digest("base64url");
+  const forwardedProto = String(request.headers["x-forwarded-proto"] ?? "").split(",")[0].trim();
+  const forwardedHost = String(request.headers["x-forwarded-host"] ?? "").split(",")[0].trim();
+  const secure = forwardedProto ? forwardedProto === "https" : Boolean(request.socket?.encrypted);
+  const host = forwardedHost || request.headers.host;
+  return `${secure ? "wss" : "ws"}://${host}/ws/chat?token=${encodeURIComponent(`${encoded}.${signature}`)}`;
 }
 
 export function getChatModuleHealth() {
@@ -104,21 +121,50 @@ export async function handleChatRoute({ request, response, url, context }) {
 
   const profile = await getProfileByUserId({
     tenantId: resolved.live.tenant.id,
-    userId: resolved.live.user.id
+    userId: resolved.live.user.id,
+    firebaseIdToken: context.actor.firebaseIdToken ?? null
   }).catch(() => null);
+
+  const viewer = buildChatViewer(resolved, profile, context.actor.firebaseIdToken ?? null);
+
+  // A verified member may safely read their own RLS-filtered inbox before
+  // completing onboarding. Creating or mutating chats remains profile-gated.
+  if (request.method === "GET" && url.pathname === "/v1/chats") {
+    try {
+      sendJson(response, 200, await listChatInbox(viewer));
+    } catch (error) {
+      sendChatFailure(response, "chat_inbox", resolved, error);
+    }
+    return true;
+  }
 
   if (!profile?.profileCompleted) {
     sendError(response, 403, "PROFILE_INCOMPLETE", "Complete your profile before opening campus chat.");
     return true;
   }
 
-  const viewer = buildChatViewer(resolved, profile);
-
-  if (request.method === "GET" && url.pathname === "/v1/chats") {
+  if (request.method === "GET" && url.pathname === "/v1/chats/socket-token") {
+    const conversationId = url.searchParams.get("conversationId")?.trim() ?? "";
+    if (!conversationId) {
+      sendError(response, 400, "INVALID_CONVERSATION", "Choose a valid conversation first.");
+      return true;
+    }
     try {
-      sendJson(response, 200, await listChatInbox(viewer));
+      if (!(await canAccessChatConversation(viewer, conversationId))) {
+        sendError(response, 403, "FORBIDDEN_CONVERSATION", "You cannot open realtime chat for this conversation.");
+        return true;
+      }
+      const expiresAt = Date.now() + 5 * 60 * 1000;
+      const wsUrl = buildChatSocketUrl(request, {
+        tenantId: viewer.tenantId,
+        userId: viewer.userId,
+        membershipId: viewer.membershipId,
+        conversationId,
+        exp: expiresAt
+      });
+      sendJson(response, 200, { wsUrl, expiresAt });
     } catch (error) {
-      sendChatFailure(response, "chat_inbox", resolved, error);
+      sendChatFailure(response, "chat_socket_token", resolved, error);
     }
     return true;
   }

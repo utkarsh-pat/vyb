@@ -54,7 +54,7 @@ Out of scope:
 
 ### `POST /v1/auth/bootstrap`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: authenticated actor context required
 - request schema: optional profile hints such as display name and avatar URL
 - response schema: internal user record, membership summary, onboarding status
@@ -63,7 +63,7 @@ Out of scope:
 
 ### `POST /v1/auth/session/bootstrap`
 
-- caller: web auth route or future native client
+- caller: web auth route or Android client
 - auth requirement: Firebase ID token in request body
 - request schema: `idToken`, optional display-name hint
 - response schema: session payload, profile-completion state, next-path decision pointing to `/home` or `/onboarding`
@@ -72,7 +72,7 @@ Out of scope:
 
 ### `GET /v1/me`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: authenticated actor context required
 - response schema: user profile, active tenant membership summary, role, onboarding flags
 - error schema: unauthorized, user not initialized
@@ -80,7 +80,7 @@ Out of scope:
 
 ### `GET /v1/profile`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: authenticated actor context required
 - response schema: profile-completion state, approved launch domain, saved campus profile
 - error schema: unauthorized
@@ -88,7 +88,7 @@ Out of scope:
 
 ### `PUT /v1/profile`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: authenticated actor context required
 - request schema: unique campus user ID, first name, optional last name, course, stream or specialization, year, section, hosteller status, optional hostel and phone number
 - response schema: saved campus profile and completion state that unlocks the authenticated home feed
@@ -97,7 +97,7 @@ Out of scope:
 
 ### `PATCH /v1/profile/username`
 
-- caller: web or future native client
+- caller: web/PWA or Android client
 - auth requirement: authenticated actor context required
 - request schema: unique campus user ID
 - response schema: updated profile

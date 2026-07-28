@@ -38,6 +38,7 @@ export async function POST(request: Request) {
         placement?: "feed" | "vibe";
         isAnonymous?: boolean;
         allowAnonymousComments?: boolean;
+        visibility?: "public" | "followers" | "community";
         mediaAssets?: {
           url: string;
           kind: "image" | "video";
@@ -81,6 +82,7 @@ export async function POST(request: Request) {
         tenantId: viewer.tenantId,
         membershipId: viewer.membershipId,
         communityId: payload.communityId ?? null,
+        visibility: payload.visibility ?? (payload.communityId ? "community" : "public"),
         placement: payload.placement ?? "feed",
         kind: payload.kind ?? "text",
         isAnonymous: payload.isAnonymous === true,

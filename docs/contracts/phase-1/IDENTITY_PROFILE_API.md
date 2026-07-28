@@ -23,7 +23,7 @@ Change Summary: Added the Phase 1 campus-profile read, onboarding user-ID captur
 
 ## 3. Authentication and Authorization
 
-- Auth mechanism: authenticated actor context from the web session bridge or future native token flow
+- Auth mechanism: authenticated actor context from the web session bridge or Android bearer-token flow
 - Required roles: authenticated verified membership
 - Tenant checks: actor must resolve to the correct tenant membership and approved launch domain
 - Rate limit policy: moderate per user

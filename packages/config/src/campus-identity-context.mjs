@@ -209,7 +209,7 @@ export async function ensureMembershipContext(input) {
   }
 }
 
-async function ensureMembershipContextUncached({
+async function ensureDataConnectMembershipContextUncached({
   firebaseUid,
   primaryEmail,
   displayName,
@@ -304,6 +304,10 @@ async function ensureMembershipContextUncached({
     membership,
     communities: communityMemberships
   };
+}
+
+async function ensureMembershipContextUncached(input) {
+  return ensureDataConnectMembershipContextUncached(input);
 }
 
 export async function ensureTenantScaffold({

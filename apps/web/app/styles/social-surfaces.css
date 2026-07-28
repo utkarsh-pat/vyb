@@ -756,6 +756,39 @@
   object-fit: cover;
 }
 
+.vyb-story-composition {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.vyb-story-composition-media {
+  width: 100%;
+  height: 100%;
+  transform:
+    translate(var(--story-media-x, 0), var(--story-media-y, 0))
+    rotate(var(--story-media-rotate, 0deg))
+    scale(var(--story-media-scale, 1));
+  transform-origin: center;
+}
+
+.vyb-story-composition-media > video,
+.vyb-story-composition-media > img {
+  width: 100%;
+  height: 100%;
+  object-fit: var(--story-media-fit, cover);
+}
+
+.vyb-story-composition-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
 .vyb-story-viewer-image {
   object-fit: contain;
   object-position: center;

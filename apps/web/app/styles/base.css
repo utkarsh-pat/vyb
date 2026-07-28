@@ -2432,3 +2432,31 @@ a {
   color: var(--cl-color-muted);
 }
 
+@supports (content-visibility: auto) {
+  .vyb-campus-feed-card,
+  .vyb-search-discovery-card,
+  .modern-search-card,
+  .vyb-events-feed-card,
+  .spm-conv-item,
+  .spm-message-card,
+  .ccd-message,
+  .ccd-member-row,
+  .ccd-preview-row,
+  .market-listing-card,
+  .market-request-card {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 280px;
+  }
+
+  .spm-conv-item,
+  .ccd-member-row,
+  .ccd-preview-row,
+  .modern-search-card {
+    contain-intrinsic-size: auto 96px;
+  }
+
+  .ccd-message {
+    contain-intrinsic-size: auto 168px;
+  }
+}
+

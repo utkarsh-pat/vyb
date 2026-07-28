@@ -296,6 +296,7 @@ query ListStoriesByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCESS
   ) {
     id
     tenantId
+    communityId
     userId
     username
     displayName
@@ -305,6 +306,8 @@ query ListStoriesByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCESS
     mediaMimeType
     mediaSizeBytes
     caption
+    compositionJson
+    visibility
     createdAt
     expiresAt
   }
@@ -314,6 +317,7 @@ query GetStoryById($id: UUID!) @auth(level: NO_ACCESS) {
   story(key: { id: $id }) {
     id
     tenantId
+    communityId
     userId
     username
     displayName
@@ -323,6 +327,8 @@ query GetStoryById($id: UUID!) @auth(level: NO_ACCESS) {
     mediaMimeType
     mediaSizeBytes
     caption
+    compositionJson
+    visibility
     createdAt
     expiresAt
   }
@@ -663,6 +669,7 @@ mutation SoftDeletePostSave($id: UUID!) @auth(level: NO_ACCESS) @transaction {
 mutation CreateStory(
   $id: UUID!
   $tenantId: UUID!
+  $communityId: UUID
   $userId: UUID!
   $username: String!
   $displayName: String!
@@ -672,12 +679,15 @@ mutation CreateStory(
   $mediaMimeType: String
   $mediaSizeBytes: Int64
   $caption: String
+  $compositionJson: String
+  $visibility: String! = "public"
   $expiresAt: Timestamp!
 ) @auth(level: NO_ACCESS) @transaction {
   story_insert(
     data: {
       id: $id
       tenantId: $tenantId
+      communityId: $communityId
       userId: $userId
       username: $username
       displayName: $displayName
@@ -687,6 +697,8 @@ mutation CreateStory(
       mediaMimeType: $mediaMimeType
       mediaSizeBytes: $mediaSizeBytes
       caption: $caption
+      compositionJson: $compositionJson
+      visibility: $visibility
       expiresAt: $expiresAt
       createdAt_expr: "request.time"
       updatedAt_expr: "request.time"

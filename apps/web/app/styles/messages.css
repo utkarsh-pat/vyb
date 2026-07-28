@@ -3893,6 +3893,7 @@
 }
 
 .cs-back-btn,
+.cs-settings-btn,
 .cs-close-btn {
   display: inline-flex;
   align-items: center;
@@ -3912,6 +3913,7 @@
 }
 
 .cs-back-btn:hover,
+.cs-settings-btn:hover,
 .cs-close-btn:hover {
   background: rgba(255, 255, 255, 0.11);
   border-color: rgba(255, 255, 255, 0.18);
@@ -4133,6 +4135,58 @@
   flex: 1;
   overflow: hidden;
   animation: cs-fade-up 0.28s ease both;
+}
+
+.cs-vibe-screen--composer {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  padding: 1.25rem;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.10) transparent;
+}
+
+.cs-vibe-screen--composer .cs-vibe-right {
+  order: 1;
+  flex: 0 0 auto;
+  gap: 1.1rem;
+  padding: 0;
+  overflow: visible;
+}
+
+.cs-vibe-screen--composer .cs-user-row {
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.cs-vibe-screen--composer .cs-caption-wrap {
+  min-height: 104px;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.cs-vibe-screen--composer .cs-caption-area {
+  min-height: 96px;
+}
+
+.cs-vibe-screen--composer .cs-vibe-left {
+  order: 2;
+  flex: 0 0 auto;
+  min-height: 300px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.cs-vibe-screen--composer .cs-vibe-dropzone {
+  min-height: 300px;
+  margin: 0;
+  border-radius: 18px;
+}
+
+.cs-vibe-screen--composer .cs-vibe-dropzone--has-media {
+  border-radius: 18px;
 }
 
 .cs-vibe-left {
@@ -4790,6 +4844,249 @@
   height: 18px;
 }
 
+.cs-story-builder-trigger {
+  position: absolute;
+  top: 4.4rem;
+  right: 1rem;
+  z-index: 4;
+  padding: 0.65rem 0.95rem;
+  border: 1px solid rgba(167,139,250,0.38);
+  border-radius: 999px;
+  background: rgba(17,24,39,0.72);
+  color: #ede9fe;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  backdrop-filter: blur(14px);
+}
+
+.cs-story-builder-trigger:hover {
+  border-color: rgba(196,181,253,0.7);
+  background: rgba(91,33,182,0.4);
+}
+
+.cs-story-builder-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 0.75rem;
+  background: rgba(2,6,23,0.88);
+  backdrop-filter: blur(18px);
+}
+
+.cs-story-builder {
+  width: min(100%, 920px);
+  height: min(100%, 780px);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 1.6rem;
+  background: #070b18;
+  box-shadow: 0 28px 80px rgba(0,0,0,0.58);
+}
+
+.cs-story-builder-header,
+.cs-story-builder-footer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.75rem 1rem;
+  border-color: rgba(255,255,255,0.08);
+  background: rgba(10,15,29,0.96);
+}
+
+.cs-story-builder-header {
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+.cs-story-builder-header > div,
+.cs-story-builder-tool-row,
+.cs-story-builder-text-add,
+.cs-story-builder-stickers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.cs-story-builder-header button,
+.cs-story-builder-footer button,
+.cs-story-builder-controls button {
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 0.7rem;
+  background: rgba(255,255,255,0.055);
+  color: #e2e8f0;
+  padding: 0.48rem 0.72rem;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cs-story-builder button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.cs-story-builder-controls button.is-active {
+  border-color: rgba(167,139,250,0.55);
+  background: rgba(124,58,237,0.22);
+  color: #ddd6fe;
+}
+
+.cs-story-builder-body {
+  min-height: 0;
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(260px, 320px);
+  overflow: hidden;
+}
+
+.cs-story-builder-stage-wrap {
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  overflow: hidden;
+  background: #020617;
+}
+
+.cs-story-builder-canvas {
+  display: block;
+  width: auto;
+  height: 100%;
+  max-width: 100%;
+  aspect-ratio: 9 / 16;
+  border-radius: 1.1rem;
+  background: #050817;
+  box-shadow: 0 18px 50px rgba(0,0,0,0.55);
+  touch-action: none;
+  cursor: grab;
+}
+
+.cs-story-builder-controls {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.9rem;
+  border-left: 1px solid rgba(255,255,255,0.08);
+  background: rgba(9,14,27,0.94);
+}
+
+.cs-story-builder-controls fieldset {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0.75rem 0 0;
+  padding: 0.8rem;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 0.9rem;
+}
+
+.cs-story-builder-controls legend {
+  color: #cbd5e1;
+  font-size: 0.74rem;
+  font-weight: 800;
+  padding: 0 0.35rem;
+}
+
+.cs-story-builder-controls label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.55rem;
+  color: #94a3b8;
+  font-size: 0.72rem;
+}
+
+.cs-story-builder-controls input[type="text"],
+.cs-story-builder-text-add input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.56rem 0.65rem;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 0.65rem;
+  background: rgba(255,255,255,0.045);
+  color: #f8fafc;
+  font: inherit;
+  font-size: 0.78rem;
+  outline: none;
+}
+
+.cs-story-builder-text-add input {
+  flex: 1;
+}
+
+.cs-story-builder-stickers button {
+  padding: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  font-size: 1.2rem;
+}
+
+.cs-story-builder-footer {
+  justify-content: flex-end;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+.cs-story-builder-footer span {
+  margin-right: auto;
+  max-width: 32rem;
+  color: #94a3b8;
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.cs-story-builder-footer button.is-primary {
+  border-color: rgba(139,92,246,0.5);
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+}
+
+.cs-story-builder.is-preview .cs-story-builder-body {
+  grid-template-columns: 1fr;
+}
+
+@media (max-width: 680px) {
+  .cs-story-builder-backdrop { padding: 0; }
+  .cs-story-builder {
+    width: 100%;
+    height: 100%;
+    border: none;
+    border-radius: 0;
+  }
+  .cs-story-builder-header,
+  .cs-story-builder-footer {
+    padding-left: 0.7rem;
+    padding-right: 0.7rem;
+  }
+  .cs-story-builder-body {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .cs-story-builder-stage-wrap {
+    flex: 0 0 min(58dvh, 520px);
+    padding: 0.65rem;
+  }
+  .cs-story-builder-controls {
+    flex: 0 0 auto;
+    overflow: visible;
+    border-left: 0;
+    border-top: 1px solid rgba(255,255,255,0.08);
+  }
+  .cs-story-builder-footer { flex-wrap: wrap; }
+  .cs-story-builder-footer span {
+    flex-basis: 100%;
+    max-width: none;
+  }
+  .cs-story-builder-footer button { flex: 1; }
+}
+
 .cs-story-music-sticker {
   position: absolute;
   transform: translate(-50%, -50%);
@@ -5222,6 +5519,255 @@
 .cs-footer-hint { font-size: 0.8rem; color: rgba(100,116,139,0.8); flex: 1; min-width: 0; }
 .cs-footer-actions { display: flex; align-items: center; gap: 0.65rem; }
 
+.cs-utility-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.cs-settings-btn.is-active {
+  color: #c4b5fd;
+  border-color: rgba(167, 139, 250, 0.42);
+  background: rgba(124, 58, 237, 0.18);
+}
+
+.cs-settings-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cs-utility-trigger {
+  width: 2.75rem;
+  height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid rgba(168, 85, 247, 0.38);
+  background: rgba(168, 85, 247, 0.14);
+  color: #c4b5fd;
+  cursor: pointer;
+  transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+}
+
+.cs-utility-trigger:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: rgba(168, 85, 247, 0.22);
+  border-color: rgba(196, 181, 253, 0.5);
+}
+
+.cs-utility-trigger:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.cs-utility-trigger .cs-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.cs-utility-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.7rem);
+  z-index: 40;
+  width: min(18rem, calc(100vw - 2rem));
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.65rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1rem;
+  background: rgba(11, 17, 32, 0.98);
+  box-shadow: 0 18px 50px rgba(2, 6, 23, 0.62);
+  backdrop-filter: blur(24px);
+}
+
+.cs-utility-menu > button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 0.8rem;
+  background: rgba(255, 255, 255, 0.035);
+  color: #f8fafc;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cs-utility-menu > button:hover:not(:disabled) {
+  background: rgba(99, 102, 241, 0.1);
+  border-color: rgba(139, 92, 246, 0.26);
+}
+
+.cs-utility-menu > button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.cs-utility-menu > button > span:last-child {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.cs-utility-menu strong {
+  font-size: 0.82rem;
+}
+
+.cs-utility-menu small {
+  color: rgba(148, 163, 184, 0.78);
+  font-size: 0.7rem;
+}
+
+.cs-utility-action-icon {
+  width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+
+.cs-utility-action-icon .cs-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.cs-utility-action-icon--cancel { color: #fca5a5; background: rgba(239, 68, 68, 0.12); }
+.cs-utility-action-icon--draft { color: #2dd4bf; background: rgba(20, 184, 166, 0.12); }
+.cs-utility-action-icon--schedule { color: #c4b5fd; background: rgba(168, 85, 247, 0.14); }
+
+.cs-schedule-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(2, 6, 23, 0.76);
+  backdrop-filter: blur(12px);
+}
+
+.cs-schedule-dialog {
+  width: min(100%, 32rem);
+  display: grid;
+  gap: 1rem;
+  padding: 1.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1.6rem;
+  background: #0b1120;
+  box-shadow: 0 24px 70px rgba(2, 6, 23, 0.7);
+}
+
+.cs-schedule-icon {
+  width: 3rem;
+  height: 3rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: center;
+  border-radius: 50%;
+  color: #c4b5fd;
+  background: rgba(168, 85, 247, 0.16);
+}
+
+.cs-schedule-icon .cs-icon {
+  width: 1.45rem;
+  height: 1.45rem;
+}
+
+.cs-schedule-dialog h2,
+.cs-schedule-dialog p {
+  margin: 0;
+  text-align: center;
+}
+
+.cs-schedule-dialog h2 {
+  color: #f8fafc;
+  font-size: 1.35rem;
+}
+
+.cs-schedule-dialog p,
+.cs-schedule-note {
+  color: rgba(148, 163, 184, 0.82);
+  font-size: 0.82rem;
+}
+
+.cs-schedule-options {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.cs-schedule-options > button {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 0.9rem;
+  background: rgba(255, 255, 255, 0.035);
+  color: #f8fafc;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cs-schedule-options > button.is-active {
+  border-color: rgba(168, 85, 247, 0.52);
+  background: rgba(168, 85, 247, 0.16);
+}
+
+.cs-schedule-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: rgba(148, 163, 184, 0.32);
+}
+
+.cs-schedule-options > button.is-active .cs-schedule-dot {
+  background: #2dd4bf;
+}
+
+.cs-schedule-options > button > span:last-child {
+  display: grid;
+  gap: 0.16rem;
+}
+
+.cs-schedule-options strong {
+  font-size: 0.86rem;
+}
+
+.cs-schedule-options small {
+  color: rgba(148, 163, 184, 0.84);
+  font-size: 0.72rem;
+}
+
+.cs-schedule-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+}
+
+.cs-schedule-actions button {
+  padding: 0.62rem 1.1rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(203, 213, 225, 0.82);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cs-schedule-actions button.is-primary {
+  border-color: rgba(139, 92, 246, 0.55);
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+}
+
 .cs-cancel-btn {
   display: inline-flex;
   align-items: center;
@@ -5309,38 +5855,58 @@
     max-width: 128px;
   }
 
-  .cs-vibe-screen {
+  .cs-vibe-screen:not(.cs-vibe-screen--composer) {
     display: flex;
     flex-direction: column;
     overflow-y: auto;
     overscroll-behavior: contain;
   }
 
-  .cs-vibe-left {
+  .cs-vibe-screen:not(.cs-vibe-screen--composer) .cs-vibe-left {
     order: 2;
     flex: 0 0 auto;
     border-right: none;
     border-bottom: 1px solid rgba(255,255,255,0.07);
   }
 
-  .cs-vibe-right {
+  .cs-vibe-screen:not(.cs-vibe-screen--composer) .cs-vibe-right {
     order: 1;
     flex: 0 0 auto;
     overflow: visible;
     padding: 1rem 1rem 0.85rem;
   }
 
-  .cs-vibe-dropzone {
+  .cs-vibe-screen:not(.cs-vibe-screen--composer) .cs-vibe-dropzone {
     min-height: 520px;
     height: min(78vh, 680px);
     max-height: none;
   }
 
-  .cs-vibe-dropzone--has-media {
+  .cs-vibe-screen:not(.cs-vibe-screen--composer) .cs-vibe-dropzone--has-media {
     margin: 0 0 1rem;
     border-radius: 0 0 18px 18px;
     border-left: 0;
     border-right: 0;
+  }
+
+  .cs-vibe-screen--composer {
+    padding: 1rem;
+    gap: 0.9rem;
+    overscroll-behavior: contain;
+  }
+
+  .cs-vibe-screen--composer .cs-vibe-right {
+    gap: 0.9rem;
+  }
+
+  .cs-vibe-screen--composer .cs-caption-wrap,
+  .cs-vibe-screen--composer .cs-caption-area {
+    min-height: 80px;
+  }
+
+  .cs-vibe-screen--composer .cs-vibe-left,
+  .cs-vibe-screen--composer .cs-vibe-dropzone {
+    min-height: min(42dvh, 390px);
   }
 
   .cs-caption-area {
@@ -5682,6 +6248,222 @@
   margin-bottom: 0 !important;
   font-size: 0.88rem !important;
   line-height: 1.4;
+}
+
+.cs-settings-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 75;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(2, 6, 23, 0.72);
+  backdrop-filter: blur(12px);
+}
+
+.cs-settings-dialog {
+  width: min(100%, 31rem);
+  max-height: min(90vh, 44rem);
+  overflow-y: auto;
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 1.4rem;
+  background: linear-gradient(160deg, rgba(17, 24, 46, 0.99), rgba(7, 13, 29, 0.99));
+  box-shadow: 0 28px 80px rgba(2, 6, 23, 0.72);
+}
+
+.cs-settings-dialog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.cs-settings-dialog-head > div {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.cs-settings-dialog-head span {
+  color: #a78bfa;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.cs-settings-dialog-head h2 {
+  margin: 0;
+  color: #f8fafc;
+  font-size: 1.35rem;
+}
+
+.cs-settings-dialog-head > button {
+  width: 2.25rem;
+  height: 2.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  color: #cbd5e1;
+  cursor: pointer;
+}
+
+.cs-settings-dialog-head .cs-icon {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.cs-settings-toggle-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.cs-settings-toggle-list > label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 0.9rem;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 1rem;
+  background: rgba(15, 23, 42, 0.58);
+}
+
+.cs-settings-toggle-list label > span,
+.cs-reach-options label > span {
+  display: grid;
+  gap: 0.16rem;
+}
+
+.cs-settings-toggle-list strong,
+.cs-reach-options strong {
+  color: #f1f5f9;
+  font-size: 0.84rem;
+}
+
+.cs-settings-toggle-list small,
+.cs-reach-options small {
+  color: rgba(148, 163, 184, 0.82);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.cs-settings-toggle-list input[role="switch"] {
+  appearance: none;
+  flex: 0 0 auto;
+  width: 2.55rem;
+  height: 1.45rem;
+  margin: 0;
+  padding: 0.18rem;
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.48);
+  cursor: pointer;
+}
+
+.cs-settings-toggle-list input[role="switch"]::before {
+  content: "";
+  display: block;
+  width: 1.09rem;
+  height: 1.09rem;
+  border-radius: 50%;
+  background: #e2e8f0;
+  transition: transform 0.18s ease;
+}
+
+.cs-settings-toggle-list input[role="switch"]:checked {
+  background: linear-gradient(90deg, #6366f1, #8b5cf6);
+}
+
+.cs-settings-toggle-list input[role="switch"]:checked::before {
+  transform: translateX(1.1rem);
+}
+
+.cs-settings-toggle-list input[role="switch"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.cs-reach-options {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.cs-reach-options legend {
+  margin-bottom: 0.5rem;
+  color: #cbd5e1;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.cs-reach-options > label {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 0.9rem;
+  background: rgba(15, 23, 42, 0.4);
+  cursor: pointer;
+}
+
+.cs-reach-options > label.is-active {
+  border-color: rgba(139, 92, 246, 0.48);
+  background: rgba(99, 102, 241, 0.12);
+}
+
+.cs-reach-options input {
+  accent-color: #8b5cf6;
+}
+
+.cs-community-select {
+  display: grid;
+  gap: 0.4rem;
+  color: #cbd5e1;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.cs-community-select select {
+  width: 100%;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid rgba(139, 92, 246, 0.32);
+  border-radius: 0.85rem;
+  outline: none;
+  background: #111a31;
+  color: #f8fafc;
+  font: inherit;
+}
+
+.cs-settings-empty {
+  margin: 0;
+  color: rgba(148, 163, 184, 0.8);
+  font-size: 0.75rem;
+}
+
+.cs-settings-done {
+  min-height: 2.8rem;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #6366f1, #7c3aed);
+  color: #fff;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.cs-settings-done:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .vyb-event-host-utility-button {

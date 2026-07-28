@@ -33,6 +33,7 @@ import {
   listPostsByUser,
   listStories,
   markStorySeen,
+  togglePostSave,
   unfollowUser,
   updateComment,
   updatePost,
@@ -42,6 +43,7 @@ import {
 } from "./repository.mjs";
 
 const allowedPostKinds = new Set(["text", "image", "video"]);
+const allowedPostVisibilities = new Set(["public", "followers", "community"]);
 const allowedReactionTypes = new Set(["fire", "support", "like", "love", "insight", "funny"]);
 const allowedStoryMediaTypes = new Set(["image", "video"]);
 const allowedCommentMediaTypes = new Set(["image", "gif", "sticker"]);
@@ -51,6 +53,7 @@ const allowedSocialVideoMimeTypes = new Set(["video/mp4", "video/webm", "video/q
 const MAX_SOCIAL_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_SOCIAL_VIDEO_BYTES = 40 * 1024 * 1024;
 const MAX_VIBE_VIDEO_BYTES = 40 * 1024 * 1024;
+const MAX_STORY_COMPOSITION_BYTES = 64 * 1024;
 const SOCIAL_RATE_LIMIT_RULES = [
   {
     id: "post-create",
@@ -75,6 +78,14 @@ const SOCIAL_RATE_LIMIT_RULES = [
     max: 120,
     windowMs: 60_000,
     message: "Slow down before reacting again."
+  },
+  {
+    id: "post-save",
+    methods: new Set(["PUT"]),
+    pattern: /^\/v1\/posts\/[^/]+\/save$/u,
+    max: 60,
+    windowMs: 60_000,
+    message: "Slow down before updating more saved posts."
   },
   {
     id: "repost-write",
@@ -267,15 +278,19 @@ function getLocalMediaObjectPath(mediaUrl) {
   return decodeStorageObjectPath(pathname.slice(localPrefix.length));
 }
 
-function getFirebaseStorageObjectPath(pathname) {
-  const objectMarker = "/o/";
-  const markerIndex = pathname.indexOf(objectMarker);
-
-  if (markerIndex === -1) {
-    return null;
+function isR2PublicMediaUrl(mediaUrl, storagePath) {
+  const r2PublicBaseUrl = process.env.R2_PUBLIC_BASE_URL?.trim().replace(/\/+$/u, "");
+  if (!r2PublicBaseUrl) {
+    return false;
   }
 
-  return decodeStorageObjectPath(pathname.slice(markerIndex + objectMarker.length));
+  const parsed = new URL(mediaUrl);
+  const publicBase = new URL(r2PublicBaseUrl);
+  const expectedPath = `${publicBase.pathname.replace(/\/+$/u, "")}/${storagePath
+    .split("/")
+    .map(encodeURIComponent)
+    .join("/")}`;
+  return parsed.origin === publicBase.origin && parsed.pathname === expectedPath;
 }
 
 function isSafeVibeMediaUrl(value, storagePath) {
@@ -291,10 +306,7 @@ function isSafeVibeMediaUrl(value, storagePath) {
   }
 
   try {
-    const parsed = new URL(mediaUrl);
-    const firebaseObjectPath = getFirebaseStorageObjectPath(parsed.pathname);
-
-    return parsed.hostname === "firebasestorage.googleapis.com" && firebaseObjectPath === storagePath;
+    return isR2PublicMediaUrl(mediaUrl, storagePath);
   } catch {
     return false;
   }
@@ -313,10 +325,7 @@ function isSafeSocialMediaUrl(value, storagePath) {
   }
 
   try {
-    const parsed = new URL(mediaUrl);
-    const firebaseObjectPath = getFirebaseStorageObjectPath(parsed.pathname);
-
-    return parsed.hostname === "firebasestorage.googleapis.com" && firebaseObjectPath === storagePath;
+    return isR2PublicMediaUrl(mediaUrl, storagePath);
   } catch {
     return false;
   }
@@ -515,6 +524,57 @@ function getLiveCommunityMembership(live, communityId, tenantId) {
   );
 }
 
+function normalizeStoryCompositionJson(value) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+  if (typeof value !== "string" || Buffer.byteLength(value, "utf8") > MAX_STORY_COMPOSITION_BYTES) {
+    return false;
+  }
+
+  try {
+    const composition = JSON.parse(value);
+    if (
+      !composition ||
+      typeof composition !== "object" ||
+      Array.isArray(composition) ||
+      composition.version !== 1 ||
+      !composition.canvas ||
+      typeof composition.canvas !== "object" ||
+      !Number.isFinite(Number(composition.canvas.width)) ||
+      !Number.isFinite(Number(composition.canvas.height)) ||
+      Number(composition.canvas.width) <= 0 ||
+      Number(composition.canvas.height) <= 0 ||
+      Number(composition.canvas.width) > 4096 ||
+      Number(composition.canvas.height) > 4096 ||
+      !Array.isArray(composition.layers) ||
+      composition.layers.length > 64 ||
+      composition.layers.some(
+        (layer) =>
+          !layer ||
+          typeof layer !== "object" ||
+          !["text", "sticker", "drawing"].includes(layer.type)
+      )
+    ) {
+      return false;
+    }
+
+    const canonical = JSON.stringify(composition);
+    return Buffer.byteLength(canonical, "utf8") <= MAX_STORY_COMPOSITION_BYTES
+      ? canonical
+      : false;
+  } catch {
+    return false;
+  }
+}
+
+function getLiveCommunityIds(live, tenantId) {
+  return (live?.communities ?? [])
+    .map((item) => item.community)
+    .filter((community) => community?.id && (!tenantId || community.tenantId === tenantId))
+    .map((community) => community.id);
+}
+
 function canAccessCommunityPost(live, post) {
   const communityId = normalizeOptionalString(post?.communityId);
   if (communityId === false || !communityId) {
@@ -536,6 +596,66 @@ function requireCommunityPostAccess(response, live, post, actionLabel) {
     `You can only ${actionLabel} community posts from communities you belong to.`
   );
   return false;
+}
+
+async function requirePostAccess(response, live, post, actionLabel, tenantId, viewerUserId) {
+  if (!requireCommunityPostAccess(response, live, post, actionLabel)) {
+    return false;
+  }
+
+  if (post.visibility !== "followers" || post.viewerCanManage) {
+    return true;
+  }
+
+  const record = post.authorUserId
+    ? post
+    : await findPostRecordById(post.id, { tenantId });
+  const authorUserId = record?.authorUserId ?? null;
+  const canView = Boolean(
+    viewerUserId &&
+      authorUserId &&
+      (viewerUserId === authorUserId ||
+        (await isFollowing({
+          tenantId,
+          followerUserId: viewerUserId,
+          followingUserId: authorUserId
+        })))
+  );
+
+  if (canView) {
+    return true;
+  }
+
+  sendError(response, 403, "FORBIDDEN_POST", `Only followers can ${actionLabel} this post.`);
+  return false;
+}
+
+async function requireStoryAccess(response, live, story, actionLabel, viewerUserId) {
+  if (
+    story.visibility === "community" &&
+    (!story.communityId || !getLiveCommunityMembership(live, story.communityId, story.tenantId))
+  ) {
+    sendError(response, 403, "FORBIDDEN_STORY", `Only community members can ${actionLabel} this story.`);
+    return false;
+  }
+
+  if (story.visibility === "followers" && !story.isOwn) {
+    const followsAuthor = Boolean(
+      viewerUserId &&
+        story.userId &&
+        (await isFollowing({
+          tenantId: story.tenantId,
+          followerUserId: viewerUserId,
+          followingUserId: story.userId
+        }))
+    );
+    if (!followsAuthor) {
+      sendError(response, 403, "FORBIDDEN_STORY", `Only followers can ${actionLabel} this story.`);
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function filterVisiblePostsForViewer(live, posts) {
@@ -872,7 +992,9 @@ export async function handleSocialRoute({ request, response, url, context }) {
       placement: "feed",
       userId: authorUserId ?? null,
       viewerMembershipId: resolvedMembershipId,
-      viewerUserId: resolvedUserId
+      viewerUserId: resolvedUserId,
+      viewerCommunityIds: getLiveCommunityIds(resolved.live, tenantId),
+      firebaseIdToken: context.actor.firebaseIdToken ?? null
     });
 
     sendJson(response, 200, {
@@ -911,7 +1033,9 @@ export async function handleSocialRoute({ request, response, url, context }) {
       userId: authorUserId ?? null,
       viewerMembershipId: resolvedMembershipId,
       viewerUserId: resolvedUserId,
-      cursor
+      viewerCommunityIds: getLiveCommunityIds(resolved.live, tenantId),
+      cursor,
+      firebaseIdToken: context.actor.firebaseIdToken ?? null
     });
     const pageItems = items.slice(0, limit);
     const lastItem = pageItems[pageItems.length - 1] ?? null;
@@ -1001,8 +1125,17 @@ export async function handleSocialRoute({ request, response, url, context }) {
       sendError(response, 403, "FORBIDDEN_COMMUNITY", "You can only post inside communities you belong to.");
       return true;
     }
-    if (communityId && payload.isAnonymous === true) {
-      sendError(response, 400, "ANONYMOUS_COMMUNITY_POST_DISABLED", "Community posts must use your verified campus identity.");
+    const visibility = payload.visibility ?? (communityId ? "community" : "public");
+    if (!allowedPostVisibilities.has(visibility)) {
+      sendError(response, 400, "INVALID_VISIBILITY", "visibility must be public, followers, or community.");
+      return true;
+    }
+    if (visibility === "community" && !communityId) {
+      sendError(response, 400, "COMMUNITY_REQUIRED", "Choose a community for a community-only post.");
+      return true;
+    }
+    if (visibility !== "community" && communityId) {
+      sendError(response, 400, "INVALID_VISIBILITY", "Posts linked to a community must use community visibility.");
       return true;
     }
 
@@ -1092,8 +1225,9 @@ export async function handleSocialRoute({ request, response, url, context }) {
       authorEmail: profile.primaryEmail ?? null,
       placement: payload.placement === "vibe" ? "vibe" : "feed",
       kind: payload.kind ?? "text",
-      isAnonymous: communityId ? false : payload.isAnonymous === true,
-      allowAnonymousComments: communityId ? false : payload.allowAnonymousComments !== false,
+      isAnonymous: payload.isAnonymous === true,
+      allowAnonymousComments: payload.allowAnonymousComments !== false,
+      visibility,
       mediaAssets: Array.isArray(payload.mediaAssets) ? payload.mediaAssets : null,
       mediaUrl: requireNonEmptyString(payload.mediaUrl) ? payload.mediaUrl.trim() : null,
       mediaStoragePath: requireNonEmptyString(payload.mediaStoragePath) ? payload.mediaStoragePath.trim() : null,
@@ -1103,7 +1237,8 @@ export async function handleSocialRoute({ request, response, url, context }) {
       title: requireNonEmptyString(payload.title) ? payload.title.trim() : "Campus update",
       body: requireNonEmptyString(payload.body) ? payload.body.trim() : "",
       viewerMembershipId: resolvedMembershipId ?? payload.membershipId ?? context.actor.id,
-      viewerUserId: resolvedUserId
+      viewerUserId: resolvedUserId,
+      firebaseIdToken: context.actor.firebaseIdToken ?? null
     });
 
     await logSocialActivity({
@@ -1152,6 +1287,35 @@ export async function handleSocialRoute({ request, response, url, context }) {
       return true;
     }
 
+    if (payload.isAnonymous === true) {
+      sendError(response, 400, "ANONYMOUS_STORY_DISABLED", "Stories cannot be published anonymously.");
+      return true;
+    }
+
+    const communityId = normalizeOptionalString(payload.communityId);
+    if (communityId === false) {
+      sendError(response, 400, "INVALID_COMMUNITY", "communityId must be a string.");
+      return true;
+    }
+    if (communityId && !getLiveCommunityMembership(resolved.live, communityId, tenantId)) {
+      sendError(response, 403, "FORBIDDEN_COMMUNITY", "You can only publish stories to communities you belong to.");
+      return true;
+    }
+
+    const visibility = payload.visibility ?? (communityId ? "community" : "public");
+    if (!allowedPostVisibilities.has(visibility)) {
+      sendError(response, 400, "INVALID_VISIBILITY", "visibility must be public, followers, or community.");
+      return true;
+    }
+    if (visibility === "community" && !communityId) {
+      sendError(response, 400, "COMMUNITY_REQUIRED", "Choose a community for a community-only story.");
+      return true;
+    }
+    if (visibility !== "community" && communityId) {
+      sendError(response, 400, "INVALID_VISIBILITY", "Stories linked to a community must use community visibility.");
+      return true;
+    }
+
     if (!allowedStoryMediaTypes.has(payload.mediaType ?? "")) {
       sendError(response, 400, "INVALID_MEDIA_TYPE", "Stories support image or video media.");
       return true;
@@ -1159,6 +1323,17 @@ export async function handleSocialRoute({ request, response, url, context }) {
 
     if (!requireNonEmptyString(payload.mediaUrl)) {
       sendError(response, 400, "MISSING_MEDIA", "Add story media before publishing.");
+      return true;
+    }
+
+    const compositionJson = normalizeStoryCompositionJson(payload.compositionJson);
+    if (compositionJson === false) {
+      sendError(
+        response,
+        400,
+        "INVALID_STORY_COMPOSITION",
+        "Story composition must be valid version 1 editor JSON under 64 KB."
+      );
       return true;
     }
 
@@ -1199,6 +1374,8 @@ export async function handleSocialRoute({ request, response, url, context }) {
 
     const item = await createStory({
       tenantId,
+      communityId,
+      visibility,
       userId: resolvedUserId,
       username: profile.username,
       displayName: profile.fullName,
@@ -1207,7 +1384,9 @@ export async function handleSocialRoute({ request, response, url, context }) {
       mediaStoragePath: requireNonEmptyString(payload.mediaStoragePath) ? payload.mediaStoragePath.trim() : null,
       mediaMimeType: requireNonEmptyString(payload.mediaMimeType) ? payload.mediaMimeType.trim() : null,
       mediaSizeBytes: Number.isFinite(Number(payload.mediaSizeBytes)) ? Number(payload.mediaSizeBytes) : null,
-      caption: requireNonEmptyString(payload.caption) ? payload.caption.trim() : ""
+      caption: requireNonEmptyString(payload.caption) ? payload.caption.trim() : "",
+      compositionJson,
+      firebaseIdToken: context.actor.firebaseIdToken ?? null
     });
 
     await logSocialActivity({
@@ -1239,7 +1418,9 @@ export async function handleSocialRoute({ request, response, url, context }) {
     const items = await listStories({
       tenantId,
       viewerUserId: resolvedUserId,
-      viewerMembershipId: resolvedMembershipId
+      viewerMembershipId: resolvedMembershipId,
+      viewerCommunityIds: getLiveCommunityIds(resolved.live, tenantId),
+      firebaseIdToken: context.actor.firebaseIdToken ?? null
     });
 
     sendJson(response, 200, { items });
@@ -1369,7 +1550,9 @@ export async function handleSocialRoute({ request, response, url, context }) {
         limit: 24,
         placement: "feed",
         viewerMembershipId: resolvedMembershipId,
-        viewerUserId: resolvedUserId
+        viewerUserId: resolvedUserId,
+        viewerCommunityIds: getLiveCommunityIds(resolved.live, tenantId),
+        firebaseIdToken: context.actor.firebaseIdToken ?? null
       }),
       listPostsByUser({
         tenantId,
@@ -1377,7 +1560,9 @@ export async function handleSocialRoute({ request, response, url, context }) {
         limit: 24,
         placement: "vibe",
         viewerMembershipId: resolvedMembershipId,
-        viewerUserId: resolvedUserId
+        viewerUserId: resolvedUserId,
+        viewerCommunityIds: getLiveCommunityIds(resolved.live, tenantId),
+        firebaseIdToken: context.actor.firebaseIdToken ?? null
       })
     ]);
     const posts = filterVisiblePostsForViewer(resolved.live, [...feedPosts, ...vibePosts]).sort(
@@ -1606,7 +1791,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
       return true;
     }
-    if (!requireCommunityPostAccess(response, resolved.live, post, "view reactions on")) {
+    if (!await requirePostAccess(response, resolved.live, post, "view reactions on", post.tenantId, resolvedUserId)) {
       return true;
     }
 
@@ -1648,7 +1833,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
       return true;
     }
-    if (!requireCommunityPostAccess(response, resolved.live, post, "repost")) {
+    if (!await requirePostAccess(response, resolved.live, post, "repost", post.tenantId, resolvedUserId)) {
       return true;
     }
 
@@ -1670,7 +1855,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
       authorName: profile.fullName,
       placement: payload.placement === "vibe" ? "vibe" : payload.placement === "feed" ? "feed" : post.placement,
       kind: post.kind,
-      allowAnonymousComments: post.communityId ? false : post.allowAnonymousComments !== false,
+      allowAnonymousComments: post.allowAnonymousComments !== false,
       mediaUrl: post.mediaUrl,
       location: post.location ?? profile.collegeName,
       title: requireNonEmptyString(payload.quote)
@@ -1715,7 +1900,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
       return true;
     }
-    if (!requireCommunityPostAccess(response, resolved.live, post, "delete")) {
+    if (!await requirePostAccess(response, resolved.live, post, "delete", post.tenantId, resolvedUserId)) {
       return true;
     }
 
@@ -1765,7 +1950,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
       return true;
     }
-    if (!requireCommunityPostAccess(response, resolved.live, post, "edit")) {
+    if (!await requirePostAccess(response, resolved.live, post, "edit", post.tenantId, resolvedUserId)) {
       return true;
     }
 
@@ -1782,9 +1967,8 @@ export async function handleSocialRoute({ request, response, url, context }) {
         : payload.location === null
           ? null
           : post.location;
-    const nextAllowAnonymousComments = post.communityId
-      ? false
-      : typeof payload.allowAnonymousComments === "boolean"
+    const nextAllowAnonymousComments =
+      typeof payload.allowAnonymousComments === "boolean"
         ? payload.allowAnonymousComments
         : post.allowAnonymousComments !== false;
 
@@ -1844,7 +2028,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
       return true;
     }
-    if (!requireCommunityPostAccess(response, resolved.live, post, "view comments on")) {
+    if (!await requirePostAccess(response, resolved.live, post, "view comments on", post.tenantId, resolvedUserId)) {
       return true;
     }
 
@@ -1888,7 +2072,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
       return true;
     }
-    if (!requireCommunityPostAccess(response, resolved.live, post, "comment on")) {
+    if (!await requirePostAccess(response, resolved.live, post, "comment on", post.tenantId, resolvedUserId)) {
       return true;
     }
 
@@ -2018,7 +2202,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
       return true;
     }
-    if (!requireCommunityPostAccess(response, resolved.live, post, "delete comments on")) {
+    if (!await requirePostAccess(response, resolved.live, post, "delete comments on", post.tenantId, resolvedUserId)) {
       return true;
     }
 
@@ -2099,7 +2283,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
       return true;
     }
-    if (!requireCommunityPostAccess(response, resolved.live, post, "edit comments on")) {
+    if (!await requirePostAccess(response, resolved.live, post, "edit comments on", post.tenantId, resolvedUserId)) {
       return true;
     }
 
@@ -2157,7 +2341,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
       return true;
     }
-    if (!requireCommunityPostAccess(response, resolved.live, post, "react to comments on")) {
+    if (!await requirePostAccess(response, resolved.live, post, "react to comments on", post.tenantId, resolvedUserId)) {
       return true;
     }
 
@@ -2203,6 +2387,38 @@ export async function handleSocialRoute({ request, response, url, context }) {
     return true;
   }
 
+  const saveMatch = request.method === "PUT" ? url.pathname.match(/^\/v1\/posts\/([^/]+)\/save$/) : null;
+  if (saveMatch) {
+    const post = await findPostById(saveMatch[1], {
+      tenantId: resolvedTenantId ?? null,
+      viewerMembershipId: resolvedMembershipId,
+      viewerUserId: resolvedUserId
+    });
+    if (!post) {
+      sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
+      return true;
+    }
+    if (!await requirePostAccess(response, resolved.live, post, "save", post.tenantId, resolvedUserId)) {
+      return true;
+    }
+
+    const item = await togglePostSave({
+      tenantId: post.tenantId,
+      postId: post.id,
+      userId: resolvedUserId
+    });
+    await logSocialActivity({
+      tenantId: post.tenantId,
+      membershipId: resolvedMembershipId,
+      activityType: item.isSaved ? "post.saved" : "post.unsaved",
+      entityType: "post",
+      entityId: post.id,
+      metadata: { savedCount: item.savedCount }
+    });
+    sendJson(response, 200, item);
+    return true;
+  }
+
   const reactionMatch = request.method === "PUT" ? url.pathname.match(/^\/v1\/posts\/([^/]+)\/reactions$/) : null;
   if (reactionMatch) {
     const payload = await readJson(request);
@@ -2220,7 +2436,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
       sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
       return true;
     }
-    if (!requireCommunityPostAccess(response, resolved.live, post, "react to")) {
+    if (!await requirePostAccess(response, resolved.live, post, "react to", post.tenantId, resolvedUserId)) {
       return true;
     }
 
@@ -2281,6 +2497,9 @@ export async function handleSocialRoute({ request, response, url, context }) {
       sendError(response, 404, "STORY_NOT_FOUND", "Story not found.");
       return true;
     }
+    if (!await requireStoryAccess(response, resolved.live, story, "react to", resolvedUserId)) {
+      return true;
+    }
 
     const item = await upsertStoryReaction({
       storyId: story.id,
@@ -2312,6 +2531,9 @@ export async function handleSocialRoute({ request, response, url, context }) {
     });
     if (!story) {
       sendError(response, 404, "STORY_NOT_FOUND", "Story not found.");
+      return true;
+    }
+    if (!await requireStoryAccess(response, resolved.live, story, "view", resolvedUserId)) {
       return true;
     }
 

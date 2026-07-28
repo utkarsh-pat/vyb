@@ -1,65 +1,55 @@
 # Vyb Documentation Hub
 
 Owner: Architecture and Product
-Last Updated: 2026-05-05
-Change Summary: Added the universal Vyb loading state to the canonical UI theme guide and kept the docs hub aligned with the live product, architecture, and implementation rules.
+Last Updated: 2026-07-29
+Status: Marketplace-first MVP documentation set
 
-This directory is the single source of truth for product, architecture, delivery, and engineering process.
+## Canonical Review Order
 
-## Document Hierarchy
+1. [High Level Design](./architecture/HLD.md)
+2. [System Low Level Design](./architecture/LLD.md)
+3. [Software Requirements Specification](./product/SRS.md)
+4. [Master Plan](./product/MASTER_PLAN.md)
+5. [MVP Phased Rollout](./product/MVP_PHASED_ROLLOUT.md)
+6. [Capacity and Cost Model](./operations/CAPACITY_AND_COST_MODEL.md)
+7. [Google Cloud Cost Audit](./operations/GOOGLE_CLOUD_COST_AUDIT_2026-07-28.md)
+8. [MVP Launch Runbook](./operations/MVP_LAUNCH_RUNBOOK.md)
+9. [Firebase Migration Verification](./operations/FIREBASE_MIGRATION_VERIFICATION_2026-07-29.md)
+10. [Fresh Production Ownership](./operations/FRESH_ACCOUNT_OWNERSHIP.md)
+11. [Production Infrastructure Specification](./operations/PRODUCTION_INFRASTRUCTURE_SPEC.md)
+12. [Client Platform Strategy](./architecture/CLIENT_PLATFORM_STRATEGY.md)
+13. relevant module LLD under `lld/phase-1`;
+14. matching API contract, query review, and ADR;
+15. [Complete System Test Cases](./qa/SYSTEM_TEST_CASES.md).
 
-1. `docs/architecture/HLD.md`
-   The living High Level Design. It defines system boundaries, module ownership, core architecture, and scaling strategy.
-2. `docs/architecture/CLIENT_PLATFORM_STRATEGY.md`
-   The multi-surface client strategy for responsive web and future native apps.
-3. `docs/process/ENGINEERING_RULEBOOK.md`
-   The non-negotiable rules every teammate must follow.
-4. `docs/product/SRS.md`
-   The living Software Requirements Specification.
-5. `docs/product/MASTER_PLAN.md`
-   The execution narrative: what we are building, why, what is done, and what comes next.
-6. `docs/product/UI_THEME_GUIDE.md`
-   The canonical visual system for colors, typography, glass surfaces, universal loading state, and shared interaction styling across all pages and future features.
-7. `docs/lld/phase-1/`
-   Execution-ready LLDs for the core Phase 1 backend modules.
-8. `docs/contracts/phase-1/`
-   API contracts for the current public Phase 1 backend endpoints.
-9. `docs/architecture/ADR_001_PHASE1_HOSTING_TOPOLOGY.md` and later ADRs
-   Accepted architecture decisions for hosting, external services, and new runtime dependencies.
-10. `docs/query-reviews/phase-1/`
-   Query reviews for the hot paths we expect to matter in Phase 1.
-11. `docs/templates/LLD_TEMPLATE.md`
-   The mandatory template for any feature-level Low Level Design.
-12. `docs/templates/API_CONTRACT_TEMPLATE.md`
-   The mandatory template for documenting public or internal API contracts.
-13. `docs/templates/QUERY_REVIEW_TEMPLATE.md`
-   The mandatory template for hot-path queries and index justification.
-14. `docs/templates/ADR_TEMPLATE.md`
-   The mandatory template for architecture decisions such as Redis, Pub/Sub, caching, search, or a new third-party service.
+## Architecture Decisions
 
-## Rules For Updating Docs
+- [ADR-001: Hosting Topology](./architecture/ADR_001_PHASE1_HOSTING_TOPOLOGY.md)
+- [ADR-002: Story Music](./architecture/ADR_002_STORY_MUSIC_SEARCH_AND_CLIENT_EXPORT.md) — implementation retained, launch deferred
+- [ADR-003: Chat Realtime and E2EE](./architecture/ADR_003_PHASE1_CHAT_REALTIME_AND_E2EE.md)
+- [ADR-004: MVP Data and Media Topology](./architecture/ADR_004_MVP_DATA_AND_MEDIA_TOPOLOGY.md)
 
-- Any scope change that affects architecture must update `HLD.md` first.
-- Any new feature must have an approved LLD before implementation starts.
-- Any new external dependency or infrastructure service must have an ADR.
-- Any requirement change must update `SRS.md`.
-- Any phase/status/progress update must update `MASTER_PLAN.md`.
-- Any user-facing visual change must stay aligned with `UI_THEME_GUIDE.md`.
-- If code changes but docs do not, the task is not done.
+## Phase 1 LLDs
 
-## Review Order For New Teammates
+- [Identity](./lld/phase-1/IDENTITY_SERVICE_LLD.md)
+- [Campus](./lld/phase-1/CAMPUS_SERVICE_LLD.md)
+- [Community Connect](./lld/phase-1/COMMUNITY_CONNECT_SURFACE_LLD.md)
+- [Social](./lld/phase-1/SOCIAL_SERVICE_LLD.md)
+- [Marketplace](./lld/phase-1/MARKETPLACE_SERVICE_LLD.md)
+- [Chat](./lld/phase-1/CHAT_SERVICE_LLD.md)
+- [Resources](./lld/phase-1/RESOURCES_SERVICE_LLD.md)
 
-1. Read `HLD.md`
-2. Read `CLIENT_PLATFORM_STRATEGY.md`
-3. Read `ENGINEERING_RULEBOOK.md`
-4. Read `SRS.md`
-5. Read `MASTER_PLAN.md`
-6. Read `UI_THEME_GUIDE.md`
-7. Read the relevant Phase 1 LLD or feature LLD
-8. Read the matching API contract and query review for hot paths
-9. Read the relevant ADRs for the assigned feature
+## Documentation Rules
 
-## Ownership
+- requirement changes update the SRS;
+- architecture changes update the HLD and require an ADR when an external service or major boundary changes;
+- implementation design updates the system/module LLD;
+- public API and hot query changes update their contract/review;
+- phase, scope, or progress changes update the Master Plan and rollout document;
+- production operating changes update the launch/deployment runbooks;
+- current code and target design must be labeled separately;
+- if documents conflict, the most recently updated canonical document in the review order wins until the conflict is resolved.
 
-- Product and architecture owners are responsible for keeping these docs current.
-- Every contributor is responsible for updating the documents touched by their change.
+## Launch Scope Note
+
+Marketplace is MVP. Stories/story music are implemented but disabled for initial public launch. Vibes/video, events, and games are gated. Wallet, payments, escrow, anonymous posting, and group chat are deferred.

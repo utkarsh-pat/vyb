@@ -1,0 +1,3 @@
+<resources>
+    <bool name="uses_cleartext_traffic">false</bool>
+</resources>

@@ -52,10 +52,23 @@ export function buildCorsHeaders(allowOrigin = null) {
   return headers;
 }
 
+function buildTimingHeaders(response) {
+  const startedAt = Number(response.__vybRequestStartedAt ?? 0);
+
+  if (!Number.isFinite(startedAt) || startedAt <= 0) {
+    return {};
+  }
+
+  return {
+    "server-timing": `app;dur=${Math.max(0, Date.now() - startedAt)}`
+  };
+}
+
 export function sendJson(response, statusCode, payload, extraHeaders = {}) {
   response.writeHead(statusCode, {
     "content-type": "application/json; charset=utf-8",
     ...buildCorsHeaders(response.__vybCorsAllowOrigin ?? null),
+    ...buildTimingHeaders(response),
     ...extraHeaders
   });
   response.end(JSON.stringify(payload));

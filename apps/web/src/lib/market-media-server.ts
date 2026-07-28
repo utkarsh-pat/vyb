@@ -3,9 +3,9 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { DeleteObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import type { MarketMediaAsset, MarketMediaKind, MarketTab } from "@vyb/contracts";
 import sharp from "sharp";
-import { getFirebaseAdminStorageBucket } from "./firebase-admin-server";
 import { loadWorkspaceRootEnv } from "./server-env";
 
 const MAX_MARKET_MEDIA_ITEMS = 6;
@@ -17,9 +17,13 @@ const MARKET_IMAGE_WEBP_QUALITY = 80;
 const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif"]);
 const VIDEO_MIME_TYPES = new Set(["video/mp4", "video/webm", "video/quicktime", "video/x-matroska"]);
 
-function buildDownloadUrl(bucketName: string, storagePath: string, token: string) {
-  return `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(storagePath)}?alt=media&token=${token}`;
-}
+type R2Config = {
+  accountId: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  bucket: string;
+  publicBaseUrl: string;
+};
 
 function buildLocalDownloadUrl(storagePath: string) {
   const encodedPath = storagePath
@@ -35,9 +39,37 @@ function normalizeMimeType(value: string) {
   return value.trim().toLowerCase();
 }
 
-function getConfiguredStorageBucket() {
+function getR2Config() {
   loadWorkspaceRootEnv();
-  return process.env.FIREBASE_STORAGE_BUCKET ?? process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ?? null;
+  const config = {
+    accountId: process.env.R2_ACCOUNT_ID?.trim(),
+    accessKeyId: process.env.R2_ACCESS_KEY_ID?.trim(),
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY?.trim(),
+    bucket: process.env.R2_BUCKET?.trim(),
+    publicBaseUrl: process.env.R2_PUBLIC_BASE_URL?.trim().replace(/\/+$/u, "")
+  };
+  const missing = Object.entries(config)
+    .filter(([, value]) => !value)
+    .map(([key]) => key);
+  if (missing.length > 0) {
+    throw new Error(`R2 media storage is not configured. Missing: ${missing.join(", ")}.`);
+  }
+  return config as R2Config;
+}
+
+function getR2Client(config: R2Config) {
+  return new S3Client({
+    region: "auto",
+    endpoint: `https://${config.accountId}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: config.accessKeyId,
+      secretAccessKey: config.secretAccessKey
+    }
+  });
+}
+
+function buildR2PublicUrl(publicBaseUrl: string, storagePath: string) {
+  return `${publicBaseUrl}/${storagePath.split("/").map(encodeURIComponent).join("/")}`;
 }
 
 function getLocalMarketMediaRoot() {
@@ -142,6 +174,10 @@ function validateFile(file: File) {
     throw new Error(`"${file.name}" is not a supported image or video format.`);
   }
 
+  if (kind === "video" && process.env.VYB_MARKET_VIDEO_ENABLED !== "1") {
+    throw new Error("Marketplace video is disabled for the MVP launch.");
+  }
+
   const maxBytes = kind === "video" ? MAX_MARKET_VIDEO_BYTES : MAX_MARKET_IMAGE_BYTES;
 
   if (file.size > maxBytes) {
@@ -158,26 +194,22 @@ function validateFile(file: File) {
   };
 }
 
-function ensureStorageConfigured() {
-  if (!getConfiguredStorageBucket()) {
-    throw new Error("Firebase Storage is not configured yet. Add NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET before uploading market media.");
+function isLocalDevelopmentStorageFailure(error: unknown) {
+  if (process.env.NODE_ENV === "production") {
+    return false;
   }
-}
 
-function isFirebaseStorageFailure(error: unknown) {
   if (!(error instanceof Error)) {
     return false;
   }
 
   const message = error.message.toLowerCase();
   return (
-    message.includes("default credentials") ||
-    message.includes("could not load the default credentials") ||
-    message.includes("firebase storage is not configured") ||
+    message.includes("r2 media storage is not configured") ||
     message.includes("enoent") ||
     message.includes("permission") ||
     message.includes("unauthorized") ||
-    message.includes("invalid_grant")
+    message.includes("credentials")
   );
 }
 
@@ -216,11 +248,15 @@ export async function deleteMarketMediaAssets(assets: MarketMediaAsset[]) {
   }
 
   try {
-    ensureStorageConfigured();
-    const bucket = getFirebaseAdminStorageBucket();
-    await Promise.allSettled(remoteAssets.map((asset) => bucket.file(asset.storagePath as string).delete({ ignoreNotFound: true })));
+    const r2 = getR2Config();
+    const client = getR2Client(r2);
+    await Promise.allSettled(
+      remoteAssets.map((asset) =>
+        client.send(new DeleteObjectCommand({ Bucket: r2.bucket, Key: asset.storagePath as string }))
+      )
+    );
   } catch (error) {
-    if (!isFirebaseStorageFailure(error)) {
+    if (!isLocalDevelopmentStorageFailure(error)) {
       throw error;
     }
   }
@@ -334,7 +370,6 @@ export async function persistMarketMediaAssets(input: {
     input.files.map(async (file) => {
       const { kind, mimeType } = validateFile(file);
       const assetId = randomUUID();
-      const token = randomUUID();
       const sourceBuffer = Buffer.from(await file.arrayBuffer());
       const sourceFileName = sanitizeFileName(file.name || `${kind}.${extensionFromMimeType(mimeType, kind === "video" ? "mp4" : "jpg")}`);
       const prepared =
@@ -349,36 +384,33 @@ export async function persistMarketMediaAssets(input: {
             };
       const storagePath = `market/${input.tenantId}/${input.tab}/${input.userId}/${input.postId}/${assetId}.${prepared.extension}`;
       try {
-        ensureStorageConfigured();
-
-        const bucket = getFirebaseAdminStorageBucket();
-        const storageFile = bucket.file(storagePath);
-
-        await storageFile.save(prepared.buffer, {
-          resumable: false,
-          metadata: {
-            contentType: prepared.mimeType,
-            cacheControl: "public, max-age=31536000, immutable",
-            metadata: {
-              firebaseStorageDownloadTokens: token,
+        const r2 = getR2Config();
+        await getR2Client(r2).send(
+          new PutObjectCommand({
+            Bucket: r2.bucket,
+            Key: storagePath,
+            Body: prepared.buffer,
+            ContentType: prepared.mimeType,
+            CacheControl: "public, max-age=31536000, immutable",
+            Metadata: {
               originalFileName: sourceFileName,
               sourceMimeType: mimeType,
               compressed: prepared.compressed ? "true" : "false"
             }
-          }
-        });
+          })
+        );
 
         return {
           id: assetId,
           kind,
-          url: buildDownloadUrl(bucket.name, storagePath, token),
+          url: buildR2PublicUrl(r2.publicBaseUrl, storagePath),
           fileName: prepared.fileName,
           mimeType: prepared.mimeType,
           sizeBytes: prepared.buffer.byteLength,
           storagePath
         } satisfies MarketMediaAsset;
       } catch (error) {
-        if (!isFirebaseStorageFailure(error)) {
+        if (!isLocalDevelopmentStorageFailure(error)) {
           throw error;
         }
 

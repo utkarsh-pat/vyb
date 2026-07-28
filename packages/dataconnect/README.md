@@ -2,7 +2,7 @@
 
 Firebase Data Connect service source for Vyb.
 
-This directory is mapped from [firebase.json](/e:/CAMPUS%20LOOP/firebase.json) and follows the official Firebase Data Connect structure:
+This directory is mapped from [firebase.json](../../firebase.json) and follows the official Firebase Data Connect structure:
 
 - `dataconnect.yaml` for service-level configuration
 - `schema/` for the GraphQL schema

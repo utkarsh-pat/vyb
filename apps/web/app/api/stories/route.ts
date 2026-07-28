@@ -52,6 +52,10 @@ export async function POST(request: Request) {
         mediaMimeType?: string | null;
         mediaSizeBytes?: number | null;
         caption?: string | null;
+        allowAnonymousComments?: boolean;
+        visibility?: "public" | "followers" | "community";
+        communityId?: string | null;
+        compositionJson?: string | null;
       }
     | null;
 
@@ -61,6 +65,25 @@ export async function POST(request: Request) {
         error: {
           code: "INVALID_STORY",
           message: "Story media is required.",
+          requestId
+        }
+      },
+      { status: 400 }
+    );
+  }
+
+  if (
+    payload.compositionJson != null &&
+    (
+      typeof payload.compositionJson !== "string" ||
+      new TextEncoder().encode(payload.compositionJson).byteLength > 65_536
+    )
+  ) {
+    return NextResponse.json(
+      {
+        error: {
+          code: "INVALID_STORY_COMPOSITION",
+          message: "Story composition metadata must be a JSON string up to 64 KB.",
           requestId
         }
       },
@@ -86,7 +109,11 @@ export async function POST(request: Request) {
         mediaStoragePath: payload.mediaStoragePath ?? null,
         mediaMimeType: payload.mediaMimeType ?? null,
         mediaSizeBytes: payload.mediaSizeBytes ?? null,
-        caption: payload.caption ?? null
+        caption: payload.caption ?? null,
+        allowAnonymousComments: payload.allowAnonymousComments !== false,
+        visibility: payload.visibility ?? "public",
+        communityId: payload.visibility === "community" ? payload.communityId ?? null : null,
+        compositionJson: payload.mediaType === "video" ? payload.compositionJson ?? null : null
       });
 
     console.info("[web/stories] create-success", {

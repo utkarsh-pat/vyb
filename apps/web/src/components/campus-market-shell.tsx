@@ -191,7 +191,7 @@ function renderMediaPreview(media: MarketMediaAsset, title: string, className: s
     return <video src={media.url} className={className} muted playsInline preload="metadata" controls={options?.controls ?? false} />;
   }
 
-  return <img src={media.url} alt={title} className={className} />;
+  return <img src={media.url} alt={title} className={className} loading="lazy" decoding="async" />;
 }
 
 function buildContactMessage(target: MarketTarget, listing: MarketListing | null, request: MarketRequest | null) {

@@ -1,16 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { getStorage } from "firebase-admin/storage";
-import { getFirebaseAdminApp, loadRootEnv } from "../../../../../packages/config/src/index.mjs";
+import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { loadRootEnv } from "../../../../../packages/config/src/index.mjs";
 
 const MAX_SOCIAL_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_SOCIAL_VIDEO_BYTES = 40 * 1024 * 1024;
 
 const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif"]);
 const VIDEO_MIME_TYPES = new Set(["video/mp4", "video/webm", "video/quicktime"]);
-
-function buildDownloadUrl(bucketName, storagePath, token) {
-  return `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(storagePath)}?alt=media&token=${token}`;
-}
 
 function normalizeMimeType(value) {
   return String(value ?? "").split(";")[0]?.trim().toLowerCase() || "application/octet-stream";
@@ -46,12 +42,33 @@ function extensionFromMimeType(mimeType, fallback = "bin") {
   return explicit[mimeType] ?? mimeType.split("/")[1] ?? fallback;
 }
 
-function ensureStorageConfigured() {
+function getR2Config() {
   loadRootEnv();
-
-  if (!process.env.FIREBASE_STORAGE_BUCKET && !process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET) {
-    throw new Error("Firebase Storage is not configured yet.");
+  const config = {
+    accountId: process.env.R2_ACCOUNT_ID?.trim(),
+    accessKeyId: process.env.R2_ACCESS_KEY_ID?.trim(),
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY?.trim(),
+    bucket: process.env.R2_BUCKET?.trim(),
+    publicBaseUrl: process.env.R2_PUBLIC_BASE_URL?.trim()?.replace(/\/+$/u, "")
+  };
+  const missing = Object.entries(config)
+    .filter(([, value]) => !value)
+    .map(([key]) => key);
+  if (missing.length > 0) {
+    throw new Error(`R2 media storage is not configured. Missing: ${missing.join(", ")}.`);
   }
+  return config;
+}
+
+function getR2Client(config) {
+  return new S3Client({
+    region: "auto",
+    endpoint: `https://${config.accountId}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: config.accessKeyId,
+      secretAccessKey: config.secretAccessKey
+    }
+  });
 }
 
 function resolveAssetType(intent) {
@@ -79,7 +96,7 @@ function sanitizeFileName(value, fallback) {
 }
 
 export async function persistSocialMediaAsset(input) {
-  ensureStorageConfigured();
+  const r2 = getR2Config();
 
   const mimeType = normalizeMimeType(input.mimeType);
   const mediaType = getSocialMediaKind(mimeType);
@@ -108,29 +125,25 @@ export async function persistSocialMediaAsset(input) {
 
   const { assetType, placement } = resolveAssetType(input.intent);
   const assetId = randomUUID();
-  const token = randomUUID();
   const extension = extensionFromMimeType(mimeType, mediaType === "video" ? "mp4" : "jpg");
   const originalFileName = sanitizeFileName(input.fileName, `${assetType}.${extension}`);
   const storagePath = `social/${input.tenantId}/${assetType}/${placement}/${input.userId}/${assetId}.${extension}`;
-  const bucket = getStorage(getFirebaseAdminApp("backend-social-storage")).bucket();
-
-  await bucket.file(storagePath).save(buffer, {
-    resumable: false,
-    metadata: {
-      contentType: mimeType,
-      cacheControl: "public, max-age=31536000, immutable",
-      metadata: {
-        firebaseStorageDownloadTokens: token,
-        originalFileName
-      }
-    }
-  });
+  await getR2Client(r2).send(
+    new PutObjectCommand({
+      Bucket: r2.bucket,
+      Key: storagePath,
+      Body: buffer,
+      ContentType: mimeType,
+      CacheControl: "public, max-age=31536000, immutable",
+      Metadata: { originalFileName }
+    })
+  );
 
   return {
     mediaType,
     mimeType,
     sizeBytes: buffer.byteLength,
     storagePath,
-    url: buildDownloadUrl(bucket.name, storagePath, token)
+    url: `${r2.publicBaseUrl}/${storagePath.split("/").map(encodeURIComponent).join("/")}`
   };
 }

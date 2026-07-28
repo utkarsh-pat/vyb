@@ -2,11 +2,12 @@ import { randomUUID } from "node:crypto";
 import { getFirebaseAdminAuth } from "../../../../packages/config/src/index.mjs";
 import { isTrustedInternalApiKey } from "./internal-auth.mjs";
 
-function buildActor({ id, email, displayName = null }) {
+function buildActor({ id, email, displayName = null, firebaseIdToken = null }) {
   return {
     id,
     email,
-    displayName
+    displayName,
+    firebaseIdToken
   };
 }
 
@@ -115,7 +116,8 @@ export async function createRequestContext(request) {
       actor: buildActor({
         id: decoded.uid,
         email,
-        displayName: typeof decoded.name === "string" ? decoded.name : null
+        displayName: typeof decoded.name === "string" ? decoded.name : null,
+        firebaseIdToken: bearerToken
       }),
       isTrustedInternalRequest,
       authSource: "firebase"

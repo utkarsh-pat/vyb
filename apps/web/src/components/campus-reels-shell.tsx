@@ -3,6 +3,7 @@
 import type { ChatConversationPreview, ChatIdentitySummary, FeedCard, FeedListResponse, PostLikerItem, StoryCard, UserSearchItem } from "@vyb/contracts";
 import { animate, motion, useReducedMotion } from "framer-motion";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
@@ -21,7 +22,6 @@ import { SocialPostLightbox } from "./social-post-lightbox";
 import { SocialPostLikersSheet } from "./social-post-likers-sheet";
 import { SocialPostRepostSheet } from "./social-post-repost-sheet";
 import { SocialPostShareSheet, type SocialShareTarget } from "./social-post-share-sheet";
-import { SocialThreadSheet } from "./social-thread-sheet";
 import { buildPrimaryCampusNav, CampusDesktopNavigation, CampusMobileNavigation } from "./campus-navigation";
 import { SignOutButton } from "./sign-out-button";
 import { useSocialPostEngagement } from "./use-social-post-engagement";
@@ -44,6 +44,11 @@ import {
   type PostDisplayPreference
 } from "./campus-settings-storage";
 import { useSearchNavigationGuard } from "../lib/search-navigation";
+
+const SocialThreadSheet = dynamic(
+  () => import("./social-thread-sheet").then((module) => module.SocialThreadSheet),
+  { ssr: false }
+);
 
 type CampusReelsShellProps = {
   viewerName: string;

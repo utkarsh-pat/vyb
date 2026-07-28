@@ -10,6 +10,8 @@ import { getIdentityModuleHealth, handleIdentityRoute } from "./modules/identity
 import { getMarketModuleHealth, handleMarketRoute } from "./modules/market/index.mjs";
 import { getModerationModuleHealth, handleModerationRoute } from "./modules/moderation/index.mjs";
 import { getResourcesModuleHealth, handleResourcesRoute } from "./modules/resources/index.mjs";
+import { getEventsModuleHealth, handleEventsRoute } from "./modules/events/index.mjs";
+import { getNotificationsModuleHealth, handleNotificationsRoute } from "./modules/notifications/index.mjs";
 import { canOpenSocialRealtimeConnection, getSocialModuleHealth, handleSocialRoute } from "./modules/social/index.mjs";
 import { attachSocialWebSocketServer } from "./modules/social/realtime-hub.mjs";
 import {
@@ -21,18 +23,44 @@ import {
 loadRootEnv();
 
 const port = Number(process.env.PORT ?? 4000);
-const routeHandlers = [handleIdentityRoute, handleCampusRoute, handleSocialRoute, handleChatRoute, handleResourcesRoute, handleMarketRoute, handleModerationRoute];
+const routeHandlers = [handleIdentityRoute, handleCampusRoute, handleSocialRoute, handleChatRoute, handleResourcesRoute, handleMarketRoute, handleEventsRoute, handleNotificationsRoute, handleModerationRoute];
 
-const server = createServer(async (request, response) => {
+function getAndroidUpdateManifest(url, request) {
+  const latestVersionCode = Number(process.env.VYB_ANDROID_LATEST_VERSION_CODE ?? 3);
+  const latestVersionName = process.env.VYB_ANDROID_LATEST_VERSION_NAME ?? "0.1.2";
+  const apkUrl = process.env.VYB_ANDROID_APK_URL?.trim() ?? "";
+
+  return {
+    platform: "android",
+    latestVersionCode,
+    latestVersionName,
+    minimumSupportedVersionCode: Number(process.env.VYB_ANDROID_MIN_SUPPORTED_VERSION_CODE ?? 1),
+    forceUpdate: process.env.VYB_ANDROID_FORCE_UPDATE === "1",
+    apkUrl,
+    releaseNotes: (process.env.VYB_ANDROID_RELEASE_NOTES ?? "Custom APK updates, theme toggle, app logo, and smoother publishing.").split("|"),
+    updatedAt: process.env.VYB_ANDROID_UPDATED_AT ?? "2026-07-28T00:00:00.000Z"
+  };
+}
+
+export async function handleBackendRequest(request, response) {
+  const startedAt = Date.now();
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
   attachCorsContext(response, request);
   const context = await createRequestContext(request);
-  const startedAt = Date.now();
+  response.__vybRequestStartedAt = startedAt;
   const actorLabel = context.actor ? `${context.actor.id}:${context.actor.email}` : "anonymous";
+  const slowRequestThresholdMs = Number(process.env.VYB_BACKEND_SLOW_REQUEST_MS ?? 1000);
 
   response.on("finish", () => {
-    console.log(
-      `[backend] ${context.requestId} ${request.method} ${url.pathname} ${response.statusCode} ${Date.now() - startedAt}ms actor=${actorLabel}`
+    const durationMs = Date.now() - startedAt;
+    const isSlow =
+      Number.isFinite(slowRequestThresholdMs) &&
+      slowRequestThresholdMs > 0 &&
+      durationMs >= slowRequestThresholdMs;
+    const log = isSlow || response.statusCode >= 500 ? console.warn : console.log;
+
+    log(
+      `[backend] ${context.requestId} ${request.method} ${url.pathname} ${response.statusCode} ${durationMs}ms actor=${actorLabel}${isSlow ? " slow=true" : ""}`
     );
   });
 
@@ -40,6 +68,7 @@ const server = createServer(async (request, response) => {
     if (request.method === "OPTIONS") {
       response.writeHead(204, {
         ...buildCorsHeaders(response.__vybCorsAllowOrigin ?? null),
+        "server-timing": `app;dur=${Math.max(0, Date.now() - startedAt)}`,
         "x-request-id": context.requestId
       });
       response.end();
@@ -62,6 +91,8 @@ const server = createServer(async (request, response) => {
             getChatModuleHealth(),
             getResourcesModuleHealth(),
             getMarketModuleHealth(),
+            getEventsModuleHealth(),
+            getNotificationsModuleHealth(),
             getModerationModuleHealth(),
             getScribbleModuleHealth()
           ]
@@ -123,6 +154,28 @@ const server = createServer(async (request, response) => {
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/v1/app-updates/android") {
+      const currentVersionCode = Number(url.searchParams.get("versionCode") ?? 0);
+      const manifest = getAndroidUpdateManifest(url, request);
+      sendJson(
+        response,
+        200,
+        {
+          ...manifest,
+          updateAvailable:
+            Number.isFinite(currentVersionCode) &&
+            Number.isFinite(manifest.latestVersionCode) &&
+            currentVersionCode > 0 &&
+            currentVersionCode < manifest.latestVersionCode
+        },
+        {
+          "cache-control": "public, max-age=60",
+          "x-request-id": context.requestId
+        }
+      );
+      return;
+    }
+
     if (await handleScribblePublicRoomsRoute({ request, response, url, context })) {
       return;
     }
@@ -138,13 +191,6 @@ const server = createServer(async (request, response) => {
       "x-request-id": context.requestId
     });
   } catch (error) {
-    try {
-      require("fs").appendFileSync(
-        "backend_crash.log",
-        "ERROR:\n" + (error instanceof Error ? error.stack : String(error)) + "\n"
-      );
-    } catch (e) {}
-
     console.error(`[backend] ${context.requestId} unhandled-request-error`, {
       method: request.method,
       path: url.pathname,
@@ -162,18 +208,25 @@ const server = createServer(async (request, response) => {
 
     response.end();
   }
-});
+}
 
-attachChatWebSocketServer(server, {
-  authorizeConnection: canOpenChatRealtimeConnection
-});
+// Vercel imports this module as a request handler. It cannot keep a listening
+// socket or accept HTTP upgrades, so the standalone server is only created
+// outside that runtime.
+if (process.env.VYB_SERVERLESS_RUNTIME !== "vercel" && process.env.VERCEL !== "1") {
+  const server = createServer(handleBackendRequest);
 
-attachSocialWebSocketServer(server, {
-  authorizeConnection: canOpenSocialRealtimeConnection
-});
+  attachChatWebSocketServer(server, {
+    authorizeConnection: canOpenChatRealtimeConnection
+  });
 
-attachScribbleWebSocketServer(server);
+  attachSocialWebSocketServer(server, {
+    authorizeConnection: canOpenSocialRealtimeConnection
+  });
 
-server.listen(port, () => {
-  console.log(`[backend] listening on http://localhost:${port}`);
-});
+  attachScribbleWebSocketServer(server);
+
+  server.listen(port, () => {
+    console.log(`[backend] listening on http://localhost:${port}`);
+  });
+}

@@ -1,140 +1,93 @@
 # Vyb Client Platform Strategy
 
-Owner: Architecture Team
-Last Updated: 2026-04-19
-Change Summary: Synced the client strategy with the Phase 1 modular monolith backend, the public-landing plus authenticated-home-feed web flow, and the Vercel plus Cloud Run production hosting split.
+Owner: Client Platform
+Last Updated: 2026-07-28
+Status: Active for web/PWA and native Android
 
-## 1. Purpose
+## Purpose
 
-This document defines how Vyb should support:
+Vyb ships two real client surfaces:
 
-- responsive web for mobile browsers
-- high-quality desktop web
-- future native Android and iOS apps
+- `apps/web`: Next.js responsive web and PWA;
+- `apps/mobile`: native Android using Kotlin and Jetpack Compose.
 
-The goal is to avoid painting the system into a web-only corner while also avoiding premature over-sharing of UI that hurts product quality.
+iOS is deferred. Backend contracts must remain portable if an iOS client is added later.
 
-## 2. Platform Strategy
+## Shared Product Contract
 
-### Phase 1
+Both clients:
 
-- ship `apps/web` using Next.js and PWA capabilities
-- design every core flow to work well on mobile and desktop browsers
-- keep backend contracts client-agnostic through one backend runtime
-- provide installable mobile web behavior where browser support allows it
-- send authenticated users to a useful `/home` feed first while keeping profile details on a separate route
-- host the Phase 1 web surface on Vercel and point it at the single Cloud Run backend
+- authenticate with Firebase;
+- call the same versioned Cloud Run `/v1` API;
+- obey the same tenant, feature-flag, rate-limit, and moderation rules;
+- use the same request/response contracts and analytics event names;
+- upload media through the same signed upload-intent protocol;
+- support Marketplace, feed, profile, resources, chat, notifications, and reports;
+- must tolerate additive response fields and feature disable/read-only states.
 
-### Future Native
+## Surface-Specific Ownership
 
-- introduce `apps/mobile` using React Native / Expo
-- reuse backend APIs, validation, contracts, and domain flow logic
-- keep native presentation separate from web presentation
+Shared:
 
-## 3. What Must Be Shared
+- API contracts and validation rules;
+- feature flag names;
+- domain state machines;
+- error taxonomy;
+- analytics event names;
+- design tokens where they map cleanly.
 
-- API contracts
-- validation schemas
-- domain-level business flow helpers
-- design tokens
-- analytics event names
+Not forced to share:
 
-## 4. What Must Not Be Forced To Be Shared
+- React and Compose components;
+- navigation and lifecycle code;
+- CSS, DOM, native gestures, notifications, or storage implementations;
+- web session-cookie and Android token-storage plumbing;
+- media selection/compression UI.
 
-- page layouts
-- navigation shells
-- responsive CSS
-- gesture interactions
-- DOM-specific behavior
-- native-only device integrations
+## Web/PWA
 
-## 5. UX Principles
+- Vercel-hosted Next.js App Router;
+- mobile-first and desktop-complete;
+- SSR for public/session-sensitive entry routes;
+- service worker and installable manifest where supported;
+- cookie/session proxy routes may normalize web behavior but may not own business truth;
+- CSRF protection for cookie-authenticated mutations;
+- same-origin helper routes are non-critical and cannot become an undocumented second backend.
 
-- responsive web is mandatory, not optional
-- no screen may ship with mobile-only assumptions
-- no screen may ship with desktop-broken spacing, hierarchy, or navigation
-- critical journeys must support keyboard and mouse on web
-- mobile and desktop should feel like the same product, not the same exact layout
-- mobile web should feel app-like through shell navigation, motion, spacing, and PWA install support
-- logged-in users should land on useful campus content first, not on a profile management screen
+## Android
 
-## 6. Recommended Repo Allocation
+- Kotlin, Jetpack Compose, JDK 17, Android SDK 35;
+- Firebase Auth, FCM, Crashlytics, and Performance Monitoring;
+- encrypted platform storage for session and chat key material;
+- Play App Signing, internal/closed/production tracks, and staged percentage rollout;
+- deep links for notification targets;
+- backend update manifest and Remote Config/feature manifest kill switches;
+- current and previous release supported during backend rollout.
 
-### apps/web
+## Launch Compatibility
 
-- Next.js routes
-- web-only page composition
-- SSR and PWA behavior
-- installability, manifest, service worker registration, and app-shell UX
+- contract tests run against both client models;
+- backend changes are additive until the previous Android release is below the supported threshold;
+- Android force-update is reserved for security/compatibility emergencies;
+- Stories are hidden/disabled in both clients for the initial public launch even if implementation remains in the repository;
+- video/events/games follow tenant feature flags;
+- Marketplace safety copy and report/block entry points must match across surfaces.
 
-### apps/backend
+## UX and Accessibility
 
-- public HTTP entry for Phase 1
-- modular domain handlers for identity, campus, social, and resources
-- client-agnostic API contracts
+- all primary web flows support keyboard, focus visibility, semantic controls, and responsive layouts;
+- Android supports TalkBack labels, scalable text, safe touch targets, and back navigation;
+- both clients provide empty, loading, offline/retry, permission-denied, rate-limited, and read-only states;
+- slow/offline networks never show fake success;
+- user-generated media has placeholders, retry, and bounded memory behavior.
 
-### apps/mobile
+## Definition of Ready
 
-- React Native / Expo navigation
-- native gestures and native packaging
+Before client implementation:
 
-### packages/contracts
-
-- API request and response contracts
-
-### packages/validation
-
-- shared schemas and guards
-
-### packages/app-core
-
-- domain helpers and client-safe business-flow logic
-
-### packages/design-tokens
-
-- colors
-- spacing
-- typography scale
-- radii
-- motion tokens
-- theme values
-
-### packages/ui-web
-
-- web primitives and layout components
-
-### packages/ui-native
-
-- native primitives and layout components
-
-## 7. UI System Rules
-
-- Design tokens are the single source of truth for visual language.
-- Web components may use CSS and browser semantics.
-- Native components may use React Native primitives and mobile gestures.
-- Shared tokens must be versioned and documented.
-- Dark mode can exist, but contrast and readability are more important than style trend.
-
-## 8. API Design Implications
-
-- APIs must not assume browser-only consumers.
-- File upload registration flows must work for both web and native.
-- Auth flows must support web sessions and future mobile token refresh patterns.
-- Response shapes must be stable and portable across surfaces.
-
-## 9. Definition Of Ready For UI Work
-
-Before any UI implementation starts, the LLD must state:
-
-- mobile behavior
-- tablet or small desktop behavior where relevant
-- large desktop behavior
-- shared tokens touched
-- whether the logic is shared or surface-specific
-
-## 10. Anti-Patterns
-
-- building only for mobile and hoping desktop works later
-- putting DOM code into shared domain packages
-- forcing web component reuse inside native app code
-- adding hidden API coupling to a specific client
+- API contract and error states are approved;
+- mobile, tablet/desktop, and offline behavior are described;
+- feature flag and rollback behavior are defined;
+- analytics and privacy impact are defined;
+- current and previous Android compatibility is understood;
+- accessibility acceptance criteria exist.

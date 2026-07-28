@@ -1,0 +1,14 @@
+.git
+.codex
+.turbo
+node_modules
+
+apps/desktop
+apps/mobile
+
+**/.gradle
+**/.next
+**/build
+**/dist
+**/coverage
+**/*.log

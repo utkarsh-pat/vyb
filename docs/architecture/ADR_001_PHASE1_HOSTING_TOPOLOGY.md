@@ -1,8 +1,8 @@
 # Vyb ADR 001: Phase 1 Hosting Topology
 
 Owner: Architecture Team
-Last Updated: 2026-04-19
-Change Summary: Accepted the Phase 1 hosting split of Vercel for the web client and Cloud Run for the modular-monolith backend.
+Last Updated: 2026-07-28
+Change Summary: Reaffirmed Vercel for web and Cloud Run as the only production custom backend; data/media decisions moved to ADR-004.
 
 ## 1. Metadata
 
@@ -17,7 +17,7 @@ Change Summary: Accepted the Phase 1 hosting split of Vercel for the web client 
 - Vyb Phase 1 ships as one responsive web client plus one modular-monolith backend.
 - The web client is a Next.js App Router application that already matches Vercel's operating model well.
 - The backend is a standalone Node HTTP server that listens on `PORT` and owns identity, campus, social, and resources routes.
-- Firebase Admin and Data Connect calls must stay in a trusted server runtime with service-account-backed access.
+- Firebase Admin and canonical database/business writes must stay in a trusted server runtime.
 - The engineering rulebook requires an ADR for any new external cloud component.
 
 ## 3. Decision
@@ -26,6 +26,7 @@ Change Summary: Accepted the Phase 1 hosting split of Vercel for the web client 
 - Host `apps/backend` on Google Cloud Run as a single public backend service.
 - Use a Cloud Run service identity instead of `GOOGLE_APPLICATION_CREDENTIALS` in production.
 - Keep the backend as one deployable service in Phase 1 and avoid premature service splitting.
+- Do not maintain or deploy a Vercel backend adapter.
 
 ## 4. Alternatives Considered
 
@@ -38,7 +39,7 @@ Change Summary: Accepted the Phase 1 hosting split of Vercel for the web client 
 - benefits
   - Vercel remains the simplest fit for the Next.js web surface.
   - Cloud Run fits the current backend shape without rewriting the monolith into function-style handlers.
-  - Firebase Admin and Data Connect access can use Cloud Run service identity cleanly.
+  - Firebase Admin and Google Cloud access can use Cloud Run service identity cleanly.
   - The deployment topology still preserves one backend deployable for Phase 1.
 - tradeoffs
   - The system now spans two hosting platforms in production.

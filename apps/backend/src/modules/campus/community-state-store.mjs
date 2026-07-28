@@ -1,11 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { getWorkspaceRoot } from "../../../../../packages/config/src/index.mjs";
 
 const storePath = path.resolve(
   process.env.VYB_COMMUNITY_STATE_STORE_PATH?.trim() ||
-    path.join(getWorkspaceRoot(), ".tmp", "runtime", "community-state-store.json")
+    (process.env.VYB_SERVERLESS_RUNTIME === "vercel"
+      ? path.join(os.tmpdir(), "vyb", "community-state-store.json")
+      : path.join(getWorkspaceRoot(), ".tmp", "runtime", "community-state-store.json"))
 );
 
 const defaultStore = {

@@ -1,493 +1,82 @@
-# Vyb High Level Design
+# Vyb Marketplace MVP — High-Level Design
 
-Owner: Architecture Team
-Last Updated: 2026-05-12
-Change Summary: Added the Community Connect V1 surface decision while preserving the Phase 1 modular monolith and private chat E2EE boundary.
+Status: approved target architecture
+Last updated: 2026-07-29
+Production owner: `ceoutkarshpatel@gmail.com`
+Google/Firebase project: `vybnet` (`850600134378`)
+GitHub repository: `utkarsh-pat/vyb`
 
-## 1. Document Purpose
+## 1. Goals
 
-This HLD defines the target architecture for Vyb. It is the source of truth for how we ship Phase 1 as a modular monolith while preserving a clean path to future microservice extraction.
+- Launch the Marketplace-first MVP in two to three universities.
+- Support 20,000–30,000 registered users, 3,000–6,000 DAU, and 300–800 peak concurrent sessions.
+- Minimize fixed spend before product-market fit.
+- Keep one canonical transactional database, one backend runtime, and one media store.
+- Enforce tenant isolation, moderation, auditability, and reversible releases.
 
-## 2. Product Goal
+Stories, long video, payments, wallet, escrow, anonymous posting, group chat, live streaming, and recommendation ML are outside the initial public launch.
 
-Vyb should become the digital HQ of campus life. The platform must balance:
+## 2. Production topology
 
-- social discovery and campus engagement
-- academic collaboration and resource sharing
-- verified identity and safety
-- future monetization without damaging trust
-- a strong experience across mobile, desktop, and future native clients
-- Phase 1 mobile users should get an installable PWA experience where supported
-
-## 3. Phase Strategy
-
-### Phase 1: Identity and Utility
-
-- verified authentication
-- college and community onboarding
-- Community Connect V1 with community as the primary Connect tab and private one-to-one E2EE chats as the secondary tab
-- admin-reviewed college join requests for unknown domains
-- Campus Square feed with text and image posts, immersive vibes, and responsive comment interactions
-- campus user IDs, profile search, follows, and time-limited stories with embedded-audio playback support
-- royalty-free story music search and client-side story MP4 composition for one selected story asset at a time
-- encrypted one-to-one campus messaging with inbox search, read and typing state, vibe shares, and marketplace deal cards
-- Resource Vault for notes and academic files
-- moderation and admin controls
-
-### Phase 2: Engagement
-
-- ranking refinement for feed, story, and vibe discovery
-- creator tooling refinement for short-form posting
-- richer comments and lightweight polls
-- anonymous Nook with strict moderation
-
-### Phase 3: Economy
-
-- P2P campus marketplace
-- competitions
-- wallet and ledger
-
-### Phase 4: AI Growth
-
-- AI career roadmaps
-- streaks and progress tracking
-- mentor and resource recommendations
-
-## 4. Architecture Decision
-
-Phase 1 runtime will be a modular monolith.
-
-That means:
-
-- Vyb ships with one public backend deployable in Phase 1
-- the backend contains domain modules with strict ownership boundaries
-- the module boundaries must be good enough that future extraction into microservices is possible without rewriting the whole product
-- separate deployables are not the default; extraction is a later optimization, not the starting point
-
-This choice exists because we want:
-
-- lower ops complexity
-- simpler local development
-- one deployable backend for early hosting
-- less distributed failure handling before product-market fit
-- cleaner iteration speed while still enforcing domain boundaries
-
-## 5. Core Architecture Principles
-
-- Module boundaries are defined from the beginning.
-- Deployment can stay unified while ownership remains explicit.
-- Each module owns its domain logic, data access rules, validation, and documentation.
-- No direct writes into another module's owned tables, even inside the monolith.
-- All public backend traffic enters through one backend boundary in Phase 1.
-- Gateway concerns such as auth, rate limiting, request IDs, and input validation live at the backend edge layer.
-- Every write path must be auditable.
-- Every production feature must be observable.
-- Every future service extraction requires an ADR and HLD update.
-- Backend APIs must remain client-agnostic so web and native clients can evolve safely.
-- Shared UI must happen through design tokens and primitive rules, not by forcing one surface's components onto another.
-- Responsive web quality is mandatory; desktop cannot be treated as an afterthought.
-
-## 6. Recommended Repository Shape
-
-```text
-vyb/
-  apps/
-    web/
-    mobile/
-    backend/
-      src/
-        lib/
-        modules/
-          shared/
-          identity/
-          campus/
-          social/
-          chat/
-          resources/
-          moderation/
-          media/
-  packages/
-    contracts/
-    validation/
-    app-core/
-    design-tokens/
-    ui-web/
-    ui-native/
-    config/
-    dataconnect/
-      identity/
-      campus/
-      social/
-      chat/
-      resources/
-      moderation/
-      wallet/
-      marketplace/
-      competition/
-      growth/
-  docs/
+```mermaid
+flowchart LR
+  U["Web/PWA and Android"] --> AUTH["Firebase Authentication"]
+  U --> WEB["Vercel: apps/web"]
+  U --> API["Cloud Run: vyb-backend<br/>asia-south1"]
+  API --> DC["Firebase Data Connect: vyb"]
+  DC --> SQL["Cloud SQL PostgreSQL: vyb-net<br/>database: vyb"]
+  API --> R2["Cloudflare R2: user media"]
+  API --> TASKS["Cloud Tasks"]
+  TASKS --> API
+  API --> FCM["FCM / Remote Config / Crashlytics"]
+  API --> SM["Secret Manager"]
 ```
 
-### Client Surface Strategy
-
-- `apps/web` is the Phase 1 shipping client using Next.js and PWA capabilities.
-- `apps/web` contains a public SSR landing at `/`, an authenticated home-feed landing at `/home`, and a separate profile/dashboard surface.
-- `apps/web` uses the existing `/messages` route family as the V1 Connect surface during compatibility rollout: Community is the default tab, while one-to-one E2EE chats continue to use the existing chat URLs.
-- `apps/mobile` is a future React Native / Expo client and must be considered in architecture decisions from the start.
-- `apps/backend` is the only Phase 1 backend deployable.
-- Shared logic should live in `packages/contracts`, `packages/validation`, and `packages/app-core`.
-- Shared styling decisions should live in `packages/design-tokens`.
-- Surface-specific components should live in `packages/ui-web` and `packages/ui-native`.
-- Do not bake web-only navigation, DOM assumptions, or CSS-specific logic into shared domain packages.
-
-## 7. Phase 1 Deployables
-
-### 7.1 Web App
-
-- Next.js App Router + PWA
-- mobile-first UI
-- desktop-strong responsive layouts
-- server-rendered routes where useful
-- public marketing and auth entry routes plus an authenticated home-feed route after onboarding
-- direct upload UX for media and resources
-- community-first Connect surface with official circles, community detail, scoped feed, resources, members, and event previews
-- web-edge story-music proxying plus client-side ffmpeg.wasm composition for single-asset music stories
-- installable app shell with manifest and service worker
-- no privileged business logic
-
-### 7.2 Backend Monolith
-
-The backend monolith is the only public backend runtime in Phase 1.
-
-Responsibilities:
-
-- auth token verification at the edge
-- App Check verification later where applicable
-- request validation
-- rate limiting
-- request ID and trace propagation
-- structured logging
-- public API routing
-- module orchestration
-- Data Connect access for privileged business flows
-- Firebase Realtime Database fanout only for approved low-cost realtime chat presence, typing, and encrypted delivery events
-
-### 7.3 Phase 1 Hosting Topology
-
-- `apps/web` is recommended to deploy on Vercel for the Phase 1 shipping surface.
-- `apps/backend` is recommended to deploy on Google Cloud Run as one public backend service.
-- This hosting split does not change the architectural rule that Phase 1 owns one backend deployable, not multiple backend services.
-- The backend runtime should use Cloud Run service identity for Firebase Admin and Data Connect access instead of a checked-in service-account JSON path.
-
-### 7.4 Future Native App
-
-- React Native / Expo recommended for Android and iOS
-- consumes the same backend APIs and contracts as the web client
-- may use surface-specific components, but must reuse shared validation, contracts, and business-flow logic where practical
-- feature design must define mobile and desktop behavior before implementation starts
-
-## 8. Phase 1 Module Map
-
-### 8.1 Identity Module
-
-Owns:
-
-- internal user identity
-- Firebase Auth mapping
-- profile bootstrap
-- current user context
-
-### 8.2 Campus Module
-
-Owns:
-
-- tenants (colleges)
-- tenant domains
-- college join requests and admin review decisions
-- memberships
-- communities such as batch, branch, hostel, club, and general
-- community visibility and membership authorization for Connect, feed, resources, and member list surfaces
-
-### 8.3 Social Module
-
-Owns:
-
-- feed posts
-- vibe discovery metadata and shared engagement state
-- follow graph
-- story visibility, active-story lanes, story-view state, and final story media records including music-backed exported videos
-- public profile discovery by campus user ID
-- comments
-- reactions
-- community-scoped interaction authorization for comments, reactions, reposts, likers, and author mutations
-- backend burst limits for high-frequency community social actions
-- social ranking metadata
-
-### 8.4 Resources Module
-
-Owns:
-
-- academic resources
-- course mapping
-- optional community ownership for community-scoped vault records
-- file metadata
-- vault permissions
-
-### 8.5 Chat Module
-
-Owns:
-
-- direct-message inbox metadata
-- one-to-one conversation state
-- encrypted message persistence and read state
-- chat identity public-key registration for E2EE
-- chat reactions and reply metadata
-- marketplace deal-card message seeds and vibe-card share metadata
-- low-cost realtime fanout coordination through approved Firebase Realtime Database paths
-
-### 8.6 Future Modules
-
-- moderation
-- media
-- notifications
-- worker jobs
-- wallet
-- marketplace
-- competitions
-- growth AI
-
-These remain module candidates first. They become separate services only through approved extraction.
-
-## 9. Request Flow
-
-### 9.1 Public Request Flow
-
-```text
-Client -> Backend edge layer -> Target module -> Data Connect Admin SDK -> PostgreSQL
-Client -> Backend edge layer -> Campus module -> Community Connect reads -> Data Connect Admin SDK -> PostgreSQL
-Client -> Backend edge layer -> Social module -> community membership check -> post write -> Data Connect Admin SDK -> PostgreSQL
-Client -> Firebase Storage -> Backend media registration flow -> Moderation / worker logic
-Client -> apps/web /api/story-music -> Openverse audio catalog -> client-side ffmpeg.wasm composition -> Firebase Storage -> Backend story publish
-Client -> Backend edge layer -> Chat module -> Data Connect Admin SDK -> PostgreSQL
-Client -> Firebase Realtime Database -> presence / typing / encrypted delivery fanout for approved chat paths
-Unknown-domain user -> Backend edge layer -> Campus module -> college join request queue -> admin decision
-```
-
-### 9.2 Internal Interaction Rules
-
-- Web never calls module internals directly.
-- Web only calls the public backend APIs, approved web-edge helper APIs, plus Firebase Auth / Firebase Storage.
-- Module-to-module calls must be explicit and documented in the relevant LLD.
-- Prefer direct module invocation inside the monolith over synthetic internal HTTP.
-- If asynchronous workflows are needed, start with an outbox pattern. Introduce a broker only through ADR.
-
-### 9.3 Ownership Matrix
-
-| Capability | Owner Module | Read Access | Write Access |
-|---|---|---|---|
-| Users | Identity | Campus, Social, Resources | Identity |
-| Tenant membership | Campus | Identity, Social, Resources, Moderation | Campus |
-| Communities | Campus | Social, Resources | Campus |
-| College join requests | Campus | Identity, Admin surfaces | Campus |
-| Community Connect reads | Campus | Social, Resources, Chat | Campus |
-| Posts | Social | Moderation, Analytics | Social, with Campus membership context for community scope |
-| Comments | Social | Moderation | Social |
-| Reactions | Social | Analytics | Social |
-| Direct chats | Chat | Identity, Market | Chat |
-| Resources | Resources | Campus, Moderation | Resources |
-| Media metadata | Media | Social, Resources, Moderation | Media |
-| Reports | Moderation | Social, Resources | Moderation |
-
-## 10. Data Architecture
-
-### 10.1 Database Strategy
-
-- Primary database: PostgreSQL via Firebase Data Connect
-- Domain-owned connectors and operations remain organized under `packages/dataconnect/<domain>`
-- Privileged writes happen through the backend using the Data Connect Admin SDK
-- Client SDK usage is allowed only for approved, low-risk read flows
-
-### 10.2 Mandatory Table Standards
-
-Every core table must include:
-
-- `id`
-- `created_at`
-- `updated_at`
-- `deleted_at`
-
-Recommended when relevant:
-
-- `created_by`
-- `updated_by`
-- `deleted_by`
-- `version`
-
-### 10.3 Mandatory Multi-Tenant Rules
-
-- Every tenant-scoped table must include `tenant_id`
-- Tenant filtering is never optional in code
-- Public queries must validate tenant membership before data access
-- Cross-tenant joins in application logic are forbidden unless explicitly documented
-
-### 10.4 Phase 1 Core Tables
-
-- `tenants`
-- `tenant_domains`
-- `users`
-- `tenant_memberships`
-- `college_join_requests`
-- `communities`
-- `community_memberships`
-- `posts`
-- `post_media`
-- `comments`
-- `reactions`
-- `chat_identities`
-- `chat_conversations`
-- `chat_participants`
-- `chat_messages`
-- `chat_message_reactions`
-- `courses`
-- `resources`
-- `resource_files`
-- `reports`
-- `moderation_cases`
-- `audit_logs`
-- `user_activity`
-
-### 10.5 Required Unique Constraints
-
-- `tenant_domains (tenant_id, domain)`
-- `users (firebase_uid)`
-- `tenant_memberships (tenant_id, user_id)`
-- `college_join_requests (normalized_primary_domain)` when the request is active
-- `communities (tenant_id, slug)`
-- `community_memberships (community_id, membership_id)`
-- `reactions (post_id, membership_id, reaction_type)` or stricter `(post_id, membership_id)` if single reaction only
-- `resource_files (resource_id, storage_path)`
-
-### 10.6 Required Phase 1 Indexes
-
-- `posts (tenant_id, created_at desc)`
-- `posts (community_id, created_at desc)`
-- `comments (post_id, created_at asc)`
-- `reactions (post_id)`
-- `resources (tenant_id, created_at desc)`
-- `resources (course_id, created_at desc)`
-- `resources (community_id, created_at desc)`
-- `tenant_memberships (tenant_id, user_id)`
-- `college_join_requests (status, created_at desc)`
-- `college_join_requests (normalized_primary_domain)`
-- `community_memberships (community_id, membership_id)`
-- `reports (tenant_id, status, created_at desc)`
-- `user_activity (tenant_id, membership_id, created_at desc)`
-
-### 10.7 Soft Delete Policy
-
-- Use `deleted_at` instead of hard delete for user-generated and auditable entities
-- Hard delete is allowed only for irreversible privacy or retention workflows and must be handled through approved jobs
-- Queries must default to excluding deleted rows
-
-## 11. Authentication and Authorization
-
-- Authentication source: Firebase Auth
-- Authentication is verified at the backend edge
-- College access control: domain-based verification plus an admin-reviewed onboarding path for unknown domains
-- Authorization source of truth: `tenant_memberships` and role claims
-- Roles in Phase 1: `student`, `faculty`, `alumni`, `moderator`, `admin`
-- Module authorization must not trust client-provided role data
-- Unknown domains must never auto-create live tenants without an admin approval record
-
-## 12. Media Architecture
-
-- File storage: Firebase Storage
-- Web uploads use client-side compression for large images; Vibe videos keep the 40 MB upload gate and are processed server-side with FFmpeg so browser-side compression does not silently degrade quality
-- Vibe video processing writes playback variants at supported heights such as 720p, 1080p, 1440p, and 4K, stores those files in Firebase Storage, records durable `post_media` metadata through the social module, and deletes temporary originals after processing
-- Story music for one selected story asset is composed client-side through ffmpeg.wasm and uploaded as the final MP4 artifact
-- Chat image attachments are encrypted in the browser before upload and stored as encrypted blobs plus metadata; plaintext message bodies must never be persisted by backend-owned systems
-- Uploads must include metadata such as `tenant_id`, `uploader_id`, `content_type`, and `origin_module`
-- Uploaded media is not publishable until backend metadata registration succeeds
-- Vibes and stories in Phase 1 require validation for size, duration, MIME type, tenant ownership, and bounded playback rules; worker or queue extraction for high-volume transcoding requires an ADR before adding a new deployable service
-
-### Storage Path Convention
-
-```text
-tenants/{tenantId}/users/{userId}/social/{postId}/{fileName}
-tenants/{tenantId}/users/{userId}/resources/{resourceId}/{fileName}
-```
-
-## 13. Realtime and E2EE Notes
-
-- Phase 1 direct messaging stays inside the modular monolith as a `chat` module and does not justify a separate Socket microservice yet.
-- Low-latency social engagement updates and direct chat delivery use backend-owned WebSocket fanout in the modular monolith; Data Connect remains the durable system of record.
-- The social module exposes `/ws/social` for tenant-scoped post, comment, and reaction update events. The chat module exposes `/ws/chat` for conversation-scoped message, read, sync, and typing events.
-- In Phase 1 the WebSocket hubs are in-process because the backend is one Cloud Run service. If horizontal scale requires multiple live instances, the hub must move behind Redis Pub/Sub, managed Pub/Sub, or an equivalent documented fanout layer before relying on cross-instance delivery.
-- The backend stores encrypted message payloads and encrypted attachment references only; decryption happens in approved clients through the Web Crypto API.
-- Phase 1 E2EE is scoped to one-to-one chats and starts with one active browser-held device key per account until secure multi-device key sync is designed and approved.
-- Community V1 content is not end-to-end encrypted and is not stored in chat-owned tables. Community moderation, reports, and emergency controls require reviewable content and campus-owned permission checks.
-
-## 14. Observability
-
-Mandatory for the backend:
-
-- structured logs
-- request ID
-- trace ID
-- error taxonomy
-- latency metrics
-- failure counters
-- audit logs for privileged actions
-
-Mandatory per module:
-
-- ownership of its success and failure metrics
-- explicit log events for high-risk writes
-- clear error shapes at the public API boundary
-
-## 15. Future Microservice Extraction Path
-
-Modules may be extracted later, but only when at least one of these becomes true:
-
-- traffic or latency isolation is needed
-- team ownership needs separate deploy cadence
-- security or compliance boundaries require isolation
-- async processing or scaling patterns become materially different
-
-Extraction rules:
-
-- extract one module at a time
-- create the new service directory only when the extraction is approved
-- preserve API contracts first
-- keep table ownership unchanged
-- replace internal module calls with HTTP or async calls only after an ADR
-- do not extract multiple modules at once without evidence
-
-## 16. Wallet and Competition Constraints
-
-Wallet is intentionally excluded from Phase 1. When introduced later:
-
-- use double-entry ledger tables
-- never store only a mutable balance field
-- every transaction must be idempotent
-- payouts require reconciliation and audit support
-- legal review is mandatory before entry-fee competitions launch
-
-## 17. Recommended Documentation Flow
-
-1. Update `SRS.md`
-2. Update `HLD.md` if architecture changes
-3. Create or update an LLD
-4. Create an ADR if infra or dependency changes
-5. Implement
-6. Update `MASTER_PLAN.md`
-
-## 18. Open Decisions
-
-- whether to use Data Connect client SDK for any direct read paths in Phase 1
-- whether notifications start with email only or include push
-- whether search is deferred fully or basic metadata search is introduced in Phase 1
-- whether faculty and alumni onboarding use the same verification workflow
-- whether approved college join requests auto-seed a default community template or require admin template choice
-- when to rename the user-facing navigation label from Chats to Connect across all app surfaces
-- what exact official community template each onboarded college should receive at tenant bootstrap
+## 3. Locked platform decisions
+
+| Concern | MVP choice | Operating rule |
+|---|---|---|
+| Identity | Firebase Authentication | Firebase UID is the external identity key; tokens are verified server-side. |
+| Transactional data | Firebase Data Connect + Cloud SQL PostgreSQL | Only canonical store for users, tenants, Marketplace, social, resources, chat metadata, and moderation. |
+| Backend | One Node modular monolith on Cloud Run | No Vercel backend and no second production writer. |
+| Web | Vercel frontend | `vybnet.app` and `www.vybnet.app`; API calls go to `api.vybnet.app`. |
+| Android | Native Kotlin/Compose | Release API base URL is `https://api.vybnet.app/`. |
+| Media | Cloudflare R2 | Clients use signed upload intent; SQL stores object metadata, not bytes. |
+| Async | PostgreSQL outbox + Cloud Tasks | At-least-once delivery; every handler is idempotent. |
+| Realtime | Cloud Run WebSocket where needed; FCM offline | Core writes remain durable without realtime availability. |
+| Feature control | Firebase Remote Config | Stories/video/payments remain off at launch. |
+| Observability | Cloud Logging/Monitoring + Crashlytics | Structured logs, request IDs, budget and SLO alerts. |
+
+Firestore is not a fallback database for canonical entities. If retained, it is limited to an explicitly documented ephemeral use case with independent rules and expiry.
+
+## 4. Capacity and scaling
+
+- Cloud Run: 1 vCPU, 512 MiB, concurrency 40, min instances 0, max instances 10.
+- Database pool: maximum 5 connections per API instance.
+- Cloud SQL: smallest Data Connect-compatible shared configuration, 10 GB SSD, single zone for pilot.
+- Add automated backups before external beta. Enable PITR before any paid transaction or university-wide dependency.
+- Upgrade database memory before adding API instances when CPU, memory, connection, or p95-query thresholds are breached.
+- Use cursor pagination, tenant-leading indexes, bounded result sets, and client/CDN caching.
+
+## 5. Security boundaries
+
+- Resolve tenant, membership, and role from trusted SQL records; never trust client-supplied tenant IDs.
+- Require explicit Data Connect authorization and keep generated Admin SDKs server-only.
+- Store secrets in Secret Manager or provider-managed encrypted environment variables.
+- Never deploy service-account JSON; Cloud Run uses service identity.
+- Scope R2 credentials to one bucket, restrict CORS to production origins, and validate MIME, size, ownership, and quota.
+- Apply per-IP, per-user, and per-action rate limits; uploads, chat, Marketplace contact, and moderation use stricter limits.
+- Use soft delete for user content and append-only audit/moderation events.
+
+## 6. Availability and recovery
+
+- MVP SLO: 99.5% availability.
+- API targets: p95 under 500 ms for reads and 800 ms for writes, excluding upload transfer.
+- Typed 503 on Data Connect outage; never fall back to another database.
+- Previous Cloud Run revision remains deployable for application rollback.
+- Database changes remain backward-compatible for at least one release.
+- Backup restore drill is mandatory before campus-wide launch.
+
+## 7. Ownership and deletion rule
+
+All new production resources must be owned by `ceoutkarshpatel@gmail.com` or the GitHub account `utkarsh-pat`. The old shared-account stack is legacy only. It may be deleted only after the new database, backend, frontend, authentication, media, domain, and smoke tests are verified and a local backup record exists.

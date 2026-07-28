@@ -37,7 +37,7 @@ Change Summary: Added explicit Community Connect posting and target-post authori
 - Query params: none
 - Body: `tenantId`, optional `communityId`, `membershipId`, `kind`, optional `placement`, optional `title`, `body`, optional `mediaUrl`, optional `location`
 - Community Connect note: `/messages/community/{slug}` posts send `communityId`, `placement: "feed"`, `kind: "text"`, and no anonymous flag in V1
-- Upload note: media is expected to be uploaded to Firebase Storage before this publish request is issued
+- Upload note: media is uploaded to Cloudflare R2 through the backend media adapter before this publish request is issued.
 
 ## 5. Response Schema
 

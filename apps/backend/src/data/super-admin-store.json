@@ -15,7 +15,7 @@
   "auditLogs": [
     {
       "id": "12c57fff-2cc3-43fe-95dd-ec8807182f3d",
-      "actor": "utkarshp2003@gmail.com",
+      "actor": "ceoutkarshpatel@gmail.com",
       "action": "maintenance.update",
       "entityType": "platform",
       "entityId": "maintenance",
@@ -28,7 +28,7 @@
     },
     {
       "id": "4a2dd4ca-b85c-4a3b-a2c8-fb4de16c7424",
-      "actor": "utkarshp2003@gmail.com",
+      "actor": "ceoutkarshpatel@gmail.com",
       "action": "maintenance.update",
       "entityType": "platform",
       "entityId": "maintenance",

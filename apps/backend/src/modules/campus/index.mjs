@@ -338,7 +338,8 @@ export async function handleCampusRoute({ request, response, url, context }) {
         membershipId: resolved.live.membership.id,
         userId: resolved.live.user?.id ?? context.actor.id
       });
-      const communities = resolved.live.communities
+      const communities = (resolved.live.communities ?? [])
+        .filter((item) => item?.community)
         .map((item) => {
           const base = {
             id: item.community.id,

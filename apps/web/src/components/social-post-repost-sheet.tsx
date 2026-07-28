@@ -63,9 +63,9 @@ export function SocialPostRepostSheet({
       <div className="repost-blur-bg" aria-hidden="true">
         {previewMedia ? (
           previewMedia.kind === "video" ? (
-            <video src={previewMedia.url} muted playsInline />
+            <video src={previewMedia.url} muted playsInline preload="metadata" />
           ) : (
-            <img src={previewMedia.url} alt="" />
+            <img src={previewMedia.url} alt="" loading="lazy" decoding="async" />
           )
         ) : null}
         <div className="repost-bg-overlay" />
@@ -121,9 +121,9 @@ export function SocialPostRepostSheet({
             {previewMedia && (
               <div className="repost-card-media">
                 {previewMedia.kind === "video" ? (
-                  <video src={previewMedia.url} muted playsInline />
+                  <video src={previewMedia.url} muted playsInline preload="metadata" />
                 ) : (
-                  <img src={previewMedia.url} alt="" />
+                  <img src={previewMedia.url} alt="" loading="lazy" decoding="async" />
                 )}
               </div>
             )}

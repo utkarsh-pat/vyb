@@ -2,11 +2,8 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { readDevSessionFromCookieStore } from "../../../src/lib/dev-session";
-import {
-  canDirectUploadSocialMediaFromClient,
-  persistSocialMediaAsset,
-  planSocialMediaAssetUpload
-} from "../../../src/lib/social-media-server";
+import { proxyBackendMutation } from "../../../src/lib/backend";
+import { planSocialMediaAssetUpload } from "../../../src/lib/social-media-server";
 
 export const runtime = "nodejs";
 
@@ -96,20 +93,14 @@ export async function POST(request: Request) {
         mimeType,
         sizeBytes
       });
-      const directUploadEnabled = canDirectUploadSocialMediaFromClient();
-
       return NextResponse.json({
-        uploadStrategy: directUploadEnabled ? "firebase-client" : "server-proxy",
-        directUpload: directUploadEnabled
-          ? {
-              storagePath: uploadPlan.storagePath,
-              mediaType: uploadPlan.mediaType,
-              mimeType: uploadPlan.mimeType,
-              sizeBytes: uploadPlan.sizeBytes,
-              cacheControl: uploadPlan.cacheControl,
-              customMetadata: uploadPlan.customMetadata
-            }
-          : null
+        uploadStrategy: "server-proxy",
+        directUpload: null,
+        limits: {
+          mediaType: uploadPlan.mediaType,
+          mimeType: uploadPlan.mimeType,
+          sizeBytes: uploadPlan.sizeBytes
+        }
       });
     } catch (error) {
       return buildError(
@@ -149,12 +140,31 @@ export async function POST(request: Request) {
   });
 
   try {
-    const asset = await persistSocialMediaAsset({
-      tenantId: viewer.tenantId,
-      userId: viewer.userId,
-      intent,
-      file
-    });
+    const base64Data = Buffer.from(await file.arrayBuffer()).toString("base64");
+    const upstream = await proxyBackendMutation(
+      "/v1/social-media/upload",
+      "POST",
+      {
+        intent,
+        fileName: file.name,
+        mimeType: file.type,
+        base64Data
+      },
+      viewer
+    );
+
+    const responseText = await upstream.text();
+    if (!upstream.ok) {
+      return new Response(responseText, {
+        status: upstream.status,
+        headers: {
+          "content-type": upstream.headers.get("content-type") ?? "application/json; charset=utf-8"
+        }
+      });
+    }
+
+    const payload = JSON.parse(responseText) as { asset: { storagePath: string; sizeBytes: number; mediaType: string } };
+    const asset = payload.asset;
 
     console.info("[web/social-media] upload-success", {
       requestId,
@@ -166,7 +176,12 @@ export async function POST(request: Request) {
       sizeBytes: asset.sizeBytes,
       mediaType: asset.mediaType
     });
-    return NextResponse.json({ asset }, { status: 201 });
+    return new Response(responseText, {
+      status: upstream.status,
+      headers: {
+        "content-type": upstream.headers.get("content-type") ?? "application/json; charset=utf-8"
+      }
+    });
   } catch (error) {
     console.error("[web/social-media] upload-failed", {
       requestId,

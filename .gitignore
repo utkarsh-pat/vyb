@@ -17,7 +17,13 @@ out/
 
 # Local tooling
 .tmp/
+.local-backups/
+.local-artifacts/
 .codex-config/
+.agents/
+.codex/
+.codex-security-scans/
+skills-lock.json
 
 # Environment and secrets
 .env
@@ -34,6 +40,8 @@ secrets/
 .firebase/
 .firebaserc.local
 firebase-debug.log*
+.firebase-storage-*.log
+.firebase-storage-*.error.log
 
 # Package manager noise
 package-lock.json
@@ -53,6 +61,8 @@ apps/backend/data/*.bak
 apps/backend/data/*.tmp
 data/events-store.json
 data/notifications-store.json
+data/market-store.json
+data/profile-store.json
 data/connect-levels.json
 data/queens-levels.json
 scripts/generate-connect-levels.mjs
@@ -66,3 +76,15 @@ Desktop.ini
 *.swp
 *.swo
 *~
+.vercel
+
+# Local visual QA captures (not product source)
+/artifacts/
+/artifacts-*.png
+/*.xml
+/design-qa.md
+/design-reference-*.png
+/hit_deployement
+/apps/mobile/.kotlin/
+/apps/mobile/*.xml
+/apps/mobile/*.png

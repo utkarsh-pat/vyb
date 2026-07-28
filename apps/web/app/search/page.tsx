@@ -35,33 +35,18 @@ export default async function SearchPage({
   const viewerName = profile.profile.fullName ?? viewer.displayName;
   const displayCollegeName = getDisplayCollegeName(profile.collegeName);
   const trimmedQuery = q.trim();
-  const [results, feedResponse, vibesResponse, suggestedResponse, marketDashboard] = await Promise.all([
-    trimmedQuery
-      ? searchCampusUsers(viewer, trimmedQuery).catch(() => ({
-          query: trimmedQuery,
-          items: []
-        }))
-      : Promise.resolve({
-          query: "",
-          items: []
-        }),
-    getCampusFeed(viewer, { limit: 18 }).catch(() => ({
-      tenantId: viewer.tenantId,
-      communityId: null,
-      items: [],
-      nextCursor: null
-    })),
-    getCampusVibes(viewer, 18).catch(() => ({
-      tenantId: viewer.tenantId,
-      communityId: null,
-      items: [],
-      nextCursor: null
-    })),
-    getSuggestedCampusUsers(viewer, 6).catch(() => ({
-      query: "",
-      items: []
-    })),
-    getMarketDashboard(viewer).catch(() => ({
+
+  const emptyFeedResponse = {
+    tenantId: viewer.tenantId,
+    communityId: null,
+    items: [],
+    nextCursor: null
+  };
+  const emptySuggestedResponse = {
+    query: "",
+    items: []
+  };
+  const emptyMarketDashboard = {
       tenantId: viewer.tenantId,
       viewer: {
         userId: viewer.userId,
@@ -72,7 +57,30 @@ export default async function SearchPage({
       requests: [],
       viewerActiveListings: [],
       viewerActiveRequests: []
-    }))
+  };
+
+  const resultsPromise = trimmedQuery
+    ? searchCampusUsers(viewer, trimmedQuery).catch(() => ({
+        query: trimmedQuery,
+        items: []
+      }))
+    : Promise.resolve({
+        query: "",
+        items: []
+      });
+
+  const discoveryPromise = trimmedQuery
+    ? Promise.resolve([emptyFeedResponse, emptyFeedResponse, emptySuggestedResponse, emptyMarketDashboard] as const)
+    : Promise.all([
+        getCampusFeed(viewer, { limit: 18 }).catch(() => emptyFeedResponse),
+        getCampusVibes(viewer, 18).catch(() => emptyFeedResponse),
+        getSuggestedCampusUsers(viewer, 6).catch(() => emptySuggestedResponse),
+        getMarketDashboard(viewer).catch(() => emptyMarketDashboard)
+      ] as const);
+
+  const [results, [feedResponse, vibesResponse, suggestedResponse, marketDashboard]] = await Promise.all([
+    resultsPromise,
+    discoveryPromise
   ]);
 
   return (

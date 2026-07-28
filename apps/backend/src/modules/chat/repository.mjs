@@ -1,6 +1,6 @@
 import { randomInt, randomUUID } from "node:crypto";
-import { getStorage } from "firebase-admin/storage";
-import { getFirebaseAdminApp, getFirebaseDataConnect } from "../../../../../packages/config/src/index.mjs";
+import { getFirebaseDataConnect } from "../../../../../packages/config/src/index.mjs";
+import { getR2Bucket } from "../../lib/r2-bucket.mjs";
 import { getProfileByUserId, getProfileByUsername, listProfilesByUserIds } from "../identity/profile-repository.mjs";
 import { trackActivity } from "../moderation/repository.mjs";
 import { getChatPresenceSnapshot } from "./presence-store.mjs";
@@ -968,7 +968,7 @@ function getChatDc() {
 }
 
 function getChatBucket() {
-  return getStorage(getFirebaseAdminApp("backend-chat-storage")).bucket();
+  return getR2Bucket();
 }
 
 function toIsoString(value) {
@@ -1209,7 +1209,7 @@ function buildChatKeyBackupPinAttemptStoragePath(tenantId, userId) {
 }
 
 function buildEncryptedAttachmentDownloadUrl(bucketName, storagePath, token) {
-  return `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(storagePath)}?alt=media&token=${token}`;
+  return `r2://${bucketName}/${storagePath}?token=${encodeURIComponent(token)}`;
 }
 
 function parseChatAttachmentStoragePath(storagePath) {

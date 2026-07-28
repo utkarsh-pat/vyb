@@ -366,7 +366,7 @@ function ensureAllowedCollegeEmail(email: string) {
   }
 }
 
-async function activateServerSession(user: User) {
+async function activateServerSession(user: User, roleRefreshAttempt = 0) {
   const normalizedEmail = normalizeEmail(user.email ?? "");
   logAuthEvent("info", "session-bootstrap:start", {
     uid: user.uid,
@@ -422,6 +422,11 @@ async function activateServerSession(user: User) {
     | null;
 
   if (!response.ok) {
+    if (payload?.error?.code === "FIREBASE_TOKEN_REFRESH_REQUIRED" && roleRefreshAttempt < 1) {
+      await user.getIdToken(true);
+      return activateServerSession(user, roleRefreshAttempt + 1);
+    }
+
     const error = new Error(payload?.error?.message ?? "The authenticated session could not be created.") as AuthFailure;
     error.code = payload?.error?.code ?? "SESSION_RESPONSE_NOT_JSON";
     error.details =

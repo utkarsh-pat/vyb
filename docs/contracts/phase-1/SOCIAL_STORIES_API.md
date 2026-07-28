@@ -1,8 +1,10 @@
 # API Contract
 
 Owner: Architecture Team
-Last Updated: 2026-04-22
-Change Summary: Updated the live story contract with immersive viewer behavior, own-story lane expectations, music-backed story publishing notes, story reactions, and seen-state companion endpoints.
+Last Updated: 2026-07-28
+Change Summary: Marked the existing Story contract as deferred and disabled for the marketplace-first MVP.
+
+> Status: Implemented reference contract, not enabled in the initial public MVP. All Story routes require `stories_enabled=true`; the default for launch tenants is `false`. No rollout gate depends on Stories.
 
 ## Endpoint Definition
 

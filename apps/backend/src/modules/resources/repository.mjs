@@ -1,9 +1,13 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const directoryName = path.dirname(fileURLToPath(import.meta.url));
-const storePath = path.resolve(directoryName, "../../data/resources-store.json");
+const storePath =
+  process.env.VYB_SERVERLESS_RUNTIME === "vercel"
+    ? path.join(os.tmpdir(), "vyb", "resources-store.json")
+    : path.resolve(directoryName, "../../data/resources-store.json");
 
 const defaultStore = {
   resources: [

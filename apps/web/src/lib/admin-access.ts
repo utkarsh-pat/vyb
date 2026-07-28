@@ -1,7 +1,5 @@
 export const defaultSuperAdminEmails = [
-  "utkarshpatelcse@gmail.com",
-  "utkarshp2003@gmail.com",
-  "ashwanibaghel803@gmail.com"
+  "ceoutkarshpatel@gmail.com"
 ] as const;
 
 function normalizeAdminEmail(value: string | null | undefined) {
