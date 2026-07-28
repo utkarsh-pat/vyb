@@ -5,9 +5,8 @@ WORKDIR /app
 RUN corepack enable
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY apps ./apps
+COPY apps/backend ./apps/backend
 COPY packages ./packages
-COPY scripts ./scripts
 
 RUN pnpm install --frozen-lockfile
 

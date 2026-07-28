@@ -11,6 +11,9 @@ Production backend: Cloud Run in `asia-south1`. Vercel is frontend-only.
 - Cloud SQL/Data Connect connection pool maximum 5 per instance.
 
 Never ship service-account JSON, `.env`, Supabase credentials or R2 secrets in the image.
+Before every remote build, run `gcloud meta list-files-for-upload` and confirm
+that `.local-backups`, `.env`, `.vercel`, build outputs, and local dependencies
+are excluded by `.gcloudignore` and `.dockerignore`.
 
 ## Release
 
