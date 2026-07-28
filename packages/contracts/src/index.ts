@@ -105,6 +105,7 @@ export interface SessionBootstrapRequest {
 
 export interface SessionBootstrapResponse {
   session: ViewerSessionPayload;
+  firebaseSessionCookie?: string;
   profileCompleted: boolean;
   nextPath: "/home" | "/onboarding";
 }

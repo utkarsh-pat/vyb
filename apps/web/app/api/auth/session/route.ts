@@ -231,7 +231,13 @@ async function finalizeBootstrapResponse(bootstrap: SessionBootstrapResponse, id
     role: bootstrap.session.role
   });
 
-  const firebaseBearer = await createFirebaseBearerCookie(idToken);
+  const firebaseBearer = bootstrap.firebaseSessionCookie
+    ? {
+        value: bootstrap.firebaseSessionCookie,
+        maxAge: SESSION_MAX_AGE_SECONDS,
+        source: "backend-session-cookie"
+      }
+    : await createFirebaseBearerCookie(idToken);
 
   const cookieStore = await cookies();
   cookieStore.set(DEV_SESSION_COOKIE, encodeDevSession(session), {

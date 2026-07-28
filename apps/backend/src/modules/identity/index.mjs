@@ -113,6 +113,14 @@ function buildSuperAdminFallbackSession({ userId, email, displayName }) {
   };
 }
 
+const FIREBASE_SESSION_MAX_AGE_MS = 8 * 60 * 60 * 1000;
+
+async function createFirebaseSessionCookie(firebaseAuth, idToken) {
+  return firebaseAuth.createSessionCookie(idToken, {
+    expiresIn: FIREBASE_SESSION_MAX_AGE_MS
+  });
+}
+
 export function getIdentityModuleHealth() {
   return {
     module: "identity",
@@ -202,6 +210,7 @@ export async function handleIdentityRoute({ request, response, url, context }) {
           });
           sendJson(response, 200, {
             session,
+            firebaseSessionCookie: await createFirebaseSessionCookie(firebaseAuth, payload.idToken.trim()),
             profileCompleted: true,
             nextPath: "/admin"
           });
@@ -250,6 +259,7 @@ export async function handleIdentityRoute({ request, response, url, context }) {
 
       sendJson(response, 200, {
         session,
+        firebaseSessionCookie: await createFirebaseSessionCookie(firebaseAuth, payload.idToken.trim()),
         profileCompleted: isSuperAdminEmail(email) ? true : Boolean(storedProfile?.profileCompleted),
         nextPath: isSuperAdminEmail(email) ? "/admin" : storedProfile?.profileCompleted ? "/home" : "/onboarding"
       });
