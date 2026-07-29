@@ -33,8 +33,9 @@ Last verified: 2026-07-29
 - GitHub repository visibility is public. Collaborator `utkarshpat` has
   effective `WRITE` permission and a verified push to `main`.
 - Vercel is connected to the public GitHub repository. Production deployment
-  `9UQa2cvY4vYARvBXfcosaFvSUtjX` for owner-authored commit `37b0894` is
-  `READY`.
+  `7GzALFwEm7wy9FNP8Mr4R21r51R3` for collaborator-authored commit `7497130`
+  is `READY`, proving the former Hobby/private-repository author block no
+  longer applies.
 - Cloudflare R2 bucket `vyb-media-production` is private and uses automatic
   Asia-Pacific placement. Its production token is limited to object
   read/write access on that bucket only.

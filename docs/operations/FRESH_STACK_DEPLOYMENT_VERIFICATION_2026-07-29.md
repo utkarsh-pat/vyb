@@ -12,7 +12,7 @@ Verified: 2026-07-29
   `https://vyb-backend-850600134378.asia-south1.run.app`
 - Vercel team/project: `vybnet` / `vyb`
 - Vercel production deployment:
-  `9UQa2cvY4vYARvBXfcosaFvSUtjX` (`37b0894`, `READY`)
+  `7GzALFwEm7wy9FNP8Mr4R21r51R3` (`7497130`, `READY`)
 - Canonical web origin: `https://www.vybnet.app`
 - R2 bucket: `vyb-media-production` (private, APAC placement)
 
@@ -74,6 +74,12 @@ Verified: 2026-07-29
   after a high-confidence current-tree and history secret preflight. This
   removes Vercel Hobby's private-repository collaborator-author restriction;
   the earlier blocked deployment remains recorded as historical evidence.
+- Collaborator `utkarshpat` then authored and pushed commit `7497130`.
+  Vercel built it as production deployment `7GzALFwEm7wy9FNP8Mr4R21r51R3`
+  and reached `READY`, directly verifying that the author block is removed.
+- A migrated email/password account signed in successfully on the production
+  domain, redirected to `/home`, and rendered the authenticated campus
+  navigation, feed, and profile shell.
 
 ## Secret-remediation evidence
 

@@ -34,7 +34,10 @@ Last updated: 2026-07-29
 
 ## Verification
 
-- [ ] Auth issuer/audience, migrated-password sign-in, migrated-Google sign-in, and revoked/expired token tests pass.
+- [x] Migrated email/password sign-in reaches the authenticated production
+  `/home` campus shell.
+- [ ] Auth issuer/audience, migrated-Google sign-in, and revoked/expired token
+  tests pass.
 - [ ] Two users in separate tenants cannot enumerate, fetch, contact, or infer each other's data.
 - [ ] Marketplace create/edit/browse/save/contact/sold/report passes on web and Android.
 - [ ] Upload intent/read/delete/quota/orphan-cleanup passes.
@@ -45,8 +48,10 @@ Last updated: 2026-07-29
 - [x] Secret-scoped IAM bindings applied; Cloud Run revision
   `vyb-backend-00006-46r` is healthy at 100% traffic.
 - [x] R2 production token passed write/read/delete; the smoke object was deleted.
-- [x] Vercel production deployment `9UQa2cvY4vYARvBXfcosaFvSUtjX` is ready and
+- [x] Vercel production deployment `7GzALFwEm7wy9FNP8Mr4R21r51R3` is ready and
   `/api/media/...` reaches private R2.
+- [x] Public-repository collaborator commit `7497130` deployed to production
+  successfully on Vercel Hobby.
 - [x] GitHub secret-scanning alert #1 remediated and dismissed; Android config is no longer tracked.
 
 ## Deployment
