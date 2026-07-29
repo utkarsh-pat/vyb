@@ -76,9 +76,13 @@ Use a dedicated runtime service account with only Data Connect client, Firebase 
 
 - Bucket `vyb-media-production`.
 - Bucket-scoped read/write token for backend only.
-- Browser CORS origins: `https://vybnet.app`, `https://www.vybnet.app`.
+- Public R2 access is disabled. Browser reads use the same-origin
+  `https://www.vybnet.app/api/media/...` server route, so bucket CORS is not
+  required for MVP.
 - Images only at MVP; maximum 4 MB after compression.
-- Public/custom media base URL stored in `R2_PUBLIC_BASE_URL`.
+- `R2_PUBLIC_BASE_URL=https://www.vybnet.app/api/media`.
+- Access key ID and secret access key live in Secret Manager for Cloud Run and
+  sensitive Vercel variables; no credential is stored in Git or client code.
 - Abort incomplete multipart uploads and delete orphaned objects through scheduled cleanup.
 
 ## Cost controls

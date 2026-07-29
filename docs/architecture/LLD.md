@@ -93,7 +93,16 @@ VYB_SESSION_SECRET
 VYB_SUPER_ADMIN_EMAILS=ceoutkarshpatel@gmail.com
 ```
 
-Web public Firebase values are safe client configuration, but all private keys and Admin credentials remain server-side. Cloud Run uses Application Default Credentials.
+Web public Firebase values are safe client configuration, but all private keys
+and Admin credentials remain server-side. Cloud Run uses Application Default
+Credentials. `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` are Secret Manager
+references in Cloud Run and sensitive variables in Vercel; they are never
+committed or exposed to browser code.
+
+The R2 bucket is private. `R2_PUBLIC_BASE_URL` is the canonical same-origin
+`https://www.vybnet.app/api/media` route. That route reads R2 server-side and
+returns immutable cached responses, so production does not depend on the
+rate-limited public `r2.dev` endpoint.
 
 ## 7. Deployment contract
 

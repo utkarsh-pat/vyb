@@ -7,10 +7,11 @@ Last updated: 2026-07-29
 - [x] Google/Firebase project ID is `vybnet`.
 - [x] Project owner is `ceoutkarshpatel@gmail.com`.
 - [x] Billing account `015FFD-11FC57-660C55` is linked.
-- [x] GitHub repository is `utkarsh-pat/vyb`.
+- [x] GitHub repository is private `utkarsh-pat/vyb`; `utkarshpat` has verified
+  `WRITE`/push access.
 - [x] New Vercel team `vybnet` and project `vyb` ownership verified under the CEO account.
 - [x] `vybnet.app` ownership moved from the legacy Vercel scope to the CEO-owned `vybnet` team.
-- [ ] R2 ownership and recovery details are recorded.
+- [x] R2 ownership, bucket, token scope, and recovery owner are recorded.
 - [x] No new production resource is created in an old shared account.
 
 ## Foundation
@@ -22,7 +23,10 @@ Last updated: 2026-07-29
 - [x] Legacy SQL data verified: 2,465 rows across 39 tables with zero table mismatches.
 - [x] Legacy Auth imported: six matching UIDs/providers with Firebase Scrypt parameters.
 - [ ] Automated database backup enabled and restore test recorded.
-- [ ] R2 bucket, CORS, custom/public domain, lifecycle, and scoped token configured.
+- [x] Private R2 bucket and bucket-scoped object read/write token configured.
+- [x] Same-origin private-R2 media proxy configured; public `r2.dev` access is
+  intentionally disabled.
+- [ ] R2 lifecycle/orphan cleanup and media upload/read/delete smoke test recorded.
 - [x] Cloud Run secrets, max 10 instances, concurrency 40, public health endpoint, and budget guardrail configured.
 - [x] ₹2,000 monthly budget alerts at 50%, 80%, and 100%.
 - [ ] Stories, video, payments, events, and games flags off unless explicitly approved.
@@ -35,7 +39,8 @@ Last updated: 2026-07-29
 - [ ] Upload intent/read/delete/quota/orphan-cleanup passes.
 - [ ] Chat, FCM, notification retry, moderation, and audit flows pass.
 - [ ] Load test demonstrates 300–800 concurrent sessions with database headroom above 30%.
-- [ ] Previous Cloud Run and Vercel releases can be restored.
+- [x] Failed R2 configuration revision received 0% traffic and the previous
+  healthy Cloud Run revision remained at 100%.
 - [x] Cloud Run revision `vyb-backend-00004-26t` and Vercel provider deployment are healthy.
 - [x] GitHub secret-scanning alert #1 remediated and dismissed; Android config is no longer tracked.
 
@@ -67,5 +72,6 @@ Delete old Firebase/Google Cloud/Vercel resources only after:
 
 Current cutover blockers:
 
-- Cloudflare R2 activation requires the owner to enter payment details even though current free-tier due is zero.
-- The Google account chooser requires one owner click before the migrated Google session can be signed in end to end.
+- Grant the runtime service account secret-accessor permission on only the two
+  R2 secrets, redeploy Cloud Run, and run the media smoke test.
+- Complete the migrated Google sign-in and authenticated-page smoke test.
