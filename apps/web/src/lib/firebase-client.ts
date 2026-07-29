@@ -27,7 +27,6 @@ export function isFirebaseClientConfigured() {
     config.apiKey &&
       config.authDomain &&
       config.projectId &&
-      config.storageBucket &&
       config.messagingSenderId &&
       config.appId
   );
