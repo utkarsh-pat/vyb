@@ -48,7 +48,7 @@ Verified: 2026-07-29
 - `https://vybnet.app/login` returns a permanent redirect to
   `https://www.vybnet.app/login`; the `www` login and unauthenticated session
   endpoints return HTTP 200.
-- Vercel is connected to the private `utkarsh-pat/vyb` repository; collaborator
+- Vercel is connected to the public `utkarsh-pat/vyb` repository; collaborator
   `utkarshpat` has effective `WRITE` permission and successfully pushed the
   production deploy trigger.
 - R2 credentials were generated fresh under the canonical owner. Vercel stores
@@ -58,6 +58,10 @@ Verified: 2026-07-29
   `r2.dev` endpoint.
 - Cloud Run revision `vyb-backend-00006-46r` mounted both R2 secrets through
   secret-scoped IAM bindings, became ready, and received 100% traffic.
+- The Cloud Run runtime identity has `roles/firebasedataconnect.dataAdmin` for
+  connector query/mutation execution. Firebase Auth remains read-only except
+  for the custom `vybSessionIssuer` role, which contains only
+  `firebaseauth.users.createSession`.
 - Direct R2 write, read, and delete operations passed with the production
   bucket-scoped token; the smoke object was deleted after verification.
 - The production media proxy returned the expected JSON 404 for a missing
@@ -66,6 +70,10 @@ Verified: 2026-07-29
   collaborator-authored merge commit on Hobby/private-repository rules, then
   deployed the same merged source successfully from owner-authored commit
   `37b0894` without a Pro upgrade.
+- On 2026-07-29 the repository visibility was intentionally changed to public
+  after a high-confidence current-tree and history secret preflight. This
+  removes Vercel Hobby's private-repository collaborator-author restriction;
+  the earlier blocked deployment remains recorded as historical evidence.
 
 ## Secret-remediation evidence
 

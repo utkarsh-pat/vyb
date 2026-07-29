@@ -7,7 +7,7 @@ Last updated: 2026-07-29
 - [x] Google/Firebase project ID is `vybnet`.
 - [x] Project owner is `ceoutkarshpatel@gmail.com`.
 - [x] Billing account `015FFD-11FC57-660C55` is linked.
-- [x] GitHub repository is private `utkarsh-pat/vyb`; `utkarshpat` has verified
+- [x] GitHub repository is public `utkarsh-pat/vyb`; `utkarshpat` has verified
   `WRITE`/push access.
 - [x] New Vercel team `vybnet` and project `vyb` ownership verified under the CEO account.
 - [x] `vybnet.app` ownership moved from the legacy Vercel scope to the CEO-owned `vybnet` team.

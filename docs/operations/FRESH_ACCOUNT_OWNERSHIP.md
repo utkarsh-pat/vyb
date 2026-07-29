@@ -8,7 +8,7 @@ Last verified: 2026-07-29
 |---|---|---|
 | Google Cloud and Firebase | `ceoutkarshpatel@gmail.com` | project `vybnet`, number `850600134378` |
 | Cloud Billing | `ceoutkarshpatel@gmail.com` | account `015FFD-11FC57-660C55` |
-| GitHub | `utkarsh-pat` | private repository `utkarsh-pat/vyb` |
+| GitHub | `utkarsh-pat` | public repository `utkarsh-pat/vyb` |
 | Vercel | `ceoutkarshpatel@gmail.com` | team `vybnet`, project `vyb` |
 | Object storage | `ceoutkarshpatel@gmail.com` | Cloudflare R2 bucket `vyb-media-production` |
 | Product/app name | Vyb | package `social.vyb.app` |
@@ -30,9 +30,9 @@ Last verified: 2026-07-29
 - Initial communities: `campus`, `marketplace`, and `resources`.
 - Cloud Run service `vyb-backend`, current healthy revision
   `vyb-backend-00006-46r`.
-- GitHub repository visibility is private. Collaborator `utkarshpat` has
+- GitHub repository visibility is public. Collaborator `utkarshpat` has
   effective `WRITE` permission and a verified push to `main`.
-- Vercel is connected to the private GitHub repository. Production deployment
+- Vercel is connected to the public GitHub repository. Production deployment
   `9UQa2cvY4vYARvBXfcosaFvSUtjX` for owner-authored commit `37b0894` is
   `READY`.
 - Cloudflare R2 bucket `vyb-media-production` is private and uses automatic
@@ -41,9 +41,13 @@ Last verified: 2026-07-29
 - The Cloud Run runtime identity has Secret Accessor on only
   `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`; it has no project-wide Secret
   Manager role.
-- On the Vercel Hobby plan, collaborator-authored production commits from a
-  private repository are blocked. Collaborators may push and open PRs, but the
-  final production trigger must be authored by the repository/project owner.
+- The runtime identity has Firebase Data Connect Data Admin for application
+  query/mutation execution, Firebase Authentication Viewer for user lookup,
+  and the custom `vybSessionIssuer` role containing only
+  `firebaseauth.users.createSession` for HttpOnly session-cookie issuance.
+- The repository was made public on 2026-07-29 so Vercel Hobby can deploy
+  collaborator-authored commits without the private-repository author
+  restriction. Collaborator access remains explicitly limited to `WRITE`.
 - `vybnet.app` ownership is now in the CEO-owned `vybnet` Vercel team and the
   apex and `www` hostnames are verified on project `vyb`. The apex permanently
   redirects to `www`, which serves the promoted production deployment.
