@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node --watch src/index.mjs",
     "start": "node src/index.mjs",
+    "media:migrate:r2": "node scripts/migrate-gcs-media-to-r2.mjs",
     "test:notifications": "node --test src/modules/notifications/repository.test.mjs"
   },
   "dependencies": {

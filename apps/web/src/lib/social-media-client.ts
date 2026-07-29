@@ -1,9 +1,5 @@
 "use client";
 
-import { onAuthStateChanged, type User } from "firebase/auth";
-import { getDownloadURL, ref, uploadBytesResumable, type UploadTaskSnapshot } from "firebase/storage";
-import { getFirebaseClientAuth, getFirebaseClientStorage, isFirebaseClientConfigured } from "./firebase-client";
-
 export type UploadedSocialMediaAsset = {
   mediaType: "image" | "video";
   mimeType: string;
@@ -22,15 +18,6 @@ export type UploadedSocialMediaAsset = {
   processingStatus?: "ready" | "passthrough";
 };
 
-type SocialMediaDirectUploadPlan = {
-  storagePath: string;
-  mediaType: "image" | "video";
-  mimeType: string;
-  sizeBytes: number;
-  cacheControl?: string;
-  customMetadata?: Record<string, string>;
-};
-
 type VideoFrameCallback = (now: number, metadata: VideoFrameCallbackMetadata) => void;
 type VideoFrameRequester = HTMLVideoElement & {
   captureStream?: () => MediaStream;
@@ -40,7 +27,6 @@ type VideoFrameRequester = HTMLVideoElement & {
 
 const DEFAULT_MAX_VIDEO_BYTES = 40 * 1024 * 1024;
 const DEFAULT_TARGET_VIDEO_BYTES = Math.floor(DEFAULT_MAX_VIDEO_BYTES * 0.96);
-const SERVER_PROXY_SAFE_UPLOAD_BYTES = DEFAULT_MAX_VIDEO_BYTES;
 const VIDEO_COMPRESSION_FRAME_RATE = 30;
 const VIDEO_AUDIO_BITRATE = 128_000;
 const MIN_VIDEO_BITRATE = 500_000;
@@ -102,30 +88,6 @@ function computeVideoBitrate(targetBytes: number, durationSeconds: number, bitra
 
 function canCompressVideoInBrowser() {
   return typeof document !== "undefined" && typeof MediaRecorder !== "undefined";
-}
-
-function canSafelyFallbackToServerProxy(file: File) {
-  if (typeof window === "undefined") {
-    return true;
-  }
-
-  const hostname = window.location.hostname.toLowerCase();
-  const isPrivateNetworkHost =
-    /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
-    /^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname) ||
-    /^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(hostname);
-  const isLocalHost =
-    hostname === "localhost" ||
-    hostname === "127.0.0.1" ||
-    hostname === "::1" ||
-    hostname.endsWith(".local") ||
-    isPrivateNetworkHost;
-
-  return isLocalHost || file.size <= SERVER_PROXY_SAFE_UPLOAD_BYTES;
-}
-
-function isFirebasePermissionError(error: unknown) {
-  return error instanceof Error && /storage\/unauthorized|permission|unauthorized/i.test(error.message);
 }
 
 async function loadVideoElement(file: File) {
@@ -378,7 +340,7 @@ export async function uploadSocialMediaAsset(
     if (!response.ok || !payload?.asset) {
       const message =
         response.status === 413
-          ? "This upload route rejected the file before it reached storage. Deploy the Firebase Storage rules for direct uploads or keep the file smaller."
+          ? "This upload route rejected the file before it reached R2 storage. Keep the file within the supported upload limit."
           : payload?.error?.message ?? "We could not upload this media right now.";
       const requestId = payload?.error?.requestId ? `, request: ${payload.error.requestId}` : "";
       throw new Error(`${message} (stage: upload, status: ${response.status}${requestId})`);
@@ -404,8 +366,7 @@ export async function uploadSocialMediaAsset(
 
   const preparePayload = (await prepareResponse.json().catch(() => null)) as
     | {
-        uploadStrategy?: "firebase-client" | "server-proxy";
-        directUpload?: SocialMediaDirectUploadPlan | null;
+        uploadStrategy?: "server-proxy";
         error?: {
           code?: string;
           message?: string;
@@ -418,102 +379,6 @@ export async function uploadSocialMediaAsset(
     const message = preparePayload?.error?.message ?? "We could not prepare this media for upload.";
     const requestId = preparePayload?.error?.requestId ? `, request: ${preparePayload.error.requestId}` : "";
     throw new Error(`${message} (stage: prepare, status: ${prepareResponse.status}${requestId})`);
-  }
-
-  if (preparePayload?.uploadStrategy === "firebase-client" && preparePayload.directUpload) {
-    if (!isFirebaseClientConfigured()) {
-      throw new Error("Firebase web storage is not configured for direct uploads.");
-    }
-
-    const auth = await getFirebaseClientAuth();
-    const currentUser =
-      auth.currentUser ??
-      (await new Promise<User | null>((resolve) => {
-        const timeout = window.setTimeout(() => resolve(null), 4000);
-        const unsubscribe = onAuthStateChanged(auth, (user) => {
-          window.clearTimeout(timeout);
-          unsubscribe();
-          resolve(user);
-        });
-      }));
-
-    if (!currentUser) {
-      console.warn("[social-media-client] direct upload skipped because Firebase auth user is unavailable; falling back to server upload.", {
-        intent,
-        taskId: options?.debugTaskId ?? null
-      });
-
-      if (!canSafelyFallbackToServerProxy(file)) {
-        throw new Error(
-          "Firebase sign-in is not ready for direct upload, and this file is too large for the upload proxy. Refresh the session and try again."
-        );
-      }
-
-      return uploadViaServerProxy();
-    }
-
-    try {
-      await currentUser.getIdToken(true);
-      const storage = getFirebaseClientStorage();
-      const storageRef = ref(storage, preparePayload.directUpload.storagePath);
-      const uploadSnapshot = await new Promise<UploadTaskSnapshot>((resolve, reject) => {
-        const uploadTask = uploadBytesResumable(storageRef, file, {
-          contentType: preparePayload.directUpload!.mimeType,
-          cacheControl: preparePayload.directUpload!.cacheControl,
-          customMetadata: preparePayload.directUpload!.customMetadata
-        });
-
-        uploadTask.on(
-          "state_changed",
-          (snapshot) => {
-            if (snapshot.totalBytes > 0) {
-              options?.onUploadProgress?.(snapshot.bytesTransferred / snapshot.totalBytes);
-            }
-          },
-          reject,
-          () => resolve(uploadTask.snapshot)
-        );
-      });
-      const url = await getDownloadURL(uploadSnapshot.ref);
-      options?.onUploadProgress?.(1);
-
-      return {
-        mediaType: preparePayload.directUpload.mediaType,
-        mimeType: preparePayload.directUpload.mimeType,
-        sizeBytes: file.size,
-        storagePath: preparePayload.directUpload.storagePath,
-        url
-      };
-    } catch (error) {
-      console.warn("[social-media-client] direct upload failed; falling back to server upload.", {
-        intent,
-        taskId: options?.debugTaskId ?? null,
-        message: error instanceof Error ? error.message : "unknown"
-      });
-
-      if (!canSafelyFallbackToServerProxy(file)) {
-        throw new Error(
-          error instanceof Error
-            ? `${error.message} Direct Firebase upload failed, and this file is too large for the upload proxy.`
-            : "Direct Firebase upload failed, and this file is too large for the upload proxy."
-        );
-      }
-
-      try {
-        return await uploadViaServerProxy();
-      } catch (fallbackError) {
-        if (isFirebasePermissionError(error)) {
-          const directErrorMessage = error instanceof Error ? error.message : "Direct Firebase upload failed.";
-          throw new Error(
-            fallbackError instanceof Error
-              ? `${directErrorMessage} Server upload fallback also failed: ${fallbackError.message}`
-              : `${directErrorMessage} Server upload fallback also failed.`
-          );
-        }
-
-        throw fallbackError;
-      }
-    }
   }
 
   return uploadViaServerProxy();

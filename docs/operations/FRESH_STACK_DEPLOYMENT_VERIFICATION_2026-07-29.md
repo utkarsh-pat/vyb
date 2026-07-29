@@ -94,6 +94,23 @@ Verified: 2026-07-29
 - An authenticated migrated KIET account was reverified after the deployment:
   `/home` rendered the canonical campus feed and `/vibes` rendered migrated
   vibe cards under `KIET Group of Institutions`.
+- The legacy Firebase bucket contained 160 objects (448,514,602 bytes). All
+  160 were copied to `vyb-media-production`, source-MD5 verified locally, and
+  destination size/checksum metadata verified with zero failures.
+- A transaction rewrote all production media references: 101 canonical R2
+  proxy URLs remain, zero Firebase media URLs remain, and zero referenced
+  records lack a storage path. One already-removed demo record whose source
+  object never existed was cleared instead of fabricating media.
+- Production JPEG and MP4 proxy HEAD requests returned HTTP 200 with the
+  expected content length, MIME type, and immutable cache policy.
+- Active event uploads and social upload planning are now R2-only. The obsolete
+  browser-to-Firebase upload branch and Firebase Admin Storage integration were
+  removed. `pnpm --filter @vyb/web check` and the 77-route production build
+  passed after the cutover.
+- Artifact Registry cleanup removed stale digest
+  `sha256:96bf69dea0a136271fe7fb64c4d42a3a9abbfaba1b243a8eb4bf030721cb52ec`.
+  The current image and one verified rollback remain, and immutable tags were
+  restored immediately after deletion.
 
 ## Secret-remediation evidence
 
@@ -111,10 +128,13 @@ Verified: 2026-07-29
 
 1. Verify the redirected CEO Google-authenticated production page.
 2. Map and smoke-test `api.vybnet.app`.
-3. Configure R2 lifecycle/orphan cleanup after application-level upload/delete
+3. Smoke-test a newly uploaded event asset and its delete path after the web
+   deployment.
+4. Configure R2 lifecycle/orphan cleanup after application-level upload/delete
    smoke tests.
-4. Run backup/restore, cross-tenant isolation, media, Marketplace, notification,
+5. Run backup/restore, cross-tenant isolation, media, Marketplace, notification,
    and load-test gates.
 
-Legacy resources remain intact until every gate passes and the fresh stack has
-seven clean operating days.
+The legacy project backup is complete. Destructive legacy-project cleanup is
+performed only after the fresh deployment and new uploads pass; the current
+`vybnet` project and `utkarsh-pat/vyb` repository are never cleanup targets.

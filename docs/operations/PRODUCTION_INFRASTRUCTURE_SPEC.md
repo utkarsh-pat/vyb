@@ -79,7 +79,9 @@ Use a dedicated runtime service account with only Data Connect client, Firebase 
 - Public R2 access is disabled. Browser reads use the same-origin
   `https://www.vybnet.app/api/media/...` server route, so bucket CORS is not
   required for MVP.
-- Images only at MVP; maximum 4 MB after compression.
+- Social images and video, event media, Marketplace media, resources, and
+  encrypted chat objects use R2. Application-specific upload limits are
+  enforced before persistence.
 - `R2_PUBLIC_BASE_URL=https://www.vybnet.app/api/media`.
 - Access key ID and secret access key live in Secret Manager for Cloud Run and
   sensitive Vercel variables; no credential is stored in Git or client code.
@@ -89,8 +91,10 @@ Use a dedicated runtime service account with only Data Connect client, Firebase 
 
 - Billing budget ₹2,000/month with 50/80/100% alerts.
 - Cloud Run min 0 and hard max 10.
-- Stories/video disabled.
-- Artifact retention: current plus previous three deployable images; untagged older than 14 days removed.
+- Cost-sensitive media features can be disabled by product flags; existing
+  migrated story/video assets remain readable from R2.
+- Artifact retention: current image plus one verified rollback image. Delete
+  older exact digests after a successful deployment and restore immutable tags.
 - Health-check logs excluded; routine logs retained 14–30 days.
 - No Supabase runtime, no Vercel backend, no second SQL database, no always-on Redis/Kafka/Kubernetes.
 

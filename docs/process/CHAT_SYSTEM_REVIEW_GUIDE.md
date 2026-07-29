@@ -30,13 +30,13 @@ Chat is split into four layers:
 1. Web UI and local crypto
 2. Next.js web API proxy routes under `apps/web/app/api/chats/*`
 3. Backend chat module in `apps/backend/src/modules/chat`
-4. Firebase Storage plus WebSocket fanout for selected realtime updates
+4. Cloudflare R2 plus WebSocket fanout for selected realtime updates
 
 System of record:
 
 - Chat identities, conversations, participants, messages, and reactions are stored through Firebase Data Connect in the backend chat module.
-- Encrypted key backups and per-user hidden-message state are stored in Firebase Storage.
-- Encrypted image attachments are stored in Firebase Storage.
+- Encrypted key backups and per-user hidden-message state are stored in the private R2 bucket.
+- Encrypted image attachments are stored in the private R2 bucket.
 - Live updates are pushed through the backend WebSocket server at `/ws/chat`.
 
 Important boundary:
@@ -52,7 +52,7 @@ Implemented in live code:
 - Client-side E2EE key generation using Web Crypto ECDH P-256
 - Public key publication to backend
 - Local private-key storage in browser `localStorage`
-- Recovery-code-based encrypted private-key backup to Firebase Storage
+- Recovery-code-based encrypted private-key backup to R2
 - Recovery-code restore on a new device
 - Encrypted text messages
 - Read receipts
@@ -182,7 +182,7 @@ Stored locally:
 
 Stored remotely:
 
-- encrypted backup JSON in Firebase Storage path:
+- encrypted backup JSON in the private R2 path:
   `chat/{tenantId}/users/{userId}/e2ee-key-backup.json`
 
 Backup encryption behavior:
@@ -306,7 +306,7 @@ Delete-for-everyone behavior:
 Delete-for-self behavior:
 
 - message is hidden only for the current user
-- hidden message IDs are stored in Firebase Storage path:
+- hidden message IDs are stored in the private R2 path:
   `chat/{tenantId}/users/{userId}/hidden-messages.json`
 
 ## 9. Attachments
@@ -388,7 +388,7 @@ Use these while reviewing:
 2. Should recovery code be re-shown on demand in settings?
 3. Do we want one key per account, or one key per device?
 4. Are we okay blocking sends until peer publishes a key?
-5. Should delete-for-self stay in Firebase Storage, or move into database state?
+5. Should delete-for-self stay in R2, or move into database state?
 6. Should WebSocket remain the realtime channel, or should Realtime Database handle more of the fanout model?
 7. Do we want attachments and share cards in this release, or should docs be narrowed to current reality?
 

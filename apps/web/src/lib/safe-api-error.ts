@@ -6,8 +6,6 @@ const SENSITIVE_RUNTIME_ERROR_PATTERNS = [
   /\b\/tmp\b/i,
   /[A-Za-z]:\\/,
   /\\Users\\/i,
-  /\bFIREBASE_STORAGE_BUCKET\b/i,
-  /\bNEXT_PUBLIC_FIREBASE_STORAGE_BUCKET\b/i,
   /\bmkdir\b/i,
   /\bno such file or directory\b/i,
   /\bpermission denied\b/i

@@ -152,7 +152,7 @@ const defaultStore: AdminStore = {
   },
   apiKeys: [
     {
-      provider: "Firebase Storage",
+      provider: "Cloudflare R2",
       status: "healthy",
       lastRotatedAt: null,
       note: "Managed through Firebase service account."

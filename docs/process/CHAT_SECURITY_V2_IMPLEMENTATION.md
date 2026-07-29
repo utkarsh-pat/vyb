@@ -28,7 +28,7 @@
 - Added `clearExpiredChatMessages()` in the backend chat repository.
 - Added a runnable script:
   - `pnpm chat:janitor`
-- The janitor soft-deletes expired messages, deletes associated Firebase Storage blobs, re-syncs conversation previews, and emits `chat.sync`.
+- The janitor soft-deletes expired messages, deletes associated R2 objects, re-syncs conversation previews, and emits `chat.sync`.
 
 ### 5. Phase 2 hygiene and lifecycle
 - PIN restore now locks for 1 hour after 5 failed PIN attempts on the device.

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getCampusVibes, proxyBackendMutation } from "../../../src/lib/backend";
 import { readDevSessionFromCookieStore } from "../../../src/lib/dev-session";
+import { loadWorkspaceRootEnv } from "../../../src/lib/server-env";
 
 const MAX_VIBE_VIDEO_BYTES = 40 * 1024 * 1024;
 const VIBE_VIDEO_MIME_TYPES = new Set(["video/mp4", "video/webm", "video/quicktime"]);
@@ -73,17 +74,6 @@ function getLocalMediaObjectPath(mediaUrl: string) {
   return decodeStorageObjectPath(pathname.slice(localPrefix.length));
 }
 
-function getFirebaseStorageObjectPath(pathname: string) {
-  const objectMarker = "/o/";
-  const markerIndex = pathname.indexOf(objectMarker);
-
-  if (markerIndex === -1) {
-    return null;
-  }
-
-  return decodeStorageObjectPath(pathname.slice(markerIndex + objectMarker.length));
-}
-
 function isSafeVibeMediaUrl(value: unknown, storagePath: string) {
   if (typeof value !== "string" || !value.trim()) {
     return false;
@@ -96,14 +86,25 @@ function isSafeVibeMediaUrl(value: unknown, storagePath: string) {
     return localObjectPath === storagePath;
   }
 
-  try {
-    const parsed = new URL(mediaUrl);
-    const firebaseObjectPath = getFirebaseStorageObjectPath(parsed.pathname);
-
-    return parsed.hostname === "firebasestorage.googleapis.com" && firebaseObjectPath === storagePath;
-  } catch {
-    return false;
+  loadWorkspaceRootEnv();
+  const r2PublicBaseUrl = process.env.R2_PUBLIC_BASE_URL?.trim().replace(/\/+$/u, "");
+  if (r2PublicBaseUrl) {
+    try {
+      const expectedUrl = new URL(
+        `${r2PublicBaseUrl}/${storagePath.split("/").map(encodeURIComponent).join("/")}`
+      );
+      const suppliedUrl = new URL(mediaUrl);
+      if (
+        suppliedUrl.origin === expectedUrl.origin &&
+        decodeStorageObjectPath(suppliedUrl.pathname) === decodeStorageObjectPath(expectedUrl.pathname)
+      ) {
+        return true;
+      }
+    } catch {
+      return false;
+    }
   }
+  return false;
 }
 
 function sanitizeVibeVariant(value: VibeMediaVariant, tenantId: string, userId: string) {

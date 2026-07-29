@@ -48,7 +48,6 @@ Set the following variables for Production and Preview. Do not commit their valu
 | `NEXT_PUBLIC_FIREBASE_API_KEY` | Firebase web application API key |
 | `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | Firebase Auth domain |
 | `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | Firebase project ID |
-| `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` | Firebase Storage bucket |
 | `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | Firebase web application sender ID |
 | `NEXT_PUBLIC_FIREBASE_APP_ID` | Firebase web application ID |
 | `FIREBASE_PROJECT_ID` | `vybnet`; server-side Admin SDK project |
