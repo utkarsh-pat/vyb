@@ -6,13 +6,13 @@ Verified: 2026-07-29
 
 - Google project: `vybnet` (`850600134378`)
 - Artifact image:
-  `asia-south1-docker.pkg.dev/vybnet/vyb/vyb-backend@sha256:9f368e0530ad838a2c68c96385937c69d1f05a08ee1083db94345ae7840b5cc5`
-- Cloud Run service/revision: `vyb-backend` / `vyb-backend-00006-46r`
+  `asia-south1-docker.pkg.dev/vybnet/vyb/vyb-backend@sha256:583999c960b027fcc87dd5aa4c026e4c97fea4571a76575dfb15e5efc4989e86`
+- Cloud Run service/revision: `vyb-backend` / `vyb-backend-00007-gl7`
 - Cloud Run URL:
   `https://vyb-backend-850600134378.asia-south1.run.app`
 - Vercel team/project: `vybnet` / `vyb`
 - Vercel production deployment:
-  `7GzALFwEm7wy9FNP8Mr4R21r51R3` (`7497130`, `READY`)
+  `9V5MoDzfWF2sMNL7RWiW6crRU5mk` (`989e62c`, `READY`)
 - Canonical web origin: `https://www.vybnet.app`
 - R2 bucket: `vyb-media-production` (private, APAC placement)
 
@@ -88,6 +88,12 @@ Verified: 2026-07-29
 - Campus domain resolution now queries for up to two matches and fails closed
   when more than one active mapping exists, preventing a future duplicate from
   silently selecting an empty or incorrect tenant.
+- Cloud Build `cc89450c-d4f1-4ac4-860a-c5c9478d9606` deployed commit
+  `989e62c` as revision `vyb-backend-00007-gl7` with 100% traffic. The
+  ten-module health check returned HTTP 200.
+- An authenticated migrated KIET account was reverified after the deployment:
+  `/home` rendered the canonical campus feed and `/vibes` rendered migrated
+  vibe cards under `KIET Group of Institutions`.
 
 ## Secret-remediation evidence
 

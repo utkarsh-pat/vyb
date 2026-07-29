@@ -46,9 +46,9 @@ Last updated: 2026-07-29
 - [x] Failed R2 configuration revision received 0% traffic and the previous
   healthy Cloud Run revision remained at 100%.
 - [x] Secret-scoped IAM bindings applied; Cloud Run revision
-  `vyb-backend-00006-46r` is healthy at 100% traffic.
+  `vyb-backend-00007-gl7` is healthy at 100% traffic.
 - [x] R2 production token passed write/read/delete; the smoke object was deleted.
-- [x] Vercel production deployment `7GzALFwEm7wy9FNP8Mr4R21r51R3` is ready and
+- [x] Vercel production deployment `9V5MoDzfWF2sMNL7RWiW6crRU5mk` is ready and
   `/api/media/...` reaches private R2.
 - [x] Public-repository collaborator commit `7497130` deployed to production
   successfully on Vercel Hobby.

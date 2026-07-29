@@ -31,7 +31,7 @@ Last verified: 2026-07-29
   `kiet.edu` domain mapping.
 - Initial communities: `campus`, `marketplace`, and `resources`.
 - Cloud Run service `vyb-backend`, current healthy revision
-  `vyb-backend-00006-46r`.
+  `vyb-backend-00007-gl7`.
 - GitHub repository visibility is public. Collaborator `utkarshpat` has
   effective `WRITE` permission and a verified push to `main`.
 - Vercel is connected to the public GitHub repository. Production deployment
