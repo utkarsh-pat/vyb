@@ -177,21 +177,6 @@ export async function handleIdentityRoute({ request, response, url, context }) {
         return true;
       }
 
-      if (decoded.role !== "authenticated") {
-        const userRecord = await firebaseAuth.getUser(decoded.uid);
-        await firebaseAuth.setCustomUserClaims(decoded.uid, {
-          ...(userRecord.customClaims ?? {}),
-          role: "authenticated"
-        });
-        sendError(
-          response,
-          409,
-          "FIREBASE_TOKEN_REFRESH_REQUIRED",
-          "Authentication permissions were updated. Refresh the Firebase token and retry."
-        );
-        return true;
-      }
-
       const displayName =
         normalizeOptionalString(payload.displayName) ?? decoded.name ?? buildFallbackDisplayName(email);
       const resolved = await resolveLiveContext({

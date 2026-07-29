@@ -4,11 +4,15 @@ import { resolveLiveContext } from "../shared/viewer-context.mjs";
 import {
   cancelEvent,
   createEvent,
+  deleteEvent,
   getEvent,
+  getViewerRegistration,
   listEvents,
   listRegistrations,
+  manageRegistration,
   registerEvent,
-  toggleEventField
+  toggleEventField,
+  updateEvent
 } from "./repository.mjs";
 
 const buckets = new Map();
@@ -54,7 +58,7 @@ function validateCreate(payload) {
     if (!nonEmpty(payload[field])) return `${field} is required.`;
   }
   if (!Number.isFinite(Date.parse(payload.startsAt))) return "startsAt must be a valid ISO date.";
-  if (!["free", "paid", "invite"].includes(payload.passKind)) return "passKind must be free, paid, or invite.";
+  if (!["free", "rsvp", "paid"].includes(payload.passKind)) return "passKind must be free, rsvp, or paid.";
   if (!["interest", "register", "apply"].includes(payload.responseMode)) return "responseMode must be interest, register, or apply.";
   return null;
 }
@@ -107,6 +111,24 @@ export async function handleEventsRoute({ request, response, url, context }) {
       return true;
     }
 
+    const update = request.method === "PUT" ? url.pathname.match(/^\/v1\/events\/([^/]+)$/u) : null;
+    if (update) {
+      const payload = await readJson(request);
+      const error = validateCreate(payload);
+      if (error) {
+        sendError(response, 400, "INVALID_EVENT", error);
+        return true;
+      }
+      sendJson(response, 200, await updateEvent(viewer, update[1], payload));
+      return true;
+    }
+
+    const remove = request.method === "DELETE" ? url.pathname.match(/^\/v1\/events\/([^/]+)$/u) : null;
+    if (remove) {
+      sendJson(response, 200, await deleteEvent(viewer, remove[1]));
+      return true;
+    }
+
     const detail = request.method === "GET" ? url.pathname.match(/^\/v1\/events\/([^/]+)$/u) : null;
     if (detail) {
       const event = await getEvent(viewer, detail[1]);
@@ -132,9 +154,43 @@ export async function handleEventsRoute({ request, response, url, context }) {
       return true;
     }
 
+    const viewerRegistration =
+      request.method === "GET" ? url.pathname.match(/^\/v1\/events\/([^/]+)\/register$/u) : null;
+    if (viewerRegistration) {
+      sendJson(response, 200, await getViewerRegistration(viewer, viewerRegistration[1]));
+      return true;
+    }
+
     const registrations = request.method === "GET" ? url.pathname.match(/^\/v1\/events\/([^/]+)\/registrations$/u) : null;
     if (registrations) {
       sendJson(response, 200, await listRegistrations(viewer, registrations[1]));
+      return true;
+    }
+
+    const manageRegistrationMatch =
+      request.method === "PUT"
+        ? url.pathname.match(/^\/v1\/events\/([^/]+)\/registrations\/([^/]+)$/u)
+        : null;
+    if (manageRegistrationMatch) {
+      const payload = await readJson(request);
+      if (
+        !payload ||
+        typeof payload !== "object" ||
+        !["approved", "waitlisted", "rejected"].includes(payload.status)
+      ) {
+        sendError(response, 400, "INVALID_REGISTRATION_STATUS", "Choose a valid registration status.");
+        return true;
+      }
+      sendJson(
+        response,
+        200,
+        await manageRegistration(
+          viewer,
+          manageRegistrationMatch[1],
+          manageRegistrationMatch[2],
+          payload
+        )
+      );
       return true;
     }
 

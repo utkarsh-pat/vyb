@@ -1,8 +1,8 @@
 # API Contract
 
 Owner: Architecture Team
-Last Updated: 2026-04-19
-Change Summary: Added the backend session-bootstrap contract for verified first-college web authentication with authenticated home-feed routing.
+Last Updated: 2026-07-29
+Change Summary: Documented least-privilege authorization for email/password and Google sign-in without runtime Firebase custom-claim mutation.
 
 ## 1. Metadata
 
@@ -26,6 +26,7 @@ Change Summary: Added the backend session-bootstrap contract for verified first-
 - Auth mechanism: Firebase ID token supplied in request body and verified by the backend
 - Required roles: authenticated student, faculty, alumni, moderator, or admin account
 - Tenant checks: verified email domain and membership resolution must succeed
+- Authorization source: resolved campus membership or the configured super-admin allowlist; bootstrap does not create or mutate Firebase custom claims
 - Rate limit policy: strict per user and IP
 
 ## 4. Request Schema
@@ -52,6 +53,7 @@ Change Summary: Added the backend session-bootstrap contract for verified first-
 ## 7. Side Effects
 
 - Tables written: `users` and campus membership records through existing identity/campus logic where needed
+- Firebase Auth writes: none; the runtime only verifies the supplied ID token and reads the resolved identity
 - Events emitted: none
 - Async jobs triggered: none
 - Audit log entries: planned for production

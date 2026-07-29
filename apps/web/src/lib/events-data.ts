@@ -1,9 +1,12 @@
 import "server-only";
 
 import type {
-  CampusEventRegistrationStatus,
-  CampusEventViewerRegistrationResponse,
+  CampusEvent,
+  CampusEventRegistration,
   CampusEventRegistrationListResponse,
+  CampusEventRegistrationStatus,
+  CampusEventsDashboardResponse,
+  CampusEventViewerRegistrationResponse,
   CreateCampusEventRequest,
   CreateCampusEventResponse,
   ManageCampusEventRegistrationRequest,
@@ -12,77 +15,208 @@ import type {
   ToggleCampusEventInterestResponse,
   ToggleCampusEventSaveResponse,
   UpdateCampusEventRequest,
-  UpdateCampusEventResponse
+  UpdateCampusEventResponse,
+  UpsertCampusEventRegistrationRequest,
+  UpsertCampusEventRegistrationResponse
 } from "@vyb/contracts";
-import type { DevSession } from "./dev-session";
 import {
-  cancelCampusEvent as cancelCampusEventFallback,
-  createCampusEvent as createCampusEventFallback,
-  deleteCampusEvent as deleteCampusEventFallback,
-  exportCampusEventRegistrationsCsv as exportCampusEventRegistrationsCsvFallback,
-  getCampusEventRegistrations as getCampusEventRegistrationsFallback,
-  getCampusEventRegistrationsFiltered as getCampusEventRegistrationsFilteredFallback,
-  getCampusEventNotificationAudience as getCampusEventNotificationAudienceFallback,
-  getEventForViewer as getEventForViewerFallback,
-  getEventsDashboard as getEventsDashboardFallback,
-  getViewerCampusEventRegistration as getViewerCampusEventRegistrationFallback,
-  manageCampusEventRegistration as manageCampusEventRegistrationFallback,
-  toggleCampusEventInterest as toggleCampusEventInterestFallback,
-  toggleCampusEventSave as toggleCampusEventSaveFallback,
-  updateCampusEvent as updateCampusEventFallback,
-  upsertCampusEventRegistration as upsertCampusEventRegistrationFallback
-} from "./events-fallback";
+  fetchBackendJson,
+  isBackendRequestError,
+  mutateBackendJson,
+  postBackendJson
+} from "./backend";
+import type { DevSession } from "./dev-session";
 import type { EventViewerIdentity } from "./events-types";
-import type { UpsertCampusEventRegistrationRequest, UpsertCampusEventRegistrationResponse } from "@vyb/contracts";
 
-export async function getEventsDashboard(viewer: DevSession) {
-  return getEventsDashboardFallback(viewer);
+type StoredEventAudience = CampusEvent & {
+  savedByUserIds?: string[];
+  interestedUserIds?: string[];
+};
+
+function eventPath(eventId: string, suffix = "") {
+  return `/v1/events/${encodeURIComponent(eventId)}${suffix}`;
 }
 
-export async function getEventForViewer(viewer: DevSession, eventId: string) {
-  return getEventForViewerFallback(viewer, eventId);
+function filterRegistrations(
+  registrations: CampusEventRegistration[],
+  filters?: {
+    query?: string | null;
+    statuses?: CampusEventRegistrationStatus[];
+  }
+) {
+  const query = filters?.query?.trim().toLowerCase() ?? "";
+  const statuses = new Set<CampusEventRegistrationStatus>(filters?.statuses ?? []);
+
+  return registrations
+    .filter((registration) => {
+      if (statuses.size > 0 && !statuses.has(registration.status)) {
+        return false;
+      }
+      if (!query) {
+        return true;
+      }
+
+      return [
+        registration.attendee.displayName,
+        registration.attendee.username,
+        registration.attendee.role,
+        registration.teamName,
+        registration.note,
+        registration.reviewNote,
+        ...registration.teamMembers.flatMap((member) => [
+          member.name,
+          member.username,
+          member.email,
+          member.role
+        ]),
+        ...registration.answers.flatMap((answer) => [answer.label, answer.value]),
+        ...registration.attachments.flatMap((attachment) => [attachment.fileName, attachment.url])
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(query);
+    })
+    .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
 }
 
-export async function getViewerCampusEventRegistration(viewer: DevSession, eventId: string): Promise<CampusEventViewerRegistrationResponse> {
-  return getViewerCampusEventRegistrationFallback(viewer, eventId);
+function csvEscape(value: string | number | null | undefined) {
+  const text = value === null || value === undefined ? "" : String(value);
+  return `"${text.replace(/"/g, "\"\"")}"`;
+}
+
+function registrationsCsv(registrations: CampusEventRegistration[]) {
+  const headers = [
+    "Registration ID",
+    "Status",
+    "Leader Name",
+    "Leader Username",
+    "Leader Role",
+    "Submitted At",
+    "Updated At",
+    "Team Name",
+    "Team Size",
+    "Team Members",
+    "Attachments",
+    "Note",
+    "Review Note",
+    "Answers"
+  ];
+  const rows = registrations.map((registration) =>
+    [
+      registration.id,
+      registration.status,
+      registration.attendee.displayName,
+      registration.attendee.username,
+      registration.attendee.role,
+      registration.submittedAt,
+      registration.updatedAt,
+      registration.teamName ?? "",
+      registration.teamSize,
+      registration.teamMembers
+        .map((member) => [member.name, member.username, member.email, member.role].filter(Boolean).join(" / "))
+        .join(" | "),
+      registration.attachments.map((attachment) => `${attachment.fileName} (${attachment.url})`).join(" | "),
+      registration.note ?? "",
+      registration.reviewNote ?? "",
+      registration.answers.map((answer) => `${answer.label}: ${answer.value}`).join(" | ")
+    ]
+      .map(csvEscape)
+      .join(",")
+  );
+
+  return [headers.map(csvEscape).join(","), ...rows].join("\n");
+}
+
+export async function getEventsDashboard(viewer: DevSession): Promise<CampusEventsDashboardResponse> {
+  return fetchBackendJson<CampusEventsDashboardResponse>("/v1/events", viewer);
+}
+
+export async function getEventForViewer(viewer: DevSession, eventId: string): Promise<CampusEvent | null> {
+  try {
+    const response = await fetchBackendJson<{ event: CampusEvent }>(eventPath(eventId), viewer);
+    return response.event;
+  } catch (error) {
+    if (isBackendRequestError(error) && error.statusCode === 404) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+export async function getViewerCampusEventRegistration(
+  viewer: DevSession,
+  eventId: string
+): Promise<CampusEventViewerRegistrationResponse> {
+  return fetchBackendJson<CampusEventViewerRegistrationResponse>(eventPath(eventId, "/register"), viewer);
 }
 
 export async function getCampusEventNotificationAudience(viewer: DevSession, eventId: string) {
-  return getCampusEventNotificationAudienceFallback(viewer, eventId);
+  const response = await fetchBackendJson<CampusEventRegistrationListResponse>(
+    eventPath(eventId, "/registrations"),
+    viewer
+  );
+  const event = response.event as StoredEventAudience;
+  const audienceUserIds = [
+    ...new Set([
+      ...(event.savedByUserIds ?? []),
+      ...(event.interestedUserIds ?? []),
+      ...response.registrations.map((registration) => registration.attendee.userId)
+    ])
+  ].filter((userId) => userId && userId !== event.host.userId);
+
+  return { event: response.event, audienceUserIds };
 }
 
 export async function createCampusEvent(
   viewer: DevSession,
-  identity: EventViewerIdentity,
+  _identity: EventViewerIdentity,
   payload: CreateCampusEventRequest
 ): Promise<CreateCampusEventResponse> {
-  return createCampusEventFallback(viewer, identity, payload);
+  return postBackendJson<CreateCampusEventResponse>("/v1/events", payload, viewer);
 }
 
 export async function updateCampusEvent(
   viewer: DevSession,
   payload: UpdateCampusEventRequest
 ): Promise<UpdateCampusEventResponse> {
-  return updateCampusEventFallback(viewer, payload);
+  return mutateBackendJson<UpdateCampusEventResponse>(
+    eventPath(payload.eventId),
+    "PUT",
+    payload,
+    viewer
+  );
 }
 
-export async function toggleCampusEventSave(viewer: DevSession, eventId: string): Promise<ToggleCampusEventSaveResponse> {
-  return toggleCampusEventSaveFallback(viewer, eventId);
+export async function toggleCampusEventSave(
+  viewer: DevSession,
+  eventId: string
+): Promise<ToggleCampusEventSaveResponse> {
+  return mutateBackendJson<ToggleCampusEventSaveResponse>(eventPath(eventId, "/save"), "PUT", {}, viewer);
 }
 
 export async function toggleCampusEventInterest(
   viewer: DevSession,
   eventId: string
 ): Promise<ToggleCampusEventInterestResponse> {
-  return toggleCampusEventInterestFallback(viewer, eventId);
+  return mutateBackendJson<ToggleCampusEventInterestResponse>(
+    eventPath(eventId, "/interest"),
+    "PUT",
+    {},
+    viewer
+  );
 }
 
 export async function upsertCampusEventRegistration(
   viewer: DevSession,
-  identity: EventViewerIdentity,
+  _identity: EventViewerIdentity,
   payload: UpsertCampusEventRegistrationRequest
 ): Promise<UpsertCampusEventRegistrationResponse> {
-  return upsertCampusEventRegistrationFallback(viewer, identity, payload);
+  return postBackendJson<UpsertCampusEventRegistrationResponse>(
+    eventPath(payload.eventId, "/register"),
+    payload,
+    viewer
+  );
 }
 
 export async function getCampusEventRegistrations(
@@ -93,7 +227,14 @@ export async function getCampusEventRegistrations(
     statuses?: CampusEventRegistrationStatus[];
   }
 ): Promise<CampusEventRegistrationListResponse> {
-  return filters ? getCampusEventRegistrationsFilteredFallback(viewer, eventId, filters) : getCampusEventRegistrationsFallback(viewer, eventId);
+  const response = await fetchBackendJson<CampusEventRegistrationListResponse>(
+    eventPath(eventId, "/registrations"),
+    viewer
+  );
+  return {
+    event: response.event,
+    registrations: filterRegistrations(response.registrations, filters)
+  };
 }
 
 export async function manageCampusEventRegistration(
@@ -102,7 +243,12 @@ export async function manageCampusEventRegistration(
   registrationId: string,
   payload: ManageCampusEventRegistrationRequest
 ): Promise<ManageCampusEventRegistrationResponse> {
-  return manageCampusEventRegistrationFallback(viewer, eventId, registrationId, payload);
+  return mutateBackendJson<ManageCampusEventRegistrationResponse>(
+    eventPath(eventId, `/registrations/${encodeURIComponent(registrationId)}`),
+    "PUT",
+    payload,
+    viewer
+  );
 }
 
 export async function exportCampusEventRegistrationsCsv(
@@ -113,13 +259,20 @@ export async function exportCampusEventRegistrationsCsv(
     statuses?: CampusEventRegistrationStatus[];
   }
 ) {
-  return exportCampusEventRegistrationsCsvFallback(viewer, eventId, filters);
+  const response = await getCampusEventRegistrations(viewer, eventId, filters);
+  return registrationsCsv(response.registrations);
 }
 
-export async function cancelCampusEvent(viewer: DevSession, eventId: string): Promise<ManageCampusEventResponse> {
-  return cancelCampusEventFallback(viewer, eventId);
+export async function cancelCampusEvent(
+  viewer: DevSession,
+  eventId: string
+): Promise<ManageCampusEventResponse> {
+  return postBackendJson<ManageCampusEventResponse>(eventPath(eventId, "/cancel"), {}, viewer);
 }
 
-export async function deleteCampusEvent(viewer: DevSession, eventId: string): Promise<ManageCampusEventResponse> {
-  return deleteCampusEventFallback(viewer, eventId);
+export async function deleteCampusEvent(
+  viewer: DevSession,
+  eventId: string
+): Promise<ManageCampusEventResponse> {
+  return mutateBackendJson<ManageCampusEventResponse>(eventPath(eventId), "DELETE", {}, viewer);
 }
