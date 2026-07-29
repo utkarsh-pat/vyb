@@ -41,7 +41,7 @@ Last verified: 2026-07-29
 - The old stack is read-only legacy during verification.
 - Do not copy old OAuth tokens, service-account keys, provider tokens, or environment secrets into the new stack.
 - Generate new credentials in the canonical owner account and rotate any value previously exposed to a shared account.
-- Super-admin fallback is `ceoutkarshpatel@gmail.com` only; production should still set `VYB_SUPER_ADMIN_EMAILS` explicitly.
+- The canonical super-admin is always `ceoutkarshpatel@gmail.com`; `VYB_SUPER_ADMIN_EMAILS` adds any future approved admins without risking an owner lockout.
 
 ## Deletion gate
 
