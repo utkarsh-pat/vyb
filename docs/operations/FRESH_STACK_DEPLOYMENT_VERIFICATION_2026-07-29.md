@@ -111,6 +111,15 @@ Verified: 2026-07-29
   `sha256:96bf69dea0a136271fe7fb64c4d42a3a9abbfaba1b243a8eb4bf030721cb52ec`.
   The current image and one verified rollback remain, and immutable tags were
   restored immediately after deletion.
+- Both legacy Artifact Registry repositories in `vybnet-e2242`
+  (`cloud-run-source-deploy` and `vyb`, approximately 1.9 GB combined) were
+  deleted after their exact old-project paths were verified. The current
+  `vybnet/vyb` repository was not a deletion target.
+- Commit `0212f8e` deployed successfully through Vercel deployment
+  `CH76x5rNGyGHL91AHwiuVFVjeGbS`. Post-deploy `/`, `/login`, and
+  `/api/auth/session` checks returned HTTP 200. A migrated R2 JPEG returned
+  HTTP 200 through `/api/media/...` with the expected MIME type, content
+  length, immutable cache policy, and matched proxy route.
 
 ## Secret-remediation evidence
 
