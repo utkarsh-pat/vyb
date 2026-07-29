@@ -11,7 +11,10 @@ Verified: 2026-07-29
 - Cloud Run URL:
   `https://vyb-backend-850600134378.asia-south1.run.app`
 - Vercel team/project: `vybnet` / `vyb`
-- Vercel production alias: `https://vyb-vybnet.vercel.app`
+- Vercel production deployment:
+  `7qp6Xve12k3YAtEGVUCVUCPMDktB` (`e064b05`, `READY`)
+- Canonical web origin: `https://www.vybnet.app`
+- R2 bucket: `vyb-media-production` (private, APAC placement)
 
 ## Passed evidence
 
@@ -44,6 +47,14 @@ Verified: 2026-07-29
 - `https://vybnet.app/login` returns a permanent redirect to
   `https://www.vybnet.app/login`; the `www` login and unauthenticated session
   endpoints return HTTP 200.
+- Vercel is connected to the private `utkarsh-pat/vyb` repository; collaborator
+  `utkarshpat` has effective `WRITE` permission and successfully pushed the
+  production deploy trigger.
+- R2 credentials were generated fresh under the canonical owner. Vercel stores
+  all five R2 values as sensitive environment variables.
+- R2 remains private. Web media reads use the same-origin
+  `https://www.vybnet.app/api/media/...` proxy rather than the rate-limited
+  `r2.dev` endpoint.
 
 ## Secret-remediation evidence
 
@@ -59,12 +70,14 @@ Verified: 2026-07-29
 
 ## Open gates
 
-1. Select the CEO Google account once in the open production auth chooser and
-   verify the redirected authenticated page.
-2. Activate R2 with owner-provided billing details, then create bucket, token,
-   CORS, lifecycle, and media-domain configuration.
+1. Grant the Cloud Run runtime service account secret-accessor permission on
+   only `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`, then deploy and smoke-test
+   the resulting revision. Failed revision `vyb-backend-00005-24k` has 0%
+   traffic; healthy revision `vyb-backend-00004-26t` remains at 100%.
+2. Verify the redirected CEO Google-authenticated production page.
 3. Map and smoke-test `api.vybnet.app`.
-4. Run backup/restore, cross-tenant isolation, media, Marketplace, notification,
+4. Configure R2 lifecycle/orphan cleanup after upload/delete smoke tests.
+5. Run backup/restore, cross-tenant isolation, media, Marketplace, notification,
    and load-test gates.
 
 Legacy resources remain intact until every gate passes and the fresh stack has

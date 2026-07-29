@@ -8,8 +8,9 @@ Last verified: 2026-07-29
 |---|---|---|
 | Google Cloud and Firebase | `ceoutkarshpatel@gmail.com` | project `vybnet`, number `850600134378` |
 | Cloud Billing | `ceoutkarshpatel@gmail.com` | account `015FFD-11FC57-660C55` |
-| GitHub | `utkarsh-pat` | public repository `utkarsh-pat/vyb` |
+| GitHub | `utkarsh-pat` | private repository `utkarsh-pat/vyb` |
 | Vercel | `ceoutkarshpatel@gmail.com` | team `vybnet`, project `vyb` |
+| Object storage | `ceoutkarshpatel@gmail.com` | Cloudflare R2 bucket `vyb-media-production` |
 | Product/app name | Vyb | package `social.vyb.app` |
 | Public domain | new-account deployment | `vybnet.app`, `www.vybnet.app`, `api.vybnet.app` |
 
@@ -29,7 +30,13 @@ Last verified: 2026-07-29
 - Initial communities: `campus`, `marketplace`, and `resources`.
 - Cloud Run service `vyb-backend`, current healthy revision
   `vyb-backend-00004-26t`.
-- Vercel provider URL `https://vyb-vybnet.vercel.app`.
+- GitHub repository visibility is private. Collaborator `utkarshpat` has
+  effective `WRITE` permission and a verified push to `main`.
+- Vercel is connected to the private GitHub repository. Production deployment
+  `7qp6Xve12k3YAtEGVUCVUCPMDktB` for commit `e064b05` is `READY`.
+- Cloudflare R2 bucket `vyb-media-production` is private and uses automatic
+  Asia-Pacific placement. Its production token is limited to object
+  read/write access on that bucket only.
 - `vybnet.app` ownership is now in the CEO-owned `vybnet` Vercel team and the
   apex and `www` hostnames are verified on project `vyb`. The apex permanently
   redirects to `www`, which serves the promoted production deployment.
