@@ -59,7 +59,7 @@ Last updated: 2026-07-29
 
 Delete old Firebase/Google Cloud/Vercel resources only after:
 
-- [ ] new domains serve verified production;
+- [x] new domains serve verified production;
 - [ ] new auth and data paths pass;
 - [ ] backup and rollback evidence exists;
 - [ ] seven clean operating days complete;
@@ -68,7 +68,4 @@ Delete old Firebase/Google Cloud/Vercel resources only after:
 Current cutover blockers:
 
 - Cloudflare R2 activation requires the owner to enter payment details even though current free-tier due is zero.
-- Name.com has no active browser session. Vercel requires the temporary
-  `_vercel` TXT ownership record before the custom domain can be considered
-  fully verified and detached from legacy project associations.
 - The Google account chooser requires one owner click before the migrated Google session can be signed in end to end.

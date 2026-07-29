@@ -37,6 +37,13 @@ Verified: 2026-07-29
   environment. The apex currently returns a Vercel redirect to
   `www.vybnet.app`, and the `www` login page returns HTTP 200 with the Vyb
   production login shell.
+- Name.com publishes both Vercel ownership TXT values at `_vercel.vybnet.app`;
+  public DNS resolution and Vercel verification passed for the apex and `www`.
+- Deployment `6Nyci76jppPoLwXxERVAJ7tVAC3A` was promoted after domain
+  verification so the custom hostnames were assigned to production.
+- `https://vybnet.app/login` returns a permanent redirect to
+  `https://www.vybnet.app/login`; the `www` login and unauthenticated session
+  endpoints return HTTP 200.
 
 ## Secret-remediation evidence
 
@@ -52,18 +59,12 @@ Verified: 2026-07-29
 
 ## Open gates
 
-1. Sign in to the Name.com registrar account and add the exact `_vercel` TXT
-   ownership record currently shown by the Vercel project. Remove the temporary
-   TXT only after Vercel reports the domain as verified.
-2. Attach/verify `www.vybnet.app` on the fresh project and prove that both
-   public hostnames resolve to the fresh deployment rather than a legacy
-   project association.
-3. Select the CEO Google account once in the open production auth chooser and
+1. Select the CEO Google account once in the open production auth chooser and
    verify the redirected authenticated page.
-4. Activate R2 with owner-provided billing details, then create bucket, token,
+2. Activate R2 with owner-provided billing details, then create bucket, token,
    CORS, lifecycle, and media-domain configuration.
-5. Map and smoke-test `api.vybnet.app`.
-6. Run backup/restore, cross-tenant isolation, media, Marketplace, notification,
+3. Map and smoke-test `api.vybnet.app`.
+4. Run backup/restore, cross-tenant isolation, media, Marketplace, notification,
    and load-test gates.
 
 Legacy resources remain intact until every gate passes and the fresh stack has
