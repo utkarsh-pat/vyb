@@ -7,12 +7,12 @@ Verified: 2026-07-29
 - Google project: `vybnet` (`850600134378`)
 - Artifact image:
   `asia-south1-docker.pkg.dev/vybnet/vyb/vyb-backend@sha256:9f368e0530ad838a2c68c96385937c69d1f05a08ee1083db94345ae7840b5cc5`
-- Cloud Run service/revision: `vyb-backend` / `vyb-backend-00004-26t`
+- Cloud Run service/revision: `vyb-backend` / `vyb-backend-00006-46r`
 - Cloud Run URL:
   `https://vyb-backend-850600134378.asia-south1.run.app`
 - Vercel team/project: `vybnet` / `vyb`
 - Vercel production deployment:
-  `7qp6Xve12k3YAtEGVUCVUCPMDktB` (`e064b05`, `READY`)
+  `9UQa2cvY4vYARvBXfcosaFvSUtjX` (`37b0894`, `READY`)
 - Canonical web origin: `https://www.vybnet.app`
 - R2 bucket: `vyb-media-production` (private, APAC placement)
 
@@ -24,7 +24,8 @@ Verified: 2026-07-29
 - production CORS returned the exact allowed origin for both planned web
   domains.
 - Cloud Run uses the dedicated runtime service account, 1 vCPU, 512 MiB,
-  concurrency 40, min 0, and max 10.
+  concurrency 40, min 0, and launch max 3. The documented hard ceiling remains
+  10 and must only be raised after measured load evidence.
 - Vercel build completed all 77 Next.js routes and reached `READY`.
 - Protected provider checks returned HTTP 200 for `/`,
   `/api/auth/session`, and `/api/notifications/vapid-public-key`.
@@ -55,6 +56,16 @@ Verified: 2026-07-29
 - R2 remains private. Web media reads use the same-origin
   `https://www.vybnet.app/api/media/...` proxy rather than the rate-limited
   `r2.dev` endpoint.
+- Cloud Run revision `vyb-backend-00006-46r` mounted both R2 secrets through
+  secret-scoped IAM bindings, became ready, and received 100% traffic.
+- Direct R2 write, read, and delete operations passed with the production
+  bucket-scoped token; the smoke object was deleted after verification.
+- The production media proxy returned the expected JSON 404 for a missing
+  object, proving that the deployed route and R2 configuration are active.
+- PR #1 was merged into `main`. Vercel correctly blocked the
+  collaborator-authored merge commit on Hobby/private-repository rules, then
+  deployed the same merged source successfully from owner-authored commit
+  `37b0894` without a Pro upgrade.
 
 ## Secret-remediation evidence
 
@@ -70,14 +81,11 @@ Verified: 2026-07-29
 
 ## Open gates
 
-1. Grant the Cloud Run runtime service account secret-accessor permission on
-   only `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`, then deploy and smoke-test
-   the resulting revision. Failed revision `vyb-backend-00005-24k` has 0%
-   traffic; healthy revision `vyb-backend-00004-26t` remains at 100%.
-2. Verify the redirected CEO Google-authenticated production page.
-3. Map and smoke-test `api.vybnet.app`.
-4. Configure R2 lifecycle/orphan cleanup after upload/delete smoke tests.
-5. Run backup/restore, cross-tenant isolation, media, Marketplace, notification,
+1. Verify the redirected CEO Google-authenticated production page.
+2. Map and smoke-test `api.vybnet.app`.
+3. Configure R2 lifecycle/orphan cleanup after application-level upload/delete
+   smoke tests.
+4. Run backup/restore, cross-tenant isolation, media, Marketplace, notification,
    and load-test gates.
 
 Legacy resources remain intact until every gate passes and the fresh stack has

@@ -29,14 +29,21 @@ Last verified: 2026-07-29
 - Initial tenant: `kiet` (`e4e861716cca437ca1dca88a78dac43c`) with verified domain `kiet.edu`.
 - Initial communities: `campus`, `marketplace`, and `resources`.
 - Cloud Run service `vyb-backend`, current healthy revision
-  `vyb-backend-00004-26t`.
+  `vyb-backend-00006-46r`.
 - GitHub repository visibility is private. Collaborator `utkarshpat` has
   effective `WRITE` permission and a verified push to `main`.
 - Vercel is connected to the private GitHub repository. Production deployment
-  `7qp6Xve12k3YAtEGVUCVUCPMDktB` for commit `e064b05` is `READY`.
+  `9UQa2cvY4vYARvBXfcosaFvSUtjX` for owner-authored commit `37b0894` is
+  `READY`.
 - Cloudflare R2 bucket `vyb-media-production` is private and uses automatic
   Asia-Pacific placement. Its production token is limited to object
   read/write access on that bucket only.
+- The Cloud Run runtime identity has Secret Accessor on only
+  `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`; it has no project-wide Secret
+  Manager role.
+- On the Vercel Hobby plan, collaborator-authored production commits from a
+  private repository are blocked. Collaborators may push and open PRs, but the
+  final production trigger must be authored by the repository/project owner.
 - `vybnet.app` ownership is now in the CEO-owned `vybnet` Vercel team and the
   apex and `www` hostnames are verified on project `vyb`. The apex permanently
   redirects to `www`, which serves the promoted production deployment.

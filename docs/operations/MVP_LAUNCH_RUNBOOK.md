@@ -27,7 +27,8 @@ Last updated: 2026-07-29
 - [x] Same-origin private-R2 media proxy configured; public `r2.dev` access is
   intentionally disabled.
 - [ ] R2 lifecycle/orphan cleanup and media upload/read/delete smoke test recorded.
-- [x] Cloud Run secrets, max 10 instances, concurrency 40, public health endpoint, and budget guardrail configured.
+- [x] Cloud Run secrets, launch max 3 (approved hard ceiling 10), concurrency
+  40, public health endpoint, and budget guardrail configured.
 - [x] ₹2,000 monthly budget alerts at 50%, 80%, and 100%.
 - [ ] Stories, video, payments, events, and games flags off unless explicitly approved.
 
@@ -41,7 +42,11 @@ Last updated: 2026-07-29
 - [ ] Load test demonstrates 300–800 concurrent sessions with database headroom above 30%.
 - [x] Failed R2 configuration revision received 0% traffic and the previous
   healthy Cloud Run revision remained at 100%.
-- [x] Cloud Run revision `vyb-backend-00004-26t` and Vercel provider deployment are healthy.
+- [x] Secret-scoped IAM bindings applied; Cloud Run revision
+  `vyb-backend-00006-46r` is healthy at 100% traffic.
+- [x] R2 production token passed write/read/delete; the smoke object was deleted.
+- [x] Vercel production deployment `9UQa2cvY4vYARvBXfcosaFvSUtjX` is ready and
+  `/api/media/...` reaches private R2.
 - [x] GitHub secret-scanning alert #1 remediated and dismissed; Android config is no longer tracked.
 
 ## Deployment
@@ -72,6 +77,6 @@ Delete old Firebase/Google Cloud/Vercel resources only after:
 
 Current cutover blockers:
 
-- Grant the runtime service account secret-accessor permission on only the two
-  R2 secrets, redeploy Cloud Run, and run the media smoke test.
 - Complete the migrated Google sign-in and authenticated-page smoke test.
+- Complete application-level media upload/delete, tenant-isolation,
+  backup/restore, and load-test gates before legacy deletion.
