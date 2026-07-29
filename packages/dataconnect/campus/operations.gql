@@ -1,5 +1,5 @@
 query GetTenantByDomain($domain: String!) @auth(level: NO_ACCESS) {
-  tenantDomains(where: { domain: { eq: $domain }, deletedAt: { isNull: true } }, limit: 1) {
+  tenantDomains(where: { domain: { eq: $domain }, deletedAt: { isNull: true } }, limit: 2) {
     id
     domain
     verificationMode

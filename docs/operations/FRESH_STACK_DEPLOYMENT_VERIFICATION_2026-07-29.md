@@ -80,6 +80,14 @@ Verified: 2026-07-29
 - A migrated email/password account signed in successfully on the production
   domain, redirected to `/home`, and rendered the authenticated campus
   navigation, feed, and profile shell.
+- The duplicate active `kiet.edu` tenant mapping was repaired transactionally.
+  The canonical `kiet` tenant
+  (`56734232-6095-4000-8000-000000000001`) is now the sole active mapping.
+  Post-repair Data Connect verification returned 21 memberships, five
+  completed profiles, eight published feed posts, and 13 published vibes.
+- Campus domain resolution now queries for up to two matches and fails closed
+  when more than one active mapping exists, preventing a future duplicate from
+  silently selecting an empty or incorrect tenant.
 
 ## Secret-remediation evidence
 

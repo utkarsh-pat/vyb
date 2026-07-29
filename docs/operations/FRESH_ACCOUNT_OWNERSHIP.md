@@ -26,7 +26,9 @@ Last verified: 2026-07-29
   - app ID: `1:850600134378:android:525ba14313609c8f26b993`
 - Data Connect service: `vyb`, region `asia-south1`.
 - Cloud SQL instance: `vyb-net`, database `vyb` (provisioned through SQL Connect).
-- Initial tenant: `kiet` (`e4e861716cca437ca1dca88a78dac43c`) with verified domain `kiet.edu`.
+- Canonical launch tenant: `kiet`
+  (`56734232-6095-4000-8000-000000000001`) with the sole active
+  `kiet.edu` domain mapping.
 - Initial communities: `campus`, `marketplace`, and `resources`.
 - Cloud Run service `vyb-backend`, current healthy revision
   `vyb-backend-00006-46r`.
@@ -53,6 +55,26 @@ Last verified: 2026-07-29
   apex and `www` hostnames are verified on project `vyb`. The apex permanently
   redirects to `www`, which serves the promoted production deployment.
 - Billing credit at verification: ₹28,320.75, valid through 2026-10-28.
+
+## KIET tenant canonicalization
+
+On 2026-07-29, production contained two active tenant-domain mappings for
+`kiet.edu`. Authentication resolved to the empty tenant while migrated social
+content belonged to the canonical `kiet` tenant. The repair was completed as
+one transactional Data Connect operation:
+
+- canonical tenant: `56734232-6095-4000-8000-000000000001`;
+- the five completed profiles were copied to their existing canonical
+  memberships;
+- the non-canonical domain mapping was soft-disabled and retained for audit;
+- the canonical mapping is the only active primary `kiet.edu` mapping;
+- post-repair verification returned 21 canonical memberships, five completed
+  profiles, eight published feed posts, and 13 published vibes.
+
+The pre-change backup is stored outside version control at
+`.local-backups/vybnet-pre-tenant-merge-20260729-161525.json`, with SHA-256
+`F3D8283453ED424855A574B3C261D868BE9B2BD05D094BD37701C6C0FA173647`.
+Do not delete that backup before the legacy deletion gate closes.
 
 ## Account isolation policy
 

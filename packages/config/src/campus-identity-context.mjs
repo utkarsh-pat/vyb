@@ -119,7 +119,15 @@ export async function ensureUserRecord({
 
 export async function resolveTenantDomain(domain) {
   const response = await getTenantByDomain(getCampusDc(), { domain });
-  return response.data.tenantDomains[0] ?? null;
+  const tenantDomains = response.data.tenantDomains;
+  if (tenantDomains.length > 1) {
+    const error = new Error(
+      `Multiple active tenant-domain mappings exist for ${domain}. Refusing ambiguous campus resolution.`
+    );
+    error.code = "TENANT_DOMAIN_AMBIGUOUS";
+    throw error;
+  }
+  return tenantDomains[0] ?? null;
 }
 
 async function resolveTenantForEmailDomain(domain) {
@@ -133,6 +141,9 @@ async function resolveTenantForEmailDomain(domain) {
       };
     }
   } catch (error) {
+    if (error?.code === "TENANT_DOMAIN_AMBIGUOUS") {
+      throw error;
+    }
     console.warn(
       `[campus-context] domain lookup failed for ${domain}; falling back to default tenant slug if configured.`,
       error instanceof Error ? error.message : error
