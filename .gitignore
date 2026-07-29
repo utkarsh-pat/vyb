@@ -88,3 +88,7 @@ Desktop.ini
 /apps/mobile/.kotlin/
 /apps/mobile/*.xml
 /apps/mobile/*.png
+
+.vercel
+.env*
+/apps/mobile/app/google-services.json

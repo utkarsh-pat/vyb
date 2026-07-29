@@ -72,6 +72,13 @@ Connect/Cloud SQL; Firestore is not a production fallback for these entities.
 For Google Sign-in, register the local debug and Play App Signing SHA-1/SHA-256
 fingerprints on the new `vybnet` Android app before publishing.
 
+`app/google-services.json` is intentionally not committed. Fetch the current
+restricted config for the `vybnet` Android app before building:
+
+```powershell
+pnpm exec firebase apps:sdkconfig ANDROID 1:850600134378:android:525ba14313609c8f26b993 --project vybnet > app/google-services.json
+```
+
 The app includes the native product shell, authenticated feed and social
 actions, media Post/Story/Vibe composer, Stories/Vibes playback, encrypted
 messages with realtime typing/delivery updates, market, campus hub, events,
