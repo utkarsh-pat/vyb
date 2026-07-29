@@ -8,21 +8,21 @@ Last updated: 2026-07-29
 - [x] Project owner is `ceoutkarshpatel@gmail.com`.
 - [x] Billing account `015FFD-11FC57-660C55` is linked.
 - [x] GitHub repository is `utkarsh-pat/vyb`.
-- [ ] New Vercel project/team ownership is verified before deployment.
+- [x] New Vercel team `vybnet` and project `vyb` ownership verified under the CEO account.
 - [ ] R2 ownership and recovery details are recorded.
 - [ ] No new resource is created in an old shared account.
 
 ## Foundation
 
 - [x] Firebase web and Android apps created; config files contain project `vybnet`.
-- [x] Email/password and Google sign-in enabled; production domains still require final authorization after cutover.
+- [x] Email/password and Google sign-in enabled; Firebase Auth authorizes the stable Vercel alias and all planned production web domains.
 - [x] Data Connect service `vyb`, instance `vyb-net`, and database `vyb` provisioned in `asia-south1`.
 - [x] `pnpm dc:compile`, schema compatibility check, migration, and connector deployment pass.
 - [x] Legacy SQL data verified: 2,465 rows across 39 tables with zero table mismatches.
 - [x] Legacy Auth imported: six matching UIDs/providers with Firebase Scrypt parameters.
 - [ ] Automated database backup enabled and restore test recorded.
 - [ ] R2 bucket, CORS, custom/public domain, lifecycle, and scoped token configured.
-- [ ] Cloud Run secrets, max instances, concurrency, health endpoint, and alerts configured.
+- [x] Cloud Run secrets, max 10 instances, concurrency 40, public health endpoint, and budget guardrail configured.
 - [x] ₹2,000 monthly budget alerts at 50%, 80%, and 100%.
 - [ ] Stories, video, payments, events, and games flags off unless explicitly approved.
 
@@ -35,6 +35,8 @@ Last updated: 2026-07-29
 - [ ] Chat, FCM, notification retry, moderation, and audit flows pass.
 - [ ] Load test demonstrates 300–800 concurrent sessions with database headroom above 30%.
 - [ ] Previous Cloud Run and Vercel releases can be restored.
+- [x] Cloud Run revision `vyb-backend-00004-26t` and Vercel provider deployment are healthy.
+- [x] GitHub secret-scanning alert #1 remediated and dismissed; Android config is no longer tracked.
 
 ## Deployment
 
@@ -61,3 +63,9 @@ Delete old Firebase/Google Cloud/Vercel resources only after:
 - [ ] backup and rollback evidence exists;
 - [ ] seven clean operating days complete;
 - [ ] exact old targets are re-verified immediately before deletion.
+
+Current cutover blockers:
+
+- Cloudflare R2 activation requires the owner to enter payment details even though current free-tier due is zero.
+- Vercel domain move is awaiting target-account 2FA setup and acceptance.
+- The Google account chooser requires one owner click before the migrated Google session can be signed in end to end.

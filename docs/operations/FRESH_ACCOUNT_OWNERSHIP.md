@@ -9,6 +9,7 @@ Last verified: 2026-07-29
 | Google Cloud and Firebase | `ceoutkarshpatel@gmail.com` | project `vybnet`, number `850600134378` |
 | Cloud Billing | `ceoutkarshpatel@gmail.com` | account `015FFD-11FC57-660C55` |
 | GitHub | `utkarsh-pat` | public repository `utkarsh-pat/vyb` |
+| Vercel | `ceoutkarshpatel@gmail.com` | team `vybnet`, project `vyb` |
 | Product/app name | Vyb | package `social.vyb.app` |
 | Public domain | new-account deployment | `vybnet.app`, `www.vybnet.app`, `api.vybnet.app` |
 
@@ -26,6 +27,10 @@ Last verified: 2026-07-29
 - Cloud SQL instance: `vyb-net`, database `vyb` (provisioned through SQL Connect).
 - Initial tenant: `kiet` (`e4e861716cca437ca1dca88a78dac43c`) with verified domain `kiet.edu`.
 - Initial communities: `campus`, `marketplace`, and `resources`.
+- Cloud Run service `vyb-backend`, current healthy revision
+  `vyb-backend-00004-26t`.
+- Vercel provider URL `https://vyb-vybnet.vercel.app`; custom-domain ownership
+  move is pending target-account 2FA acceptance.
 - Billing credit at verification: ₹28,320.75, valid through 2026-10-28.
 
 ## Account isolation policy

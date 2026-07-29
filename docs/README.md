@@ -17,6 +17,7 @@ Status: Marketplace-first MVP documentation set
 9. [Firebase Migration Verification](./operations/FIREBASE_MIGRATION_VERIFICATION_2026-07-29.md)
 10. [Fresh Production Ownership](./operations/FRESH_ACCOUNT_OWNERSHIP.md)
 11. [Production Infrastructure Specification](./operations/PRODUCTION_INFRASTRUCTURE_SPEC.md)
+12. [Fresh Stack Deployment Verification](./operations/FRESH_STACK_DEPLOYMENT_VERIFICATION_2026-07-29.md)
 12. [Client Platform Strategy](./architecture/CLIENT_PLATFORM_STRATEGY.md)
 13. relevant module LLD under `lld/phase-1`;
 14. matching API contract, query review, and ADR;

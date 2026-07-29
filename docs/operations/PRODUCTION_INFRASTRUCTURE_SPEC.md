@@ -13,7 +13,6 @@ Last updated: 2026-07-29
 | Cloud Run service | `vyb-backend` |
 | Cloud Run service account | `vyb-backend@vybnet.iam.gserviceaccount.com` |
 | Artifact Registry repository | `asia-south1-docker.pkg.dev/vybnet/vyb` |
-| Artifact Registry repository | `vyb` |
 | Vercel project | `vyb` |
 | R2 bucket | `vyb-media-production` |
 
@@ -29,10 +28,14 @@ memory: 512Mi
 min-instances: 0
 max-instances: 10
 concurrency: 40
-timeout: 60s
-port: 4000
+timeout: 300s
+port: 8080
 ingress: all (application auth enforced)
 ```
+
+Current production URL:
+`https://vyb-backend-850600134378.asia-south1.run.app`. The custom
+`api.vybnet.app` mapping is a cutover step, not a second backend.
 
 Use a dedicated runtime service account with only Data Connect client, Firebase Auth/FCM access, Secret Manager accessor for named secrets, Cloud Tasks enqueue, and necessary logging/monitoring permissions. Do not grant Owner or Editor.
 
@@ -54,6 +57,20 @@ Use a dedicated runtime service account with only Data Connect client, Firebase 
 - Frontend only; no backend adapter or duplicate API.
 - Production environment points to `https://api.vybnet.app`.
 - Attach `vybnet.app` and `www.vybnet.app` after provider URL passes smoke tests.
+- Current verified provider alias: `https://vyb-vybnet.vercel.app`.
+- Until `api.vybnet.app` is switched, both public and server API base variables
+  point to the verified Cloud Run URL.
+- Firebase session cookies are minted by the trusted Cloud Run runtime. Vercel
+  receives no service-account JSON or long-lived Google private key.
+
+## Client-key controls
+
+- Firebase Android config is local/CI-generated and excluded from Git.
+- Android API key is restricted to package `social.vyb.app` and registered
+  signing certificate SHA-1.
+- Browser API key is restricted to the stable Vercel alias, planned production
+  domains, Firebase auth-handler domains, and local development origins.
+- Play App Signing SHA-1/SHA-256 must be added before public Android release.
 
 ## R2
 
