@@ -6,13 +6,15 @@ Verified: 2026-07-29
 
 - Google project: `vybnet` (`850600134378`)
 - Artifact image:
-  `asia-south1-docker.pkg.dev/vybnet/vyb/vyb-backend@sha256:583999c960b027fcc87dd5aa4c026e4c97fea4571a76575dfb15e5efc4989e86`
-- Cloud Run service/revision: `vyb-backend` / `vyb-backend-00007-gl7`
+  `asia-south1-docker.pkg.dev/vybnet/vyb/vyb-backend@sha256:8efa82baef2dcd438f137f48a904a86f9dc9cd4eb7fe3816eced7173673edfda`
+- Cloud Run service/revision: `vyb-backend` / `vyb-backend-00018-wep`
 - Cloud Run URL:
   `https://vyb-backend-850600134378.asia-south1.run.app`
+- Canonical API origin: `https://api.vybnet.app`
+- Firebase Hosting API edge/site: `vybnet-api`
 - Vercel team/project: `vybnet` / `vyb`
 - Vercel production deployment:
-  `9V5MoDzfWF2sMNL7RWiW6crRU5mk` (`989e62c`, `READY`)
+  `G4Z4dC2nhnqLFuGRDmajs9kvcEmC` (`b7b9555`, `READY`)
 - Canonical web origin: `https://www.vybnet.app`
 - R2 bucket: `vyb-media-production` (private, APAC placement)
 
@@ -80,6 +82,11 @@ Verified: 2026-07-29
 - A migrated email/password account signed in successfully on the production
   domain, redirected to `/home`, and rendered the authenticated campus
   navigation, feed, and profile shell.
+- The CEO Google account completed the production Google sign-in flow and
+  reached the authenticated application. Cloud Run no longer attempts to
+  mutate Firebase custom claims during ordinary login, so the runtime service
+  account remains least-privilege and login no longer depends on an
+  administrative Auth write.
 - The duplicate active `kiet.edu` tenant mapping was repaired transactionally.
   The canonical `kiet` tenant
   (`56734232-6095-4000-8000-000000000001`) is now the sole active mapping.
@@ -120,6 +127,31 @@ Verified: 2026-07-29
   `/api/auth/session` checks returned HTTP 200. A migrated R2 JPEG returned
   HTTP 200 through `/api/media/...` with the expected MIME type, content
   length, immutable cache policy, and matched proxy route.
+- Event persistence was moved out of Vercel's ephemeral `/tmp` storage into
+  the Cloud Run events module backed by Firebase Data Connect. The production
+  API passed an authenticated create, independent detail read, fresh list
+  read, delete, and post-delete absence check. The temporary smoke event was
+  removed.
+- Event update/delete and registration replacement now remove superseded R2
+  assets, and the backend rejects media keys outside the authenticated
+  tenant/user prefix. Production has no local-file event fallback.
+- `api.vybnet.app` is attached to Firebase Hosting site `vybnet-api`, whose
+  catch-all rewrite targets `vyb-backend` in `asia-south1`. Name.com publishes
+  the required CNAME and ACME TXT records. Firebase reports
+  `HOST_ACTIVE`/`OWNERSHIP_ACTIVE`; `https://api.vybnet.app/health` returns
+  HTTP 200 while the managed certificate completes final propagation.
+- The current backend image was staged through 5%, 25%, 50%, and 100% traffic.
+  Every stage returned HTTP 200 health and no backend error logs; revision
+  `vyb-backend-00018-wep` now receives 100% of traffic.
+- Vercel production deployment `G4Z4dC2nhnqLFuGRDmajs9kvcEmC` built commit
+  `b7b9555` and reached `READY`. Authenticated production checks confirmed the
+  migrated Home feed posts and the Vibes lane, including historical KIET
+  content and media.
+- Cloudflare R2 automatically aborts incomplete multipart uploads after seven
+  days. The application uses single-part uploads for current launch-sized
+  media and explicitly deletes replaced/cancelled event objects; an
+  age-based lifecycle deletion rule is intentionally not applied to active
+  user media.
 
 ## Legacy cleanup evidence
 
@@ -164,13 +196,13 @@ Verified: 2026-07-29
 
 ## Open gates
 
-1. Verify the redirected CEO Google-authenticated production page.
-2. Map and smoke-test `api.vybnet.app`.
-3. Smoke-test a newly uploaded event asset and its delete path after the web
-   deployment.
-4. Configure R2 lifecycle/orphan cleanup after application-level upload/delete
-   smoke tests.
-5. Run backup/restore, cross-tenant isolation, media, Marketplace, notification,
+1. Wait for Firebase Hosting to replace the temporary `api.vybnet.app`
+   certificate with its final managed certificate; HTTPS is already serving
+   trusted HTTP 200 responses.
+2. Add a scheduled, dry-run-first R2 orphan reconciliation job before broad
+   campus rollout. It must compare Data Connect references to R2 keys and must
+   never delete solely by object age.
+3. Run backup/restore, cross-tenant isolation, media, Marketplace, notification,
    and load-test gates.
 
 The legacy project backup is complete. Destructive legacy-project cleanup is

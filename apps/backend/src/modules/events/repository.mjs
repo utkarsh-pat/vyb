@@ -9,6 +9,7 @@ import {
   getCampusEventStoreByTenant,
   updateCampusEventStore
 } from "../../../../../packages/dataconnect/campus-admin-sdk/esm/index.esm.js";
+import { getR2Bucket } from "../../lib/r2-bucket.mjs";
 
 const queues = new Map();
 const clone = (value) => JSON.parse(JSON.stringify(value));
@@ -25,6 +26,9 @@ function localPath(tenantId) {
 }
 
 function isFallbackError(error) {
+  if (process.env.NODE_ENV === "production") {
+    return false;
+  }
   const message = String(error?.message ?? error).toLowerCase();
   return [
     "credential",
@@ -106,6 +110,45 @@ function findEvent(store, viewer, eventId) {
   return store.events.find(
     (item) => item.id === eventId && item.tenantId === viewer.tenantId && item.status !== "deleted"
   ) ?? null;
+}
+
+function ensureHost(event, viewer) {
+  if (!event || event.host?.userId !== viewer.userId) {
+    throw new Error("Only the host can manage this event.");
+  }
+}
+
+function ownedMediaAssets(assets, viewer, maxItems) {
+  if (!Array.isArray(assets)) return [];
+  if (assets.length > maxItems) {
+    throw new Error(`You can attach up to ${maxItems} media files here.`);
+  }
+  const requiredPrefix = `events/${viewer.tenantId}/${viewer.userId}/`;
+  for (const asset of assets) {
+    if (
+      !asset ||
+      typeof asset !== "object" ||
+      !text(asset.id) ||
+      !text(asset.url) ||
+      !text(asset.fileName) ||
+      !text(asset.mimeType) ||
+      !text(asset.storagePath).startsWith(requiredPrefix)
+    ) {
+      throw new Error("Event media must belong to the signed-in uploader.");
+    }
+  }
+  return clone(assets);
+}
+
+async function deleteMediaAssets(assets) {
+  const storagePaths = (assets ?? [])
+    .map((asset) => asset?.storagePath?.trim())
+    .filter(Boolean);
+  if (storagePaths.length === 0) return;
+  const bucket = getR2Bucket();
+  await Promise.allSettled(
+    storagePaths.map((storagePath) => bucket.file(storagePath).delete({ ignoreNotFound: true }))
+  );
 }
 
 function registrationSummary(event) {
@@ -210,7 +253,7 @@ export async function createEvent(viewer, payload) {
       location: text(payload.location),
       startsAt: payload.startsAt,
       endsAt: text(payload.endsAt) || null,
-      media: Array.isArray(payload.media) ? payload.media : [],
+      media: ownedMediaAssets(payload.media, viewer, 4),
       passKind: payload.passKind,
       passLabel: text(payload.passLabel, payload.passKind === "paid" ? "Paid" : "Free"),
       capacity: Number.isFinite(Number(payload.capacity)) && Number(payload.capacity) > 0 ? Math.round(Number(payload.capacity)) : null,
@@ -237,6 +280,52 @@ export async function createEvent(viewer, payload) {
   return { dashboard: dashboard(store, viewer), eventId };
 }
 
+export async function updateEvent(viewer, eventId, payload) {
+  if (payload.communityId && !viewer.communityIds.has(payload.communityId)) {
+    throw new Error("You can only attach events to communities you belong to.");
+  }
+  let removableMedia = [];
+  const { store } = await transact(viewer.tenantId, (store) => {
+    const event = findEvent(store, viewer, eventId);
+    ensureHost(event, viewer);
+    const keepIds = new Set(Array.isArray(payload.keepMediaIds) ? payload.keepMediaIds : []);
+    const retainedMedia = (event.media ?? []).filter((asset) => keepIds.has(asset.id));
+    removableMedia = (event.media ?? []).filter((asset) => !keepIds.has(asset.id));
+    event.communityId = text(payload.communityId) || null;
+    event.title = text(payload.title);
+    event.club = text(payload.club);
+    event.category = text(payload.category);
+    event.description = text(payload.description);
+    event.location = text(payload.location);
+    event.startsAt = payload.startsAt;
+    event.endsAt = text(payload.endsAt) || null;
+    event.media = [
+      ...retainedMedia,
+      ...ownedMediaAssets(payload.media, viewer, Math.max(0, 4 - retainedMedia.length))
+    ];
+    event.passKind = payload.passKind;
+    event.passLabel = text(payload.passLabel, payload.passKind === "paid" ? "Paid" : "Free");
+    event.capacity =
+      Number.isFinite(Number(payload.capacity)) && Number(payload.capacity) > 0
+        ? Math.round(Number(payload.capacity))
+        : null;
+    event.responseMode = payload.responseMode;
+    event.registrationConfig = {
+      mode: payload.responseMode,
+      entryMode: payload.entryMode === "team" ? "team" : "individual",
+      closesAt: text(payload.registrationClosesAt) || null,
+      requiresApproval: payload.responseMode === "apply",
+      teamSizeMin: payload.teamSizeMin ?? null,
+      teamSizeMax: payload.teamSizeMax ?? null,
+      allowAttachments: Boolean(payload.allowAttachments),
+      attachmentLabel: text(payload.attachmentLabel) || null,
+      formFields: Array.isArray(payload.formFields) ? payload.formFields : []
+    };
+  });
+  await deleteMediaAssets(removableMedia);
+  return { dashboard: dashboard(store, viewer), eventId };
+}
+
 export async function toggleEventField(viewer, eventId, field) {
   const { store, result } = await transact(viewer.tenantId, (store) => {
     const event = findEvent(store, viewer, eventId);
@@ -258,12 +347,30 @@ export async function toggleEventField(viewer, eventId, field) {
 
 export async function registerEvent(viewer, eventId, payload) {
   let savedRegistration;
+  let removableAttachments = [];
   const { store } = await transact(viewer.tenantId, (store) => {
     const event = findEvent(store, viewer, eventId);
     if (!event || !canRead(event, viewer) || event.status !== "published") throw new Error("This event could not be found.");
     if (event.host?.userId === viewer.userId) throw new Error("Hosts cannot register for their own event.");
     if (event.responseMode === "interest") throw new Error("This event only supports interest.");
     const existing = (event.registrations ?? []).find((item) => item.attendee?.userId === viewer.userId);
+    const keepAttachmentIds = new Set(
+      Array.isArray(payload.keepAttachmentIds) ? payload.keepAttachmentIds : []
+    );
+    removableAttachments = (existing?.attachments ?? []).filter(
+      (asset) => !keepAttachmentIds.has(asset.id)
+    );
+    const retainedAttachments = (existing?.attachments ?? []).filter(
+      (asset) => keepAttachmentIds.has(asset.id)
+    );
+    const attachments = [
+      ...retainedAttachments,
+      ...ownedMediaAssets(
+        payload.attachments,
+        viewer,
+        Math.max(0, 3 - retainedAttachments.length)
+      )
+    ];
     const now = new Date().toISOString();
     savedRegistration = {
       id: existing?.id ?? makeId("event-reg"),
@@ -276,7 +383,7 @@ export async function registerEvent(viewer, eventId, payload) {
       teamSize: Math.max(1, (payload.teamMembers?.length ?? 0) + 1),
       teamMembers: Array.isArray(payload.teamMembers) ? payload.teamMembers : [],
       answers: Array.isArray(payload.answers) ? payload.answers : [],
-      attachments: Array.isArray(payload.attachments) ? payload.attachments : [],
+      attachments,
       note: text(payload.note) || null,
       reviewNote: null
     };
@@ -285,14 +392,62 @@ export async function registerEvent(viewer, eventId, payload) {
       : [savedRegistration, ...(event.registrations ?? [])];
     if (!(event.interestedUserIds ?? []).includes(viewer.userId)) event.interestedUserIds.push(viewer.userId);
   });
+  await deleteMediaAssets(removableAttachments);
   const event = findEvent(store, viewer, eventId);
   return { dashboard: dashboard(store, viewer), event: toEvent(event, viewer), registration: toEvent(event, viewer).viewerRegistration };
+}
+
+export async function getViewerRegistration(viewer, eventId) {
+  const event = findEvent(await readStore(viewer.tenantId), viewer, eventId);
+  if (!event || !canRead(event, viewer)) throw new Error("This event could not be found.");
+  if (event.host?.userId === viewer.userId) {
+    throw new Error("Hosts do not have attendee registrations for their own event.");
+  }
+  return {
+    event: toEvent(event, viewer),
+    registration:
+      clone((event.registrations ?? []).find((item) => item.attendee?.userId === viewer.userId) ?? null)
+  };
 }
 
 export async function listRegistrations(viewer, eventId) {
   const event = findEvent(await readStore(viewer.tenantId), viewer, eventId);
   if (!event || event.host?.userId !== viewer.userId) throw new Error("Only the host can view registrations.");
   return { event: toEvent(event, viewer), registrations: clone(event.registrations ?? []) };
+}
+
+export async function manageRegistration(viewer, eventId, registrationId, payload) {
+  let nextStatus = null;
+  const { store } = await transact(viewer.tenantId, (store) => {
+    const event = findEvent(store, viewer, eventId);
+    ensureHost(event, viewer);
+    const registration = (event.registrations ?? []).find((item) => item.id === registrationId);
+    if (!registration) throw new Error("This registration could not be found.");
+    if (payload.status === "approved" && event.capacity) {
+      const approvedSeats = (event.registrations ?? [])
+        .filter((item) => item.status === "approved" && item.id !== registration.id)
+        .reduce((sum, item) => sum + Number(item.teamSize ?? 1), 0);
+      if (approvedSeats + Number(registration.teamSize ?? 1) > event.capacity) {
+        throw new Error("There are not enough spots left to approve this registration.");
+      }
+    }
+    registration.status = payload.status;
+    registration.reviewNote = text(payload.reviewNote) || null;
+    registration.updatedAt = new Date().toISOString();
+    nextStatus = registration.status;
+  });
+  const event = findEvent(store, viewer, eventId);
+  return {
+    dashboard: dashboard(store, viewer),
+    event: toEvent(event, viewer),
+    registrations: clone(
+      [...(event.registrations ?? [])].sort(
+        (left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
+      )
+    ),
+    registrationId,
+    status: nextStatus
+  };
 }
 
 export async function cancelEvent(viewer, eventId) {
@@ -302,4 +457,19 @@ export async function cancelEvent(viewer, eventId) {
     event.status = "cancelled";
   });
   return { dashboard: dashboard(store, viewer), eventId, action: "cancelled" };
+}
+
+export async function deleteEvent(viewer, eventId) {
+  let removableMedia = [];
+  const { store } = await transact(viewer.tenantId, (store) => {
+    const event = findEvent(store, viewer, eventId);
+    ensureHost(event, viewer);
+    event.status = "deleted";
+    removableMedia = [
+      ...(event.media ?? []),
+      ...(event.registrations ?? []).flatMap((registration) => registration.attachments ?? [])
+    ];
+  });
+  await deleteMediaAssets(removableMedia);
+  return { dashboard: dashboard(store, viewer), eventId, action: "deleted" };
 }

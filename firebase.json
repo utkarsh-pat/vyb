@@ -10,5 +10,23 @@
   },
   "dataconnect": {
     "source": "packages/dataconnect"
+  },
+  "hosting": {
+    "site": "vybnet-api",
+    "public": "apps/api-hosting/public",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "run": {
+          "serviceId": "vyb-backend",
+          "region": "asia-south1"
+        }
+      }
+    ]
   }
 }
