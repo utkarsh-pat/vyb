@@ -31,6 +31,12 @@ Verified: 2026-07-29
   `www.vybnet.app`.
 - Firebase web sessions are minted by Cloud Run and returned to Vercel for an
   HttpOnly cookie; no Firebase service-account key is stored in Vercel.
+- Vercel accepted the `vybnet.app` ownership move from
+  `utkarshpatelcse's projects` into the CEO-owned `vybnet` team.
+- The apex hostname is attached to the fresh `vybnet/vyb` production
+  environment. The apex currently returns a Vercel redirect to
+  `www.vybnet.app`, and the `www` login page returns HTTP 200 with the Vyb
+  production login shell.
 
 ## Secret-remediation evidence
 
@@ -46,13 +52,18 @@ Verified: 2026-07-29
 
 ## Open gates
 
-1. Set up Vercel 2FA and accept the already-issued `vybnet.app` move request.
-2. Select the CEO Google account once in the open production auth chooser and
+1. Sign in to the Name.com registrar account and add the exact `_vercel` TXT
+   ownership record currently shown by the Vercel project. Remove the temporary
+   TXT only after Vercel reports the domain as verified.
+2. Attach/verify `www.vybnet.app` on the fresh project and prove that both
+   public hostnames resolve to the fresh deployment rather than a legacy
+   project association.
+3. Select the CEO Google account once in the open production auth chooser and
    verify the redirected authenticated page.
-3. Activate R2 with owner-provided billing details, then create bucket, token,
+4. Activate R2 with owner-provided billing details, then create bucket, token,
    CORS, lifecycle, and media-domain configuration.
-4. Map and smoke-test `api.vybnet.app`, `vybnet.app`, and `www.vybnet.app`.
-5. Run backup/restore, cross-tenant isolation, media, Marketplace, notification,
+5. Map and smoke-test `api.vybnet.app`.
+6. Run backup/restore, cross-tenant isolation, media, Marketplace, notification,
    and load-test gates.
 
 Legacy resources remain intact until every gate passes and the fresh stack has

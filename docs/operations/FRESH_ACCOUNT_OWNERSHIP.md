@@ -29,8 +29,10 @@ Last verified: 2026-07-29
 - Initial communities: `campus`, `marketplace`, and `resources`.
 - Cloud Run service `vyb-backend`, current healthy revision
   `vyb-backend-00004-26t`.
-- Vercel provider URL `https://vyb-vybnet.vercel.app`; custom-domain ownership
-  move is pending target-account 2FA acceptance.
+- Vercel provider URL `https://vyb-vybnet.vercel.app`.
+- `vybnet.app` ownership is now in the CEO-owned `vybnet` Vercel team and the
+  apex hostname is attached to project `vyb`. Final registrar TXT verification
+  and the `www` attachment are still pending.
 - Billing credit at verification: ₹28,320.75, valid through 2026-10-28.
 
 ## Account isolation policy

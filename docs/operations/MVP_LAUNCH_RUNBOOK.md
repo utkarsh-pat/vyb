@@ -9,8 +9,9 @@ Last updated: 2026-07-29
 - [x] Billing account `015FFD-11FC57-660C55` is linked.
 - [x] GitHub repository is `utkarsh-pat/vyb`.
 - [x] New Vercel team `vybnet` and project `vyb` ownership verified under the CEO account.
+- [x] `vybnet.app` ownership moved from the legacy Vercel scope to the CEO-owned `vybnet` team.
 - [ ] R2 ownership and recovery details are recorded.
-- [ ] No new resource is created in an old shared account.
+- [x] No new production resource is created in an old shared account.
 
 ## Foundation
 
@@ -67,5 +68,7 @@ Delete old Firebase/Google Cloud/Vercel resources only after:
 Current cutover blockers:
 
 - Cloudflare R2 activation requires the owner to enter payment details even though current free-tier due is zero.
-- Vercel domain move is awaiting target-account 2FA setup and acceptance.
+- Name.com has no active browser session. Vercel requires the temporary
+  `_vercel` TXT ownership record before the custom domain can be considered
+  fully verified and detached from legacy project associations.
 - The Google account chooser requires one owner click before the migrated Google session can be signed in end to end.
