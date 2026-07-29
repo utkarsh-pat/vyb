@@ -136,11 +136,19 @@ Verified: 2026-07-29
   A post-delete GitHub lookup no longer resolves the repository, and the local
   `legacy-origin` remote was removed. The production repository remains
   `utkarsh-pat/vyb`.
-- The legacy Google/Firebase project `vybnet-e2242` remains the only Firebase
-  cleanup target visible to the CEO-authenticated Firebase CLI. The production
-  project `vybnet` (`850600134378`) is explicitly excluded. Final project
-  deletion is pending a connected Firebase MCP session, as required by the
-  Firebase project-management runbook.
+- The legacy owner identity `utkarshpatelcse@gmail.com` was authenticated
+  separately and could access `vybnet-e2242` but could not access either the
+  production `vybnet` project or `vybnet-bootstrap`. This proved the legacy
+  cleanup boundary before deletion.
+- Google Cloud accepted permanent shutdown of `vybnet-e2242`
+  (`567342326095`), and a post-delete project description reported
+  `DELETE_REQUESTED`. The operation remains recoverable only during Google's
+  limited project-recovery window.
+- Firebase MCP and gcloud were restored to `ceoutkarshpatel@gmail.com` and
+  production project `vybnet` after deletion. The temporary local gcloud
+  credential for `utkarshpatelcse@gmail.com` was then revoked.
+- The unrelated Gemini projects visible to the legacy Google identity were not
+  Vyb resources and were excluded from cleanup.
 
 ## Secret-remediation evidence
 
@@ -164,9 +172,6 @@ Verified: 2026-07-29
    smoke tests.
 5. Run backup/restore, cross-tenant isolation, media, Marketplace, notification,
    and load-test gates.
-6. After Firebase MCP is connected, permanently delete `vybnet-e2242` and
-   verify whether the GCP-only bootstrap project `vybnet-bootstrap` still
-   exists before deleting that exact project. Never select `vybnet`.
 
 The legacy project backup is complete. Destructive legacy-project cleanup is
 performed only after the fresh deployment and new uploads pass; the current
