@@ -121,6 +121,27 @@ Verified: 2026-07-29
   HTTP 200 through `/api/media/...` with the expected MIME type, content
   length, immutable cache policy, and matched proxy route.
 
+## Legacy cleanup evidence
+
+- The legacy Vercel team `utkarshpatelcse's projects` no longer contains any
+  Vyb deployments. Projects `vyb-web`, `vyb-backend`, and `backend` were
+  permanently deleted from that team. The CEO-owned `vybnet/vyb` production
+  project was excluded from cleanup.
+- The inactive Supabase project `juvjstzhmhbnslepyama`
+  (`utkarshpatelcse's Project`) was permanently deleted through the Supabase
+  Management API. A post-delete project inventory returned an empty list.
+- The short-lived Supabase access token created only for project deletion was
+  revoked immediately after the deletion succeeded.
+- The legacy GitHub repository `utkarshpatelcse/vyb` was permanently deleted.
+  A post-delete GitHub lookup no longer resolves the repository, and the local
+  `legacy-origin` remote was removed. The production repository remains
+  `utkarsh-pat/vyb`.
+- The legacy Google/Firebase project `vybnet-e2242` remains the only Firebase
+  cleanup target visible to the CEO-authenticated Firebase CLI. The production
+  project `vybnet` (`850600134378`) is explicitly excluded. Final project
+  deletion is pending a connected Firebase MCP session, as required by the
+  Firebase project-management runbook.
+
 ## Secret-remediation evidence
 
 - GitHub alert #1 identified the Firebase Android client API key in
@@ -143,6 +164,9 @@ Verified: 2026-07-29
    smoke tests.
 5. Run backup/restore, cross-tenant isolation, media, Marketplace, notification,
    and load-test gates.
+6. After Firebase MCP is connected, permanently delete `vybnet-e2242` and
+   verify whether the GCP-only bootstrap project `vybnet-bootstrap` still
+   exists before deleting that exact project. Never select `vybnet`.
 
 The legacy project backup is complete. Destructive legacy-project cleanup is
 performed only after the fresh deployment and new uploads pass; the current
