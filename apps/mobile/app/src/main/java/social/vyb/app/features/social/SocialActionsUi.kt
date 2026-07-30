@@ -1,10 +1,12 @@
 package social.vyb.app.features.social
 
 import android.content.Intent
-import android.net.Uri
+import android.widget.Toast
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,6 +34,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
@@ -75,6 +79,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 import social.vyb.app.features.media.MediaComposerScreen
 import social.vyb.app.features.media.MediaPublishIntent
 import social.vyb.app.ui.VybMuted
@@ -924,7 +930,8 @@ fun PostOverflowActions(
     busy: Boolean,
     reactionMembers: ReactionMembersState,
     onLoadReactionMembers: () -> Unit,
-    onRepost: (quote: String) -> Unit,
+    onViewPost: (() -> Unit)? = null,
+    onRepost: (quote: String, placement: String) -> Unit,
     onUpdate: (title: String, body: String) -> Unit,
     onDelete: () -> Unit,
     onReport: (reason: String) -> Unit,
@@ -936,6 +943,7 @@ fun PostOverflowActions(
     var draftTitle by remember(postId, title) { mutableStateOf(title) }
     var draftBody by remember(postId, body) { mutableStateOf(body) }
     var quote by remember(postId) { mutableStateOf("") }
+    var repostPlacement by remember(postId) { mutableStateOf("feed") }
     var reason by remember(postId) { mutableStateOf("") }
 
     IconButton(onClick = { menuOpen = true }, enabled = !busy) {
@@ -952,20 +960,23 @@ fun PostOverflowActions(
             title = { Text("Post actions") },
             text = {
                 Column {
+                    onViewPost?.let { openPost ->
+                        TextButton(onClick = {
+                            openPost()
+                            menuOpen = false
+                        }) { Text("View full post") }
+                    }
                     TextButton(onClick = {
-                        val shareText = body.ifBlank { title }
-                        val url = "https://vybnet.app/post/${Uri.encode(postId)}"
-                        context.startActivity(
-                            Intent.createChooser(
-                                Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(Intent.EXTRA_TEXT, "$shareText\n$url".trim())
-                                },
-                                "Share post"
+                        val clipboard = context.getSystemService(android.content.ClipboardManager::class.java)
+                        clipboard.setPrimaryClip(
+                            android.content.ClipData.newPlainText(
+                                "Vyb post",
+                                postPermalink(postId)
                             )
                         )
+                        Toast.makeText(context, "Post link copied", Toast.LENGTH_SHORT).show()
                         menuOpen = false
-                    }) { Text("Share") }
+                    }) { Text("Copy link") }
                     TextButton(onClick = {
                         onLoadReactionMembers()
                         dialog = "likes"
@@ -1029,16 +1040,35 @@ fun PostOverflowActions(
             onDismissRequest = { dialog = null },
             title = { Text("Repost") },
             text = {
-                OutlinedTextField(
-                    value = quote,
-                    onValueChange = { quote = it },
-                    label = { Text("Add a thought (optional)") },
-                    maxLines = 4
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = quote,
+                        onValueChange = { quote = it },
+                        label = { Text("Add a thought (optional)") },
+                        maxLines = 4
+                    )
+                    Text("Share to", fontWeight = FontWeight.SemiBold)
+                    Row {
+                        RepostPlacements.forEach { option ->
+                            Row(
+                                modifier = Modifier
+                                    .clickable { repostPlacement = option.value }
+                                    .padding(end = 18.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = repostPlacement == option.value,
+                                    onClick = { repostPlacement = option.value }
+                                )
+                                Text(option.label)
+                            }
+                        }
+                    }
+                }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    onRepost(quote)
+                    onRepost(quote, repostPlacement)
                     dialog = null
                 }) { Text("Repost") }
             },
@@ -1112,54 +1142,251 @@ fun PostOverflowActions(
     }
 }
 
+internal data class ReactionChoice(
+    val type: String,
+    val symbol: String,
+    val label: String
+)
+
+internal val ReactionChoices = listOf(
+    ReactionChoice("like", "👍", "Like"),
+    ReactionChoice("fire", "🔥", "Fire"),
+    ReactionChoice("support", "👏", "Support"),
+    ReactionChoice("love", "❤️", "Love"),
+    ReactionChoice("insight", "💡", "Insightful"),
+    ReactionChoice("funny", "😂", "Funny")
+)
+
+internal data class RepostPlacement(
+    val value: String,
+    val label: String
+)
+
+internal val RepostPlacements = listOf(
+    RepostPlacement("feed", "Feed"),
+    RepostPlacement("vibe", "Vibes")
+)
+
+fun postPermalink(postId: String): String =
+    "https://vybnet.app/post/${
+        URLEncoder.encode(postId, StandardCharsets.UTF_8.name()).replace("+", "%20")
+    }"
+
+fun postShareText(postId: String, title: String, body: String): String =
+    "${body.ifBlank { title }}\n${postPermalink(postId)}".trim()
+
+private fun sharePost(context: android.content.Context, text: String) {
+    context.startActivity(
+        Intent.createChooser(
+            Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, text)
+            },
+            "Share post"
+        )
+    )
+}
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun PostActionsBar(
     postId: String,
     engagement: PostEngagementState,
     commentCount: Int,
-    onToggleReaction: () -> Unit,
+    title: String = "",
+    body: String = "",
+    onToggleReaction: (String) -> Unit,
+    onOpenReactions: () -> Unit,
     onOpenComments: () -> Unit,
+    onRepost: () -> Unit,
     onToggleSave: () -> Unit,
+    onShare: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        IconButton(onClick = onToggleReaction, enabled = !engagement.reactionLoading) {
-            if (engagement.reactionLoading) {
-                CircularProgressIndicator(modifier = Modifier.width(20.dp).height(20.dp), strokeWidth = 2.dp)
-            } else {
-                Icon(
-                    if (engagement.viewerReactionType != null) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                    contentDescription = "Like post",
-                    tint = if (engagement.viewerReactionType != null) {
-                        MaterialTheme.colorScheme.primary
+    val context = LocalContext.current
+    var reactionsOpen by remember(postId) { mutableStateOf(false) }
+    Column(modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "${engagement.reactionCount} reactions",
+                modifier = Modifier.clickable(onClick = onOpenReactions),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall
+            )
+            Spacer(Modifier.width(16.dp))
+            Text(
+                "$commentCount comments",
+                modifier = Modifier.clickable(onClick = onOpenComments),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                "${engagement.savedCount} shares",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .5f))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .combinedClickable(
+                            enabled = !engagement.reactionLoading,
+                            onClick = {
+                                onToggleReaction(engagement.viewerReactionType ?: "like")
+                            },
+                            onLongClick = { reactionsOpen = true }
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (engagement.reactionLoading) {
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                     } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
+                        val choice = ReactionChoices.firstOrNull {
+                            it.type == engagement.viewerReactionType
+                        }
+                        if (choice != null) {
+                            Text(choice.symbol, fontSize = 21.sp)
+                        } else {
+                            Icon(Icons.Outlined.FavoriteBorder, "React to post")
+                        }
                     }
-                )
+                }
+                DropdownMenu(
+                    expanded = reactionsOpen,
+                    onDismissRequest = { reactionsOpen = false }
+                ) {
+                    ReactionChoices.forEach { choice ->
+                        DropdownMenuItem(
+                            text = { Text("${choice.symbol}  ${choice.label}") },
+                            onClick = {
+                                reactionsOpen = false
+                                onToggleReaction(choice.type)
+                            }
+                        )
+                    }
+                }
             }
-        }
-        Text(engagement.reactionCount.toString())
-        Spacer(Modifier.width(10.dp))
-        IconButton(onClick = onOpenComments) {
-            Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = "Open comments")
-        }
-        Text(commentCount.toString())
-        Spacer(Modifier.weight(1f))
-        if (engagement.savedCount > 0) Text(engagement.savedCount.toString())
-        IconButton(onClick = onToggleSave, enabled = !engagement.saveLoading) {
-            if (engagement.saveLoading) {
-                CircularProgressIndicator(modifier = Modifier.width(20.dp).height(20.dp), strokeWidth = 2.dp)
-            } else {
-                Icon(
-                    if (engagement.isSaved) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
-                    contentDescription = "Save post"
-                )
+            IconButton(onClick = onOpenComments) {
+                Icon(Icons.Outlined.ChatBubbleOutline, "Open comments")
+            }
+            IconButton(
+                onClick = onShare ?: {
+                    sharePost(context, postShareText(postId, title, body))
+                }
+            ) {
+                Icon(Icons.Default.Share, "Share post")
+            }
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = onRepost) {
+                Icon(Icons.Default.Repeat, "Repost")
+            }
+            IconButton(onClick = onToggleSave, enabled = !engagement.saveLoading) {
+                if (engagement.saveLoading) {
+                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                } else {
+                    Icon(
+                        if (engagement.isSaved) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
+                        contentDescription = if (engagement.isSaved) "Remove saved post" else "Save post"
+                    )
+                }
             }
         }
     }
+}
+
+@Composable
+fun PostReactionMembersDialog(
+    state: ReactionMembersState,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Reactions") },
+        text = {
+            when {
+                state.loading -> CircularProgressIndicator()
+                state.error != null -> Text(state.error, color = MaterialTheme.colorScheme.error)
+                state.items.isEmpty() -> Text("No reactions yet.")
+                else -> LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                    items(state.items, key = { it.membershipId }) { member ->
+                        Row(
+                            Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                ReactionChoices.firstOrNull {
+                                    it.type == member.reactionType
+                                }?.symbol ?: "👍",
+                                fontSize = 22.sp
+                            )
+                            Column(Modifier.padding(start = 12.dp)) {
+                                Text(member.displayName, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "@${member.username}",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } }
+    )
+}
+
+@Composable
+fun PostRepostDialog(
+    onDismiss: () -> Unit,
+    onRepost: (quote: String, placement: String) -> Unit
+) {
+    var quote by remember { mutableStateOf("") }
+    var placement by remember { mutableStateOf("feed") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Repost") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = quote,
+                    onValueChange = { quote = it },
+                    label = { Text("Add a thought (optional)") },
+                    maxLines = 4
+                )
+                Text("Share to", fontWeight = FontWeight.SemiBold)
+                Row {
+                    RepostPlacements.forEach { option ->
+                        Row(
+                            Modifier
+                                .clickable { placement = option.value }
+                                .padding(end = 18.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = placement == option.value,
+                                onClick = { placement = option.value }
+                            )
+                            Text(option.label)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onRepost(quote, placement) }) { Text("Repost") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

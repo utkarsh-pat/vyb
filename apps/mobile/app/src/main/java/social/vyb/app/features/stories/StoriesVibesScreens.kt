@@ -1,5 +1,7 @@
 package social.vyb.app.features.stories
 
+import android.content.Context
+import android.content.Intent
 import android.media.MediaPlayer
 import android.view.ViewGroup
 import android.widget.VideoView
@@ -21,6 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.VerticalPager
@@ -37,6 +40,10 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -78,6 +85,7 @@ import social.vyb.app.features.social.CommentThreadState
 import social.vyb.app.features.social.CommentsBottomSheet
 import social.vyb.app.features.social.PostEngagementState
 import social.vyb.app.features.social.PostOverflowActions
+import social.vyb.app.features.social.PostRepostDialog
 import social.vyb.app.features.social.ReactionMembersState
 import social.vyb.app.features.social.SocialActionsViewModel
 import social.vyb.app.features.social.SocialOperationFeedback
@@ -90,34 +98,13 @@ import social.vyb.app.features.social.SocialOperationFeedback
 fun StoriesLane(
     modifier: Modifier = Modifier,
     showLoadingIndicator: Boolean = true,
+    onCreateStory: () -> Unit = {},
     viewModel: StoriesVibesViewModel = viewModel()
 ) {
     val state by viewModel.stories.collectAsStateWithLifecycle()
     LaunchedEffect(viewModel) { viewModel.loadStories() }
 
     Column(modifier) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                "Stories",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.weight(1f))
-            IconButton(
-                enabled = !state.isRefreshing,
-                onClick = viewModel::refreshStories
-            ) {
-                if (state.isRefreshing) {
-                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                } else {
-                    Icon(Icons.Default.Refresh, "Refresh stories")
-                }
-            }
-        }
-
         when {
             state.isLoading -> {
                 if (showLoadingIndicator) {
@@ -129,15 +116,32 @@ fun StoriesLane(
                 }
             }
             state.items.isEmpty() -> {
-                InlineMessage(
-                    message = state.error ?: "No active stories yet."
-                )
+                LazyRow(
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                        horizontal = 16.dp,
+                        vertical = 10.dp
+                    )
+                ) {
+                    item { AddStoryBubble(onCreateStory) }
+                }
+                state.error?.let {
+                    Text(
+                        it,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                }
             }
             else -> {
                 LazyRow(
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                        horizontal = 16.dp,
+                        vertical = 10.dp
+                    ),
                     horizontalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
+                    item { AddStoryBubble(onCreateStory) }
                     itemsIndexed(state.items, key = { _, story -> story.id }) { index, story ->
                         StoryBubble(story = story, onClick = { viewModel.openStory(index) })
                     }
@@ -159,6 +163,35 @@ fun StoriesLane(
     }
 }
 
+@Composable
+private fun AddStoryBubble(onClick: () -> Unit) {
+    Column(
+        modifier = Modifier.clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Surface(
+            modifier = Modifier.size(62.dp),
+            color = social.vyb.app.ui.VybPanelLifted,
+            shape = CircleShape
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    Icons.Default.Add,
+                    contentDescription = "Add your story",
+                    tint = social.vyb.app.ui.VybText,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
+        }
+        Text(
+            "Your story",
+            color = social.vyb.app.ui.VybText,
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(top = 7.dp)
+        )
+    }
+}
+
 /**
  * Drop-in replacement for the placeholder Vibes route.
  */
@@ -167,8 +200,12 @@ fun NativeVibesScreen(
     modifier: Modifier = Modifier,
     viewModel: StoriesVibesViewModel = viewModel(),
     viewerUserId: String? = null,
-    socialViewModel: SocialActionsViewModel
+    socialViewModel: SocialActionsViewModel,
+    onCreateVibe: () -> Unit = {},
+    onSearch: () -> Unit = {},
+    onOpenProfile: (String) -> Unit = {}
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val state by viewModel.vibes.collectAsStateWithLifecycle()
     val socialState = socialViewModel.state
     var commentsPostId by remember { mutableStateOf<String?>(null) }
@@ -202,10 +239,16 @@ fun NativeVibesScreen(
                 }
             }
 
-            Box(modifier.fillMaxSize().background(Color.Black)) {
+            BoxWithConstraints(modifier.fillMaxSize().background(Color.Black)) {
+                val tablet = maxWidth >= 700.dp
+                val stageModifier = if (tablet) {
+                    Modifier.fillMaxHeight().widthIn(max = 560.dp).align(Alignment.Center)
+                } else {
+                    Modifier.fillMaxSize()
+                }
                 VerticalPager(
                     state = pagerState,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = stageModifier,
                     key = { index -> state.items[index].id }
                 ) { page ->
                     val vibe = state.items[page]
@@ -247,8 +290,8 @@ fun NativeVibesScreen(
                         onLoadReactionMembers = {
                             socialViewModel.loadReactionMembers(vibe.id)
                         },
-                        onRepost = { quote ->
-                            socialViewModel.repost(vibe.id, quote, placement = "vibe") {
+                        onRepost = { quote, placement ->
+                            socialViewModel.repost(vibe.id, quote, placement = placement) {
                                 viewModel.refreshVibes()
                             }
                         },
@@ -262,7 +305,9 @@ fun NativeVibesScreen(
                         },
                         onReport = { reason ->
                             socialViewModel.report("post", vibe.id, reason)
-                        }
+                        },
+                        onShare = { shareVibe(context, vibe) },
+                        onOpenProfile = { onOpenProfile(vibe.author.username) }
                     )
                 }
 
@@ -284,6 +329,12 @@ fun NativeVibesScreen(
                         style = MaterialTheme.typography.titleLarge
                     )
                     Spacer(Modifier.weight(1f))
+                    IconButton(onClick = onSearch) {
+                        Icon(Icons.Default.Search, "Search campus", tint = Color.White)
+                    }
+                    IconButton(onClick = onCreateVibe) {
+                        Icon(Icons.Default.Add, "Upload vibe", tint = Color.White)
+                    }
                     IconButton(
                         enabled = !state.isRefreshing,
                         onClick = viewModel::refreshVibes
@@ -500,11 +551,14 @@ private fun VibePage(
     onOpenComments: () -> Unit,
     onToggleSave: () -> Unit,
     onLoadReactionMembers: () -> Unit,
-    onRepost: (String) -> Unit,
+    onRepost: (String, String) -> Unit,
     onUpdate: (String, String) -> Unit,
     onDelete: () -> Unit,
-    onReport: (String) -> Unit
+    onReport: (String) -> Unit,
+    onShare: () -> Unit,
+    onOpenProfile: () -> Unit
 ) {
+    var repostOpen by remember(vibe.id) { mutableStateOf(false) }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         val mediaUrl = vibe.playableMediaUrl
         when {
@@ -571,6 +625,13 @@ private fun VibePage(
             Text(commentCount.toCompactMetric(), color = Color.White)
             Spacer(Modifier.height(14.dp))
             IconButton(
+                onClick = { repostOpen = true },
+                modifier = Modifier.background(Color.Black.copy(alpha = .38f), CircleShape)
+            ) {
+                Icon(Icons.Default.Repeat, "Repost vibe", tint = Color.White)
+            }
+            Spacer(Modifier.height(14.dp))
+            IconButton(
                 enabled = !engagement.saveLoading,
                 onClick = onToggleSave,
                 modifier = Modifier.background(Color.Black.copy(alpha = .38f), CircleShape)
@@ -580,6 +641,13 @@ private fun VibePage(
                     "Save vibe",
                     tint = Color.White
                 )
+            }
+            Spacer(Modifier.height(14.dp))
+            IconButton(
+                onClick = onShare,
+                modifier = Modifier.background(Color.Black.copy(alpha = .38f), CircleShape)
+            ) {
+                Icon(Icons.Default.Share, "Share vibe", tint = Color.White)
             }
             PostOverflowActions(
                 postId = vibe.id,
@@ -602,11 +670,25 @@ private fun VibePage(
                 .fillMaxWidth()
                 .padding(start = 18.dp, end = 82.dp, bottom = 28.dp)
         ) {
-            Text(
-                "@${vibe.author.username}",
-                color = Color.White,
-                fontWeight = FontWeight.Bold
-            )
+            Row(
+                Modifier.clickable(
+                    enabled = !vibe.author.isAnonymous,
+                    onClick = onOpenProfile
+                ),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Avatar(vibe.author.avatarUrl, vibe.author.displayName)
+                Column(Modifier.padding(start = 10.dp)) {
+                    Text(
+                        if (vibe.author.isAnonymous) "Anonymous" else "@${vibe.author.username}",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (!vibe.author.isAnonymous) {
+                        Text(vibe.author.displayName, color = Color.White.copy(alpha = .75f))
+                    }
+                }
+            }
             val description = vibe.body.ifBlank { vibe.title }
             if (description.isNotBlank()) {
                 Text(
@@ -626,6 +708,15 @@ private fun VibePage(
                 )
             }
         }
+    }
+    if (repostOpen) {
+        PostRepostDialog(
+            onDismiss = { repostOpen = false },
+            onRepost = { quote, placement ->
+                onRepost(quote, placement)
+                repostOpen = false
+            }
+        )
     }
 }
 
@@ -852,6 +943,23 @@ private fun InlineMessage(message: String) {
             )
         }
     }
+}
+
+private fun shareVibe(context: Context, vibe: VibeItem) {
+    val text = buildString {
+        append(vibe.body.ifBlank { vibe.title.ifBlank { "Watch this campus vibe" } })
+        append("\nhttps://www.vybnet.app/vibes?post=")
+        append(vibe.id)
+    }
+    context.startActivity(
+        Intent.createChooser(
+            Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, text)
+            },
+            "Share vibe"
+        )
+    )
 }
 
 private fun Int.toCompactMetric(): String = when {

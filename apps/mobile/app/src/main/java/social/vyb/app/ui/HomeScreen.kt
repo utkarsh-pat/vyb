@@ -1,6 +1,8 @@
 package social.vyb.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ChatBubbleOutline
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
@@ -42,8 +45,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import social.vyb.app.data.FeedPost
 import social.vyb.app.data.FeedMedia
 import social.vyb.app.data.VybUiState
@@ -51,12 +57,15 @@ import social.vyb.app.features.social.CommentsBottomSheet
 import social.vyb.app.features.social.CreatePostComposer
 import social.vyb.app.features.social.PostActionsBar
 import social.vyb.app.features.social.PostOverflowActions
+import social.vyb.app.features.social.PostReactionMembersDialog
+import social.vyb.app.features.social.PostRepostDialog
 import social.vyb.app.features.social.PostEngagementState
 import social.vyb.app.features.social.SocialActionsViewModel
 import social.vyb.app.features.social.SocialOperationFeedback
 import social.vyb.app.features.social.PostCommunityOption
 import social.vyb.app.features.hub.CampusHubRepository
 import social.vyb.app.features.stories.StoriesLane
+import social.vyb.app.R
 
 @Composable
 fun HomeScreen(
@@ -65,11 +74,15 @@ fun HomeScreen(
     onOpenSearch: () -> Unit,
     onOpenMessages: () -> Unit,
     onOpenNotifications: () -> Unit,
+    onCreateStory: () -> Unit,
     socialViewModel: SocialActionsViewModel
 ) {
     val socialState = socialViewModel.state
     var composerOpen by remember { mutableStateOf(false) }
     var commentsPostId by remember { mutableStateOf<String?>(null) }
+    var reactionsPostId by remember { mutableStateOf<String?>(null) }
+    var repostPostId by remember { mutableStateOf<String?>(null) }
+    var fullPostId by remember { mutableStateOf<String?>(null) }
     val campusHubRepository = remember { CampusHubRepository() }
     var postCommunities by remember { mutableStateOf<List<PostCommunityOption>>(emptyList()) }
     LaunchedEffect(composerOpen) {
@@ -100,49 +113,63 @@ fun HomeScreen(
                     ),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                VybBrandLockup(
-                    Modifier.weight(1f),
-                    compact = true,
-                    showSubtitle = !layout.compactWidth
-                )
-                HeaderIcon(onClick = onOpenSearch) {
-                    Icon(Icons.Default.Search, "Search", tint = VybText)
+                Box(Modifier.weight(1f)) {
+                    Image(
+                        painter = painterResource(R.drawable.vyb_logo),
+                        contentDescription = "Vyb",
+                        modifier = Modifier.size(36.dp).clip(RoundedCornerShape(11.dp)),
+                        contentScale = ContentScale.Crop
+                    )
                 }
-                Spacer(Modifier.size(6.dp))
-                HeaderIcon(onClick = onOpenMessages) {
-                    Icon(Icons.Default.ChatBubbleOutline, "Chats", tint = VybText)
+                HeaderIcon(onClick = onOpenSearch) {
+                    Icon(Icons.Default.Search, "Search", tint = VybText, modifier = Modifier.size(20.dp))
                 }
                 Spacer(Modifier.size(6.dp))
                 HeaderIcon(onClick = onOpenNotifications) {
-                    Icon(Icons.Default.NotificationsNone, "Notifications", tint = VybText)
+                    Icon(
+                        Icons.Default.NotificationsNone,
+                        "Notifications",
+                        tint = VybText,
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
                 Spacer(Modifier.size(6.dp))
-                HeaderIcon(onClick = { composerOpen = !composerOpen }) {
-                    Icon(Icons.Default.Add, "Create post", tint = VybText)
+                Surface(
+                    onClick = { composerOpen = !composerOpen },
+                    color = VybIndigo,
+                    shape = RoundedCornerShape(24.dp)
+                ) {
+                    Row(
+                        Modifier.height(38.dp).padding(horizontal = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Add, null, tint = Color.White, modifier = Modifier.size(20.dp))
+                        Text(
+                            "Post",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(start = 5.dp)
+                        )
+                    }
                 }
-            }
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .widthIn(max = 720.dp)
-                    .padding(
-                        horizontal = layout.horizontalPadding,
-                        vertical = if (layout.compactHeight) 2.dp else 6.dp
+                Spacer(Modifier.size(6.dp))
+                HeaderIcon(onClick = onOpenMessages) {
+                    Icon(
+                        Icons.Default.ChatBubbleOutline,
+                        "Chats",
+                        tint = VybText,
+                        modifier = Modifier.size(20.dp)
                     )
-            ) {
-                Text(
-                    "Good evening, ${state.displayName.substringBefore(" ")}",
-                    color = VybText,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Black
-                )
-                Text(state.college, color = VybMuted)
+                }
             }
         }
         item {
             Column(Modifier.fillMaxWidth().widthIn(max = 720.dp)) {
-                StoriesLane(showLoadingIndicator = !state.feedLoading)
-                Spacer(Modifier.height(18.dp))
+                StoriesLane(
+                    showLoadingIndicator = !state.feedLoading,
+                    onCreateStory = onCreateStory
+                )
+                Spacer(Modifier.height(10.dp))
             }
         }
         if (state.feedLoading) {
@@ -209,18 +236,29 @@ fun HomeScreen(
                 busy = post.id in socialState.busyPostIds,
                 reactionMembers = socialState.reactionMembers[post.id]
                     ?: social.vyb.app.features.social.ReactionMembersState(),
-                onLike = { socialViewModel.toggleReaction(post.id) },
+                onReaction = { type -> socialViewModel.toggleReaction(post.id, type) },
                 onComments = { commentsPostId = post.id },
                 onSave = { socialViewModel.toggleSave(post.id) },
-                onLoadReactionMembers = { socialViewModel.loadReactionMembers(post.id) },
-                onRepost = { quote ->
-                    socialViewModel.repost(post.id, quote, onCreated = { onRefresh() })
+                onOpenReactions = {
+                    reactionsPostId = post.id
+                    socialViewModel.loadReactionMembers(post.id)
                 },
+                onRepost = { quote, placement ->
+                    socialViewModel.repost(
+                        post.id,
+                        quote,
+                        placement,
+                        onCreated = { onRefresh() }
+                    )
+                },
+                onOpenRepost = { repostPostId = post.id },
+                onViewPost = { fullPostId = post.id },
                 onUpdate = { title, body ->
                     socialViewModel.updatePost(post.id, title, body) { onRefresh() }
                 },
                 onDelete = { socialViewModel.deletePost(post.id, onRefresh) },
-                onReport = { reason -> socialViewModel.report("post", post.id, reason) }
+                onReport = { reason -> socialViewModel.report("post", post.id, reason) },
+                compact = !layout.wide
             )
         }
         item { Spacer(Modifier.height(20.dp)) }
@@ -280,6 +318,105 @@ fun HomeScreen(
             onDismiss = { commentsPostId = null }
         )
     }
+    reactionsPostId?.let { postId ->
+        PostReactionMembersDialog(
+            state = socialState.reactionMembers[postId]
+                ?: social.vyb.app.features.social.ReactionMembersState(),
+            onDismiss = { reactionsPostId = null }
+        )
+    }
+    repostPostId?.let { postId ->
+        PostRepostDialog(
+            onDismiss = { repostPostId = null },
+            onRepost = { quote, placement ->
+                socialViewModel.repost(postId, quote, placement) {
+                    repostPostId = null
+                    onRefresh()
+                }
+            }
+        )
+    }
+    fullPostId?.let { postId ->
+        state.feed.firstOrNull { it.id == postId }?.let { post ->
+            Dialog(
+                onDismissRequest = { fullPostId = null },
+                properties = DialogProperties(usePlatformDefaultWidth = false)
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(VybBackground)
+                        .padding(vertical = 12.dp)
+                ) {
+                    LazyColumn(
+                        Modifier.fillMaxSize(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        item {
+                            PostCard(
+                                post = post,
+                                engagement = socialState.engagements[post.id]
+                                    ?: PostEngagementState(),
+                                commentCount = socialState.commentThreads[post.id]
+                                    ?.items?.size ?: post.comments,
+                                isOwner = post.viewerCanManage,
+                                busy = post.id in socialState.busyPostIds,
+                                reactionMembers = socialState.reactionMembers[post.id]
+                                    ?: social.vyb.app.features.social.ReactionMembersState(),
+                                onReaction = {
+                                    socialViewModel.toggleReaction(post.id, it)
+                                },
+                                onComments = {
+                                    fullPostId = null
+                                    commentsPostId = post.id
+                                },
+                                onSave = { socialViewModel.toggleSave(post.id) },
+                                onOpenReactions = {
+                                    fullPostId = null
+                                    reactionsPostId = post.id
+                                    socialViewModel.loadReactionMembers(post.id)
+                                },
+                                onRepost = { quote, placement ->
+                                    socialViewModel.repost(post.id, quote, placement) {
+                                        onRefresh()
+                                    }
+                                },
+                                onOpenRepost = {
+                                    fullPostId = null
+                                    repostPostId = post.id
+                                },
+                                onViewPost = {},
+                                onUpdate = { title, body ->
+                                    socialViewModel.updatePost(post.id, title, body) { onRefresh() }
+                                },
+                                onDelete = {
+                                    socialViewModel.deletePost(post.id) {
+                                        fullPostId = null
+                                        onRefresh()
+                                    }
+                                },
+                                onReport = { reason ->
+                                    socialViewModel.report("post", post.id, reason)
+                                },
+                                expanded = true,
+                                compact = false
+                            )
+                        }
+                    }
+                    IconButton(
+                        onClick = { fullPostId = null },
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(18.dp)
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = .68f))
+                    ) {
+                        Icon(Icons.Default.Close, "Close full post", tint = Color.White)
+                    }
+                }
+            }
+        }
+    }
     SocialOperationFeedback(
         state = socialState,
         onDismissError = socialViewModel::clearOperationError,
@@ -294,10 +431,16 @@ private fun HeaderIcon(onClick: () -> Unit, content: @Composable () -> Unit) {
     Box(
         modifier = Modifier
             .size(48.dp)
-            .clip(CircleShape)
-            .background(VybPanelLifted)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
     ) {
-        IconButton(onClick = onClick, content = content)
+        Surface(
+            modifier = Modifier.size(36.dp),
+            color = VybPanelLifted,
+            shape = CircleShape
+        ) {
+            Box(contentAlignment = Alignment.Center) { content() }
+        }
     }
 }
 
@@ -309,29 +452,33 @@ private fun PostCard(
     isOwner: Boolean,
     busy: Boolean,
     reactionMembers: social.vyb.app.features.social.ReactionMembersState,
-    onLike: () -> Unit,
+    onReaction: (String) -> Unit,
     onComments: () -> Unit,
     onSave: () -> Unit,
-    onLoadReactionMembers: () -> Unit,
-    onRepost: (String) -> Unit,
+    onOpenReactions: () -> Unit,
+    onRepost: (String, String) -> Unit,
+    onOpenRepost: () -> Unit,
+    onViewPost: () -> Unit,
     onUpdate: (String, String) -> Unit,
     onDelete: () -> Unit,
-    onReport: (String) -> Unit
+    onReport: (String) -> Unit,
+    expanded: Boolean = false,
+    compact: Boolean = true
 ) {
     Card(
         Modifier
             .fillMaxWidth()
-            .widthIn(max = 720.dp)
-            .padding(horizontal = 14.dp, vertical = 6.dp),
-        shape = RoundedCornerShape(20.dp),
+            .widthIn(max = if (expanded) 900.dp else 720.dp)
+            .padding(horizontal = if (compact) 0.dp else 14.dp, vertical = 6.dp),
+        shape = RoundedCornerShape(if (compact) 0.dp else 20.dp),
         colors = CardDefaults.cardColors(containerColor = VybPanel),
         border = androidx.compose.foundation.BorderStroke(1.dp, VybBorder),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
-        Column(Modifier.padding(16.dp)) {
+        Column(Modifier.padding(if (compact) 14.dp else 16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    Modifier.size(44.dp).clip(CircleShape)
+                    Modifier.size(if (compact) 36.dp else 44.dp).clip(CircleShape)
                         .background(MaterialTheme.colorScheme.secondary.copy(alpha = .18f)),
                     contentAlignment = Alignment.Center
                 ) {
@@ -346,7 +493,7 @@ private fun PostCard(
                         )
                     }
                 }
-                Column(Modifier.padding(start = 11.dp).weight(1f)) {
+                Column(Modifier.padding(start = if (compact) 9.dp else 11.dp).weight(1f)) {
                     Text(post.author, fontWeight = FontWeight.Bold)
                     Text("${post.handle} · ${post.time}",
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -358,22 +505,12 @@ private fun PostCard(
                     isOwner = isOwner,
                     busy = busy,
                     reactionMembers = reactionMembers,
-                    onLoadReactionMembers = onLoadReactionMembers,
+                    onLoadReactionMembers = onOpenReactions,
+                    onViewPost = onViewPost,
                     onRepost = onRepost,
                     onUpdate = onUpdate,
                     onDelete = onDelete,
                     onReport = onReport
-                )
-            }
-            Surface(
-                modifier = Modifier.padding(vertical = 8.dp),
-                shape = RoundedCornerShape(50),
-                color = VybIndigo.copy(alpha = .16f)
-            ) {
-                Text(
-                    post.category,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    color = VybText
                 )
             }
             if (post.title.isNotBlank() && post.title != post.body) {
@@ -388,16 +525,22 @@ private fun PostCard(
                 FeedMediaCarousel(
                     media = post.media,
                     author = post.author,
-                    modifier = Modifier.padding(top = 12.dp)
+                    modifier = Modifier
+                        .padding(top = 12.dp)
+                        .clickable(onClick = onViewPost)
                 )
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(if (compact) 12.dp else 16.dp))
             PostActionsBar(
                 postId = post.id,
                 engagement = engagement,
                 commentCount = commentCount,
-                onToggleReaction = onLike,
+                title = post.title,
+                body = post.body,
+                onToggleReaction = onReaction,
+                onOpenReactions = onOpenReactions,
                 onOpenComments = onComments,
+                onRepost = onOpenRepost,
                 onToggleSave = onSave
             )
         }

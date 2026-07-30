@@ -14,6 +14,8 @@ class VybAdaptiveTest {
         assertTrue(layout.compactWidth)
         assertTrue(layout.compactHeight)
         assertFalse(layout.wide)
+        assertEquals(VybWindowClass.Compact, layout.windowClass)
+        assertEquals(1, layout.contentColumns)
         assertEquals(12.dp, layout.horizontalPadding)
         assertEquals(10.dp, layout.sectionSpacing)
     }
@@ -25,7 +27,18 @@ class VybAdaptiveTest {
         assertFalse(layout.compactWidth)
         assertFalse(layout.compactHeight)
         assertTrue(layout.wide)
-        assertEquals(28.dp, layout.horizontalPadding)
+        assertEquals(VybWindowClass.Medium, layout.windowClass)
+        assertEquals(1, layout.contentColumns)
+        assertEquals(24.dp, layout.horizontalPadding)
         assertEquals(16.dp, layout.sectionSpacing)
+    }
+
+    @Test
+    fun expandedTabletUsesMultiColumnContent() {
+        val layout = resolveVybLayout(maxWidth = 900.dp, maxHeight = 1_200.dp)
+
+        assertEquals(VybWindowClass.Expanded, layout.windowClass)
+        assertEquals(2, layout.contentColumns)
+        assertEquals(32.dp, layout.horizontalPadding)
     }
 }

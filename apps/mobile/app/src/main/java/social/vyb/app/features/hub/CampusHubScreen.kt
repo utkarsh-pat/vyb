@@ -1,5 +1,8 @@
 package social.vyb.app.features.hub
 
+import android.content.Context
+import android.content.Intent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -15,8 +18,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
@@ -31,6 +38,8 @@ import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.HowToReg
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -54,6 +63,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
@@ -66,6 +77,7 @@ import social.vyb.app.ui.VybMuted
 import social.vyb.app.ui.VybPanel
 import social.vyb.app.ui.VybIndigo
 import social.vyb.app.ui.VybLoadingMark
+import social.vyb.app.ui.VybRemoteImage
 import social.vyb.app.ui.VybTeal
 import social.vyb.app.ui.VybText
 import java.time.Instant
@@ -122,6 +134,7 @@ fun CampusHubScreen(modifier: Modifier = Modifier) {
             onRefresh = viewModel::refresh,
             onEvent = viewModel::openEvent,
             onCommunity = viewModel::openCommunity,
+            onSaveEvent = viewModel::toggleSave,
             onHostEvent = { viewModel.openHostEditor() },
             modifier = modifier
         )
@@ -135,6 +148,7 @@ private fun HubRoot(
     onRefresh: () -> Unit,
     onEvent: (HubEvent) -> Unit,
     onCommunity: (HubCommunity) -> Unit,
+    onSaveEvent: (String) -> Unit,
     onHostEvent: () -> Unit,
     modifier: Modifier
 ) {
@@ -215,7 +229,12 @@ private fun HubRoot(
                         }
                     }
                     when (state.selectedTab) {
-                        CampusHubTab.Events -> EventList(state.events, onEvent)
+                        CampusHubTab.Events -> EventDashboard(
+                            events = state.events,
+                            busyId = state.busyId,
+                            onOpen = onEvent,
+                            onSave = onSaveEvent
+                        )
                         CampusHubTab.Resources -> ResourceList(state.resources)
                         CampusHubTab.Communities -> CommunityList(
                             state.communities,
@@ -230,49 +249,184 @@ private fun HubRoot(
 }
 
 @Composable
-private fun EventList(events: List<HubEvent>, onOpen: (HubEvent) -> Unit) {
-    if (events.isEmpty()) {
-        HubEmptyState(
-            icon = { Icon(Icons.Default.CalendarMonth, null, tint = VybTeal) },
-            title = "No campus events yet",
-            body = "Events hosted by your college and communities will appear here."
-        )
-        return
+private fun EventDashboard(
+    events: List<HubEvent>,
+    busyId: String?,
+    onOpen: (HubEvent) -> Unit,
+    onSave: (String) -> Unit
+) {
+    var query by remember { mutableStateOf("") }
+    var scope by remember { mutableStateOf("Upcoming") }
+    var category by remember { mutableStateOf("All") }
+    val categories = remember(events) {
+        listOf("All") + events.map(HubEvent::category).filter(String::isNotBlank).distinct()
     }
-    LazyColumn(
-        Modifier.fillMaxSize().padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item { Spacer(Modifier.height(4.dp)) }
-        items(events, key = HubEvent::id) { event ->
-            Card(
-                Modifier.fillMaxWidth().clickable { onOpen(event) },
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = VybPanel),
-                border = androidx.compose.foundation.BorderStroke(1.dp, VybBorder)
+    val filtered = remember(events, query, scope, category) {
+        filterHubEvents(events, query, scope, category)
+    }
+
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val tablet = maxWidth >= 700.dp
+        Column(Modifier.fillMaxSize()) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it.take(80) },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                leadingIcon = { Icon(Icons.Default.Search, null) },
+                label = { Text("Search events, clubs or places") },
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp)
+            )
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Column(Modifier.padding(16.dp)) {
-                    Text(event.category.ifBlank { "Campus event" }, color = MaterialTheme.colorScheme.primary)
-                    Text(event.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text(
-                        "${formatDate(event.startsAt)} • ${event.location.ifBlank { "Campus" }}",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(event.description, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        when {
-                            event.viewerRegistration != null -> "Registered • ${event.viewerRegistration.status}"
-                            event.spotsLeft != null -> "${event.spotsLeft} spots left"
-                            else -> event.passLabel
-                        },
-                        fontWeight = FontWeight.SemiBold
+                listOf("Upcoming", "Saved", "Registered", "Hosting").forEach { option ->
+                    FilterChip(
+                        selected = scope == option,
+                        onClick = { scope = option },
+                        label = {
+                            val count = events.count {
+                                when (option) {
+                                    "Saved" -> it.isSaved
+                                    "Registered" -> it.viewerRegistration != null || it.isInterested
+                                    "Hosting" -> it.isHostedByViewer
+                                    else -> it.status == "published"
+                                }
+                            }
+                            Text("$option $count")
+                        }
                     )
                 }
             }
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                categories.forEach { option ->
+                    FilterChip(
+                        selected = category == option,
+                        onClick = { category = option },
+                        label = { Text(option) }
+                    )
+                }
+            }
+            if (filtered.isEmpty()) {
+                HubEmptyState(
+                    icon = { Icon(Icons.Default.CalendarMonth, null, tint = VybTeal) },
+                    title = "No events match this lane",
+                    body = "Try another scope, category, or search."
+                )
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(if (tablet) 2 else 1),
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    gridItems(filtered, key = HubEvent::id) { event ->
+                        EventFeedCard(
+                            event = event,
+                            busy = busyId == event.id,
+                            onOpen = { onOpen(event) },
+                            onSave = { onSave(event.id) }
+                        )
+                    }
+                    item { Spacer(Modifier.height(16.dp)) }
+                }
+            }
         }
-        item { Spacer(Modifier.height(16.dp)) }
+    }
+}
+
+@Composable
+private fun EventFeedCard(
+    event: HubEvent,
+    busy: Boolean,
+    onOpen: () -> Unit,
+    onSave: () -> Unit
+) {
+    val context = LocalContext.current
+    Card(
+        Modifier.fillMaxWidth().clickable(onClick = onOpen),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = VybPanel),
+        border = androidx.compose.foundation.BorderStroke(1.dp, VybBorder)
+    ) {
+        Column {
+            val media = event.media.firstOrNull()
+            if (media != null && media.kind != "video") {
+                VybRemoteImage(
+                    url = media.url,
+                    contentDescription = event.title,
+                    modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Box(
+                    Modifier.fillMaxWidth().aspectRatio(16f / 7f)
+                        .background(VybIndigo.copy(alpha = .16f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.CalendarMonth, null, tint = VybTeal, modifier = Modifier.size(36.dp))
+                }
+            }
+            Column(Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        event.club.ifBlank { event.category.ifBlank { "Campus event" } },
+                        color = VybTeal,
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = onSave, enabled = !busy) {
+                        Icon(
+                            if (event.isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                            if (event.isSaved) "Remove saved event" else "Save event",
+                            tint = if (event.isSaved) VybTeal else VybMuted
+                        )
+                    }
+                }
+                Text(event.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text(
+                    "${formatDate(event.startsAt)} · ${event.location.ifBlank { "Campus" }}",
+                    color = VybMuted
+                )
+                Text(
+                    event.description,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            when {
+                                event.viewerRegistration != null ->
+                                    event.viewerRegistration.status.replaceFirstChar { it.uppercase() }
+                                event.spotsLeft != null -> "${event.spotsLeft} spots left"
+                                else -> event.passLabel
+                            },
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            "${event.interestCount} interested · ${event.registrationSummary.total} registrations",
+                            color = VybMuted,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    IconButton(onClick = { shareEvent(context, event) }) {
+                        Icon(Icons.Default.Share, "Share event", tint = VybText)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -352,6 +506,7 @@ private fun EventDetail(
     onManageRegistrations: () -> Unit,
     modifier: Modifier
 ) {
+    val context = LocalContext.current
     LazyColumn(modifier.fillMaxSize()) {
         item {
             Row(
@@ -362,6 +517,16 @@ private fun EventDetail(
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                 }
                 Text("Event details", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            }
+        }
+        event.media.firstOrNull()?.takeIf { it.kind != "video" }?.let { media ->
+            item {
+                VybRemoteImage(
+                    url = media.url,
+                    contentDescription = event.title,
+                    modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
+                    contentScale = ContentScale.Crop
+                )
             }
         }
         item {
@@ -391,7 +556,10 @@ private fun EventDetail(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(12.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
                         OutlinedButton(onClick = onEdit, enabled = !busy) {
                             Icon(Icons.Default.Edit, contentDescription = null)
                             Text("Edit")
@@ -400,9 +568,15 @@ private fun EventDetail(
                             Icon(Icons.Default.HowToReg, contentDescription = null)
                             Text("Registrations")
                         }
+                        IconButton(onClick = { shareEvent(context, event) }) {
+                            Icon(Icons.Default.Share, "Share event")
+                        }
                     }
                 } else {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
                         OutlinedButton(onClick = onSave, enabled = !busy) {
                             Icon(
                                 if (event.isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
@@ -420,6 +594,9 @@ private fun EventDetail(
                                 else if (event.responseMode == "apply") "Apply"
                                 else "Register"
                             )
+                        }
+                        IconButton(onClick = { shareEvent(context, event) }) {
+                            Icon(Icons.Default.Share, "Share event")
                         }
                     }
                 }
@@ -873,6 +1050,29 @@ private fun HubEmptyState(
             }
         }
     }
+}
+
+private fun shareEvent(context: Context, event: HubEvent) {
+    val route = "https://www.vybnet.app/events?event=${event.id}"
+    val text = buildString {
+        append(event.title)
+        append("\n")
+        append(formatDate(event.startsAt))
+        append(" · ")
+        append(event.location.ifBlank { "Campus" })
+        append("\n")
+        append(route)
+    }
+    context.startActivity(
+        Intent.createChooser(
+            Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_SUBJECT, event.title)
+                putExtra(Intent.EXTRA_TEXT, text)
+            },
+            "Share event"
+        )
+    )
 }
 
 private fun formatDate(value: String): String = runCatching {

@@ -37,6 +37,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -80,8 +81,12 @@ fun SearchScreen(
         return
     }
 
-    VybResponsiveFrame(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize()) {
+    VybResponsiveFrame(Modifier.fillMaxSize(), maxContentWidth = 1120.dp) { layout ->
+        Row(
+            Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.spacedBy(18.dp)
+        ) {
+        Column(Modifier.weight(1f).fillMaxSize()) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -89,16 +94,32 @@ fun SearchScreen(
                 IconButton(onClick = onBack) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = VybText)
                 }
-                Text("Search campus", color = VybText, fontWeight = FontWeight.Black)
+                Column {
+                    Text(
+                        "Search campus",
+                        color = VybText,
+                        fontWeight = FontWeight.Black,
+                        style = androidx.compose.material3.MaterialTheme.typography.titleLarge
+                    )
+                    if (layout.wide) {
+                        Text("People, posts, vibes and marketplace", color = VybMuted)
+                    }
+                }
             }
             OutlinedTextField(
                 value = state.query,
                 onValueChange = searchViewModel::updateQuery,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                placeholder = { Text("Search people, posts, vibes or market") },
+                placeholder = {
+                    Text(
+                        "Search people, posts, vibes or market",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
                 leadingIcon = { Icon(Icons.Default.Search, null) },
                 singleLine = true,
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(24.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedContainerColor = VybPanelLifted,
                     unfocusedContainerColor = VybPanelLifted,
@@ -119,15 +140,22 @@ fun SearchScreen(
                     val selected = state.selectedCategory == category
                     Surface(
                         onClick = { searchViewModel.selectCategory(category) },
+                        modifier = Modifier.height(42.dp),
                         color = if (selected) VybIndigo else VybPanelLifted,
-                        shape = RoundedCornerShape(14.dp)
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            if (selected) VybIndigo else VybBorder
+                        ),
+                        shape = RoundedCornerShape(24.dp)
                     ) {
-                        Text(
-                            "${category.label} ${state.resultCount(category)}",
-                            color = VybText,
-                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp)
-                        )
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                "${category.label} ${state.resultCount(category)}",
+                                color = VybText,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                modifier = Modifier.padding(horizontal = 14.dp)
+                            )
+                        }
                     }
                 }
                 item { Spacer(Modifier.size(8.dp)) }
@@ -213,6 +241,97 @@ fun SearchScreen(
                         MarketSearchCard(it, onOpen = { onOpenMarket(it) })
                     }
                     item { Spacer(Modifier.height(24.dp)) }
+                }
+            }
+        }
+        if (layout.wide) {
+            SearchSummaryRail(
+                state = state,
+                onSelectCategory = searchViewModel::selectCategory,
+                onOpenProfile = searchViewModel::openProfile,
+                modifier = Modifier.fillMaxSize().weight(.42f).padding(top = 10.dp, end = 16.dp)
+            )
+        }
+        }
+    }
+}
+
+@Composable
+private fun SearchSummaryRail(
+    state: SearchUiState,
+    onSelectCategory: (SearchCategory) -> Unit,
+    onOpenProfile: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = VybPanel.copy(alpha = .88f),
+            border = androidx.compose.foundation.BorderStroke(1.dp, VybBorder),
+            shape = RoundedCornerShape(22.dp)
+        ) {
+            Column(Modifier.padding(16.dp)) {
+                Text("Explore campus", color = VybText, fontWeight = FontWeight.Black)
+                Text(
+                    if (state.query.isBlank()) {
+                        "Start with people your campus is discovering."
+                    } else {
+                        "Results for \"${state.query.trim()}\""
+                    },
+                    color = VybMuted,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
+                )
+                SearchCategory.entries.forEach { category ->
+                    Surface(
+                        onClick = { onSelectCategory(category) },
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                        color = if (state.selectedCategory == category) {
+                            VybIndigo.copy(alpha = .16f)
+                        } else {
+                            Color.Transparent
+                        },
+                        shape = RoundedCornerShape(13.dp)
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                category.label,
+                                color = VybText,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(state.resultCount(category).toString(), color = VybMuted)
+                        }
+                    }
+                }
+            }
+        }
+        if (state.suggestions.isNotEmpty()) {
+            Text(
+                "Trending profiles",
+                color = VybText,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(top = 18.dp, bottom = 8.dp)
+            )
+            state.suggestions.take(4).forEach { person ->
+                Surface(
+                    onClick = { onOpenProfile(person.username) },
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                    color = Color.Transparent,
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Row(
+                        Modifier.padding(9.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        ProfileInitial(person.displayName, 40, person.avatarUrl)
+                        Column(Modifier.padding(start = 10.dp)) {
+                            Text(person.displayName, color = VybText, fontWeight = FontWeight.Bold)
+                            Text("@${person.username}", color = VybMuted)
+                        }
+                    }
                 }
             }
         }

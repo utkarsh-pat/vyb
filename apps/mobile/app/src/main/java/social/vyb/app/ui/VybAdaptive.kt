@@ -30,18 +30,37 @@ data class VybLayoutInfo(
     val compactWidth: Boolean,
     val compactHeight: Boolean,
     val wide: Boolean,
+    val windowClass: VybWindowClass,
+    val contentColumns: Int,
     val horizontalPadding: Dp,
     val sectionSpacing: Dp
 )
+
+enum class VybWindowClass {
+    Compact,
+    Medium,
+    Expanded
+}
 
 internal fun resolveVybLayout(maxWidth: Dp, maxHeight: Dp): VybLayoutInfo =
     VybLayoutInfo(
         compactWidth = maxWidth < 360.dp,
         compactHeight = maxHeight < 700.dp,
         wide = maxWidth >= 600.dp,
+        windowClass = when {
+            maxWidth >= 840.dp -> VybWindowClass.Expanded
+            maxWidth >= 600.dp -> VybWindowClass.Medium
+            else -> VybWindowClass.Compact
+        },
+        contentColumns = when {
+            maxWidth >= 1_200.dp -> 3
+            maxWidth >= 720.dp -> 2
+            else -> 1
+        },
         horizontalPadding = when {
             maxWidth < 360.dp -> 12.dp
-            maxWidth >= 600.dp -> 28.dp
+            maxWidth >= 840.dp -> 32.dp
+            maxWidth >= 600.dp -> 24.dp
             else -> 16.dp
         },
         sectionSpacing = if (maxHeight < 700.dp) 10.dp else 16.dp

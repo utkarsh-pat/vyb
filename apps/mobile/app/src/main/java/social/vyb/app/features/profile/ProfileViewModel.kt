@@ -157,7 +157,9 @@ class ProfileViewModel(
     }
 
     fun setTab(tab: String) {
-        if (tab == "posts" || tab == "vibes") _state.update { it.copy(activeTab = tab) }
+        if (tab in setOf("posts", "vibes", "saved")) {
+            _state.update { it.copy(activeTab = tab) }
+        }
     }
 
     fun updateDraft(transform: (ProfileEditDraft) -> ProfileEditDraft) {

@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -57,6 +58,8 @@ import social.vyb.app.features.messages.MessagesFeatureScreen
 import social.vyb.app.features.market.MarketFeatureScreen
 import social.vyb.app.features.hub.CampusHubScreen
 import social.vyb.app.features.funhub.FunHubScreen
+import social.vyb.app.features.media.MediaComposerScreen
+import social.vyb.app.features.media.MediaPublishIntent
 import social.vyb.app.features.realtime.NotificationDeviceRepository
 import social.vyb.app.features.search.SearchScreen
 import social.vyb.app.features.profile.ProfileFeatureScreen
@@ -204,17 +207,20 @@ private fun VybAppContent(
     }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val useNavigationRail = maxWidth >= 700.dp && maxHeight < 600.dp
+        // Bottom navigation mirrors the compact PWA. Tablets keep the same
+        // destinations in a rail so content is not squeezed into a phone-width
+        // strip or covered by an oversized bottom bar.
+        val useNavigationRail = maxWidth >= 600.dp
         Scaffold(
             containerColor = VybBackground,
             bottomBar = {
                 if (!useNavigationRail) {
                 BoxWithConstraints {
-                    val compact = maxHeight < 680.dp || maxWidth < 350.dp
+                    val iconOnly = maxHeight < 620.dp || maxWidth < 330.dp
                     Column {
                         HorizontalDivider(color = VybBorder)
                         NavigationBar(
-                            modifier = Modifier.height(if (compact) 64.dp else 76.dp),
+                            modifier = Modifier.height(if (iconOnly) 58.dp else 66.dp),
                             containerColor = VybPanel.copy(alpha = .90f),
                             tonalElevation = 0.dp
                         ) {
@@ -223,8 +229,10 @@ private fun VybAppContent(
                                     selected = currentRoute == destination.route,
                                     onClick = { navigateTo(destination.route) },
                                     icon = { Icon(destination.icon, destination.label) },
-                                    label = if (compact) null else ({ Text(destination.label) }),
-                                    alwaysShowLabel = !compact,
+                                    label = if (iconOnly) null else ({
+                                        Text(destination.label, style = MaterialTheme.typography.labelSmall)
+                                    }),
+                                    alwaysShowLabel = !iconOnly,
                                     colors = NavigationBarItemDefaults.colors(
                                         selectedIconColor = VybText,
                                         selectedTextColor = VybText,
@@ -262,13 +270,41 @@ private fun VybAppContent(
                                 onOpenSearch = { navController.navigate("search") },
                                 onOpenMessages = { navController.navigate("messages") },
                                 onOpenNotifications = { navController.navigate("notifications") },
+                                onCreateStory = { navController.navigate("create-story") },
                                 socialViewModel = socialActionsViewModel
                             )
                         }
                         composable("vibes") {
                             NativeVibesScreen(
                                 viewerUserId = viewModel.state.userId,
-                                socialViewModel = socialActionsViewModel
+                                socialViewModel = socialActionsViewModel,
+                                onCreateVibe = { navController.navigate("create-vibe") },
+                                onSearch = { navController.navigate("search") },
+                                onOpenProfile = { username ->
+                                    navController.navigate(
+                                        "search-profile/${encodeRouteSegment(username)}"
+                                    )
+                                }
+                            )
+                        }
+                        composable("create-vibe") {
+                            MediaComposerScreen(
+                                initialIntent = MediaPublishIntent.Vibe,
+                                showIntentPicker = false,
+                                displayName = viewModel.state.displayName,
+                                username = viewModel.state.email.substringBefore("@"),
+                                onCancelCreation = navController::navigateUp,
+                                onPublished = { navController.navigateUp() }
+                            )
+                        }
+                        composable("create-story") {
+                            MediaComposerScreen(
+                                initialIntent = MediaPublishIntent.Story,
+                                showIntentPicker = false,
+                                displayName = viewModel.state.displayName,
+                                username = viewModel.state.email.substringBefore("@"),
+                                onCancelCreation = navController::navigateUp,
+                                onPublished = { navController.navigateUp() }
                             )
                         }
                         composable("messages") {
@@ -381,7 +417,7 @@ private fun encodeRouteSegment(value: String): String =
 
 @Composable
 private fun UnifiedHubScreen() {
-    var selectedTab by remember { mutableIntStateOf(0) }
+    var selectedTab by remember { mutableIntStateOf(1) }
     Column {
         Surface(
             modifier = Modifier
@@ -393,7 +429,7 @@ private fun UnifiedHubScreen() {
             BoxWithConstraints {
                 val compactTabs = maxWidth < 360.dp
                 Row(Modifier.padding(4.dp)) {
-                    listOf("Campus", "Games").forEachIndexed { index, label ->
+                    listOf("Games Hub", "Events Hub").forEachIndexed { index, label ->
                         Surface(
                             onClick = { selectedTab = index },
                             modifier = Modifier.weight(1f),
@@ -408,7 +444,11 @@ private fun UnifiedHubScreen() {
                                 contentAlignment = androidx.compose.ui.Alignment.Center
                             ) {
                                 Text(
-                                    text = if (compactTabs && index == 1) "Games" else label,
+                                    text = if (compactTabs) {
+                                        if (index == 0) "Games" else "Events"
+                                    } else {
+                                        label
+                                    },
                                     color = if (selectedTab == index) VybText else VybMuted,
                                     maxLines = 1
                                 )
@@ -418,6 +458,6 @@ private fun UnifiedHubScreen() {
                 }
             }
         }
-        if (selectedTab == 0) CampusHubScreen() else FunHubScreen()
+        if (selectedTab == 0) FunHubScreen() else CampusHubScreen()
     }
 }

@@ -1,17 +1,20 @@
 package social.vyb.app.features.funhub
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -20,6 +23,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -27,13 +34,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.ScrollableTabRow
-import androidx.compose.material3.Tab
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -44,12 +50,20 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import social.vyb.app.ui.VybResponsiveFrame
 import social.vyb.app.ui.VybLoadingMark
+import social.vyb.app.ui.VybBorder
+import social.vyb.app.ui.VybIndigo
+import social.vyb.app.ui.VybMuted
+import social.vyb.app.ui.VybPanel
+import social.vyb.app.ui.VybText
+import social.vyb.app.ui.VybTeal
 import social.vyb.app.features.scribble.ScribbleScreen
 
 /**
@@ -59,34 +73,55 @@ import social.vyb.app.features.scribble.ScribbleScreen
 @Composable
 fun FunHubScreen(
     modifier: Modifier = Modifier,
-    initialTab: Int = 0,
+    initialTab: Int? = null,
     viewModel: FunViewModel = viewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var tab by remember(initialTab) { mutableIntStateOf(initialTab.coerceIn(0, 2)) }
+    var tab by remember(initialTab) {
+        mutableStateOf(initialTab?.coerceIn(0, 2))
+    }
     LaunchedEffect(viewModel) { viewModel.initialize() }
 
-    VybResponsiveFrame(modifier.fillMaxSize(), maxContentWidth = 900.dp) {
-    Column(Modifier.fillMaxSize()) {
+    BoxWithConstraints(modifier.fillMaxSize()) {
+        val tablet = maxWidth >= 700.dp
+        VybResponsiveFrame(Modifier.fillMaxSize(), maxContentWidth = 1040.dp) {
+            Column(Modifier.fillMaxSize()) {
         Row(
             Modifier.fillMaxWidth().padding(start = 18.dp, end = 8.dp, top = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Campus Games", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
-            Spacer(Modifier.weight(1f))
+            if (tab != null) {
+                IconButton(onClick = { tab = null }) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to games")
+                }
+            }
+            Column(Modifier.weight(1f)) {
+                Text(
+                    if (tab == null) "Vyb Playground" else listOf("Connect", "Queens", "Scribble")[tab!!],
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Black,
+                    color = VybText
+                )
+                Text(
+                    if (tab == null) "Daily puzzles and multiplayer campus games"
+                    else "Campus Games",
+                    color = VybMuted,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
             IconButton(enabled = !state.isRefreshing, onClick = viewModel::refresh) {
                 if (state.isRefreshing) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
                 else Icon(Icons.Default.Refresh, "Refresh")
             }
         }
 
-        ScrollableTabRow(selectedTabIndex = tab, edgePadding = 12.dp) {
-            listOf("Connect", "Queens", "Scribble").forEachIndexed { index, title ->
-                Tab(selected = tab == index, onClick = { tab = index }, text = { Text(title) })
-            }
-        }
-
         when {
+            tab == null -> GamesOverview(
+                state = state,
+                tablet = tablet,
+                onOpen = { tab = it },
+                onRetry = viewModel::refresh
+            )
             tab == 2 -> ScribbleScreen(Modifier.fillMaxSize())
             state.isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 VybLoadingMark(width = 104.dp)
@@ -103,6 +138,179 @@ fun FunHubScreen(
             }
         }
     }
+    }
+    }
+}
+
+private data class GameHubCard(
+    val title: String,
+    val subtitle: String,
+    val status: String,
+    val icon: ImageVector,
+    val accent: Color,
+    val tab: Int
+)
+
+@Composable
+private fun GamesOverview(
+    state: FunUiState,
+    tablet: Boolean,
+    onOpen: (Int) -> Unit,
+    onRetry: () -> Unit
+) {
+    val games = listOf(
+        GameHubCard(
+            "Connect",
+            state.connect?.let { "Daily #${it.dailyIndex} · ${it.level.difficulty}" }
+                ?: "Link every dot in the right order",
+            if (state.connect?.sessionCompletedAt != null) "Completed" else "Daily",
+            Icons.Default.CheckCircle,
+            VybTeal,
+            0
+        ),
+        GameHubCard(
+            "Queens",
+            state.queens?.let { "Daily #${it.dailyIndex} · ${it.level.difficulty}" }
+                ?: "One queen in every row and region",
+            if (state.queens?.sessionCompletedAt != null) "Completed" else "Daily",
+            Icons.Default.AutoAwesome,
+            Color(0xFFA78BFA),
+            1
+        ),
+        GameHubCard(
+            "Scribble",
+            "Draw, guess and play live with your campus",
+            "Live",
+            Icons.Default.Edit,
+            Color(0xFFFF8A65),
+            2
+        )
+    )
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .padding(horizontal = if (tablet) 24.dp else 16.dp, vertical = 10.dp)
+    ) {
+        Surface(
+            color = VybPanel,
+            border = BorderStroke(1.dp, VybBorder),
+            shape = RoundedCornerShape(20.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.CheckCircle, null, tint = VybTeal, modifier = Modifier.size(30.dp))
+                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                    Text("Daily challenge", color = VybText, fontWeight = FontWeight.Bold)
+                    Text(
+                        state.connect?.dailyKey ?: state.queens?.dailyKey ?: "New puzzles every day",
+                        color = VybMuted
+                    )
+                }
+                Text(
+                    "${listOfNotNull(state.connect, state.queens).count { game ->
+                        when (game) {
+                            is ConnectDaily -> game.sessionCompletedAt != null
+                            is QueensDaily -> game.sessionCompletedAt != null
+                            else -> false
+                        }
+                    }}/2 done",
+                    color = VybTeal,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        if (state.isLoading && state.connect == null && state.queens == null) {
+            Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) {
+                VybLoadingMark(width = 92.dp)
+            }
+        }
+        state.error?.let {
+            StatusBanner(it, true, Modifier.padding(top = 12.dp))
+            OutlinedButton(onClick = onRetry, modifier = Modifier.padding(top = 8.dp)) {
+                Text("Try again")
+            }
+        }
+
+        if (tablet) {
+            Row(
+                Modifier.fillMaxWidth().padding(top = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                games.forEach { game ->
+                    GameOverviewCard(game, Modifier.weight(1f)) { onOpen(game.tab) }
+                }
+            }
+        } else {
+            games.forEach { game ->
+                GameOverviewCard(game, Modifier.fillMaxWidth().padding(top = 14.dp)) {
+                    onOpen(game.tab)
+                }
+            }
+        }
+        Text(
+            "Daily puzzles reset on the server. Multiplayer rooms use live campus sessions.",
+            color = VybMuted,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(vertical = 20.dp, horizontal = 4.dp)
+        )
+    }
+}
+
+@Composable
+private fun GameOverviewCard(
+    game: GameHubCard,
+    modifier: Modifier,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier.height(170.dp),
+        color = VybPanel,
+        border = BorderStroke(1.dp, VybBorder),
+        shape = RoundedCornerShape(22.dp)
+    ) {
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.linearGradient(
+                    listOf(game.accent.copy(alpha = .2f), Color.Transparent)
+                )
+            ).padding(18.dp)
+        ) {
+            Surface(
+                color = game.accent.copy(alpha = .16f),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.size(48.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(game.icon, null, tint = game.accent)
+                }
+            }
+            Text(
+                game.status,
+                color = game.accent,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.align(Alignment.TopEnd)
+            )
+            Column(Modifier.align(Alignment.BottomStart).padding(end = 44.dp)) {
+                Text(
+                    game.title,
+                    color = VybText,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Black
+                )
+                Text(game.subtitle, color = VybMuted, maxLines = 2)
+            }
+            Icon(
+                Icons.Default.PlayArrow,
+                "Play ${game.title}",
+                tint = game.accent,
+                modifier = Modifier.align(Alignment.BottomEnd)
+            )
+        }
     }
 }
 

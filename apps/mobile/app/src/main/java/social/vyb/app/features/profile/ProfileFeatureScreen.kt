@@ -103,7 +103,7 @@ fun ProfileFeatureScreen(
             modifier = Modifier.padding(24.dp)
         )
         else -> when (state.panel) {
-            ProfilePanel.Overview -> ProfileOverview(
+            ProfilePanel.Overview -> ProfileParityOverview(
                 state = state,
                 onTab = profileViewModel::setTab,
                 onEdit = { profileViewModel.open(ProfilePanel.Edit) },
@@ -118,10 +118,11 @@ fun ProfileFeatureScreen(
                 onSave = profileViewModel::saveProfile,
                 onAvatarSelected = profileViewModel::uploadAvatar
             )
-            ProfilePanel.Settings -> SettingsHub(
+            ProfilePanel.Settings -> ProfileSettingsHub(
                 state = state,
                 email = email,
                 onBack = profileViewModel::back,
+                onAccount = { profileViewModel.open(ProfilePanel.Edit) },
                 onPrivacy = { profileViewModel.open(ProfilePanel.Privacy) },
                 onSecurity = { profileViewModel.open(ProfilePanel.Security) },
                 onPasswordReset = profileViewModel::sendPasswordReset,
