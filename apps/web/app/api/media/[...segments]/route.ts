@@ -1,4 +1,4 @@
-import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { GetObjectCommand, S3Client, type GetObjectCommandOutput } from "@aws-sdk/client-s3";
 import { NextResponse } from "next/server";
 import { loadWorkspaceRootEnv } from "../../../../src/lib/server-env";
 
@@ -52,6 +52,18 @@ function isNotFound(error: unknown) {
   return candidate.name === "NoSuchKey" || candidate.name === "NotFound" || candidate.$metadata?.httpStatusCode === 404;
 }
 
+function getObjectKeyCandidates(segments: string[]) {
+  const requestedKey = segments.join("/");
+  const legacyMigrationPrefix = "firebase-migration/";
+
+  if (!requestedKey.startsWith(legacyMigrationPrefix)) {
+    return [requestedKey];
+  }
+
+  const canonicalKey = requestedKey.slice(legacyMigrationPrefix.length);
+  return canonicalKey ? [canonicalKey, requestedKey] : [requestedKey];
+}
+
 export async function GET(
   _request: Request,
   context: {
@@ -77,12 +89,31 @@ export async function GET(
 
   try {
     const config = getR2Config();
-    const result = await getR2Client(config).send(
-      new GetObjectCommand({
-        Bucket: config.bucket,
-        Key: normalizedSegments.join("/")
-      })
-    );
+    const client = getR2Client(config);
+    const candidates = getObjectKeyCandidates(normalizedSegments);
+    let result: GetObjectCommandOutput | null = null;
+    let lastNotFound: unknown = null;
+
+    for (const key of candidates) {
+      try {
+        result = await client.send(
+          new GetObjectCommand({
+            Bucket: config.bucket,
+            Key: key
+          })
+        );
+        break;
+      } catch (error) {
+        if (!isNotFound(error)) {
+          throw error;
+        }
+        lastNotFound = error;
+      }
+    }
+
+    if (!result) {
+      throw lastNotFound ?? new Error("R2 media object could not be resolved.");
+    }
 
     if (!result.Body) {
       throw new Error("R2 returned an empty media response.");
