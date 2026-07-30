@@ -27,7 +27,7 @@ cpu: 1
 memory: 512Mi
 min-instances: 0
 max-instances: 10
-concurrency: 40
+concurrency: 80
 timeout: 300s
 port: 8080
 ingress: all (application auth enforced)

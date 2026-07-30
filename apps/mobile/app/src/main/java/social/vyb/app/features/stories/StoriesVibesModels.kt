@@ -53,6 +53,7 @@ data class VibeItem(
     val comments: Int = 0,
     val savedCount: Int = 0,
     val isSaved: Boolean = false,
+    val viewerCanManage: Boolean = false,
     val viewerReactionType: String? = null,
     val createdAt: String,
     val author: VibeAuthor
@@ -76,7 +77,7 @@ data class VibeMedia(
 data class VibeAuthor(
     val userId: String? = null,
     val username: String = "member",
-    val displayName: String = "Vybnet member",
+    val displayName: String = "Vyb member",
     val avatarUrl: String? = null,
     val isAnonymous: Boolean = false
 )

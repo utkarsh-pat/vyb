@@ -1,7 +1,7 @@
 # Vyb Marketplace MVP — System Low-Level Design
 
 Status: implementation contract
-Last updated: 2026-07-29
+Last updated: 2026-07-30
 
 ## 1. Request lifecycle
 
@@ -91,6 +91,8 @@ R2_PUBLIC_BASE_URL
 VYB_INTERNAL_API_KEY
 VYB_SESSION_SECRET
 VYB_SUPER_ADMIN_EMAILS=ceoutkarshpatel@gmail.com
+VYB_ANDROID_APK_URL
+VYB_ANDROID_APK_SHA256
 ```
 
 Web public Firebase values are safe client configuration, but all private keys
@@ -104,10 +106,25 @@ The R2 bucket is private. `R2_PUBLIC_BASE_URL` is the canonical same-origin
 returns immutable cached responses, so production does not depend on the
 rate-limited public `r2.dev` endpoint.
 
+Android push registration uses the Firebase Installation ID callback from FCM.
+The client stores the latest FID as device-scoped state, uploads it after an
+authenticated session exists, and refreshes the server timestamp whenever FCM
+re-registers the installation. The notification outbox targets `fid`; legacy
+`token` targets remain read-only migration compatibility until existing
+installations have refreshed.
+
+The Android direct-update manifest is valid only when the advertised version is
+newer and both `VYB_ANDROID_APK_URL` and `VYB_ANDROID_APK_SHA256` pass server
+validation. Android repeats the trusted-host and checksum validation, downloads
+to app-scoped storage, deletes an empty or mismatched APK, and invokes the
+installer only after verification.
+
 ## 7. Deployment contract
 
 - Data Connect schema first, backward-compatible backend second, frontend/Android last.
-- New Cloud Run revision receives no traffic until health, auth, tenant-isolation, Marketplace, chat, and media smoke tests pass.
+- New Cloud Run revision receives no traffic until liveness, readiness, auth,
+  tenant-isolation, Marketplace, chat, media, notification, and update-manifest
+  smoke tests pass.
 - Traffic sequence: 5%, 25%, 50%, 100%.
 - Domain cutover occurs only after direct deployment URLs are healthy.
 - Rollback routes traffic to the previous revision and disables risky features through Remote Config.

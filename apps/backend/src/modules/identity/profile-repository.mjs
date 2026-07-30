@@ -724,6 +724,24 @@ export function normalizeUsername(value) {
   return sanitizeUsername(value);
 }
 
+export async function getUsernameAvailability({ tenantId, userId, username }) {
+  const normalizedUsername = sanitizeUsername(username);
+  if (!tenantId || !userId || !normalizedUsername) {
+    return { username: normalizedUsername, available: false, isCurrent: false };
+  }
+
+  const existing = await getRawProfileByUsername({
+    tenantId,
+    username: normalizedUsername
+  });
+  const isCurrent = existing?.userId === userId;
+  return {
+    username: normalizedUsername,
+    available: !existing || isCurrent,
+    isCurrent
+  };
+}
+
 export async function getProfileByUserId({ tenantId, userId }) {
   const profile = mapMembershipProfile(
     await getRawProfileByUserAndTenant({

@@ -3,6 +3,7 @@ package social.vyb.app.features.funhub
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,20 +14,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Divider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -36,23 +32,25 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import social.vyb.app.ui.VybResponsiveFrame
 import social.vyb.app.ui.VybLoadingMark
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
+import social.vyb.app.features.scribble.ScribbleScreen
 
 /**
  * Integration composable for the app nav graph. It only needs a signed-in Firebase user
@@ -61,10 +59,11 @@ import java.time.format.DateTimeFormatter
 @Composable
 fun FunHubScreen(
     modifier: Modifier = Modifier,
+    initialTab: Int = 0,
     viewModel: FunViewModel = viewModel()
 ) {
-    val state by viewModel.state.collectAsState()
-    var tab by remember { mutableIntStateOf(0) }
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    var tab by remember(initialTab) { mutableIntStateOf(initialTab.coerceIn(0, 2)) }
     LaunchedEffect(viewModel) { viewModel.initialize() }
 
     VybResponsiveFrame(modifier.fillMaxSize(), maxContentWidth = 900.dp) {
@@ -73,7 +72,7 @@ fun FunHubScreen(
             Modifier.fillMaxWidth().padding(start = 18.dp, end = 8.dp, top = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Campus Fun", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
+            Text("Campus Games", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
             Spacer(Modifier.weight(1f))
             IconButton(enabled = !state.isRefreshing, onClick = viewModel::refresh) {
                 if (state.isRefreshing) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
@@ -82,12 +81,13 @@ fun FunHubScreen(
         }
 
         ScrollableTabRow(selectedTabIndex = tab, edgePadding = 12.dp) {
-            listOf("Notifications (${state.inbox.unreadCount})", "Connect", "Queens").forEachIndexed { index, title ->
+            listOf("Connect", "Queens", "Scribble").forEachIndexed { index, title ->
                 Tab(selected = tab == index, onClick = { tab = index }, text = { Text(title) })
             }
         }
 
         when {
+            tab == 2 -> ScribbleScreen(Modifier.fillMaxSize())
             state.isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 VybLoadingMark(width = 104.dp)
             }
@@ -95,8 +95,7 @@ fun FunHubScreen(
                 FullError(state.error!!, viewModel::refresh)
             else -> Box(Modifier.fillMaxSize()) {
                 when (tab) {
-                    0 -> NotificationPane(state, viewModel::readAllNotifications)
-                    1 -> ConnectPane(state, viewModel)
+                    0 -> ConnectPane(state, viewModel)
                     else -> QueensPane(state, viewModel)
                 }
                 state.error?.let { StatusBanner(it, true, Modifier.align(Alignment.BottomCenter)) }
@@ -104,72 +103,6 @@ fun FunHubScreen(
             }
         }
     }
-    }
-}
-
-@Composable
-private fun NotificationPane(state: FunUiState, onReadAll: () -> Unit) {
-    Column(Modifier.fillMaxSize()) {
-        Row(
-            Modifier.fillMaxWidth().padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(Icons.Default.Notifications, null)
-            Text(
-                "${state.inbox.unreadCount} unread",
-                modifier = Modifier.padding(start = 8.dp),
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.weight(1f))
-            OutlinedButton(
-                enabled = state.inbox.unreadCount > 0 && !state.isActionRunning,
-                onClick = onReadAll
-            ) { Text("Read all") }
-        }
-        if (state.inbox.items.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("You’re all caught up.")
-            }
-        } else {
-            LazyColumn {
-                items(state.inbox.items, key = VybNotification::id) { item ->
-                    Row(
-                        Modifier.fillMaxWidth()
-                            .background(
-                                if (item.state.readAt == null) {
-                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = .3f)
-                                } else Color.Transparent
-                            )
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.Top
-                    ) {
-                        if (item.state.readAt == null) {
-                            Box(
-                                Modifier.padding(top = 6.dp).size(8.dp)
-                                    .background(MaterialTheme.colorScheme.primary, CircleShape)
-                            )
-                            Spacer(Modifier.width(10.dp))
-                        }
-                        Column(Modifier.weight(1f)) {
-                            Text(item.copy.title, fontWeight = FontWeight.Bold)
-                            Text(
-                                item.copy.body,
-                                maxLines = 3,
-                                overflow = TextOverflow.Ellipsis,
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                            Text(
-                                "${item.category.replaceFirstChar(Char::uppercase)} • ${relativeTime(item.createdAt)}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 5.dp)
-                            )
-                        }
-                    }
-                    Divider()
-                }
-            }
-        }
     }
 }
 
@@ -188,13 +121,21 @@ private fun ConnectPane(state: FunUiState, viewModel: FunViewModel) {
             val coordinate = Coordinate(x, y)
             val index = state.connectPath.indexOf(coordinate)
             Box(
-                Modifier.size(44.dp)
+                Modifier.size(48.dp)
                     .then(
                         if (dot != null) Modifier.background(
                             if (index >= 0) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.surfaceVariant,
                             CircleShape
-                        ).clickable { viewModel.chooseConnect(dot) }
+                        )
+                            .semantics {
+                                contentDescription =
+                                    "Connect dot ${dot.id}, row ${y + 1}, column ${x + 1}"
+                                stateDescription =
+                                    if (index >= 0) "Selected ${index + 1}" else "Not selected"
+                                role = Role.Button
+                            }
+                            .clickable { viewModel.chooseConnect(dot) }
                         else Modifier
                     ),
                 contentAlignment = Alignment.Center
@@ -232,9 +173,15 @@ private fun QueensPane(state: FunUiState, viewModel: FunViewModel) {
             val region = level.regions.getOrNull(y)?.getOrNull(x) ?: 0
             val selected = point in state.queenCells
             Box(
-                Modifier.size(44.dp)
+                Modifier.size(48.dp)
                     .background(regionColor(region))
                     .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = .45f))
+                    .semantics {
+                        contentDescription =
+                            "Queens cell row ${y + 1}, column ${x + 1}, region ${region + 1}"
+                        stateDescription = if (selected) "Queen placed" else "Empty"
+                        role = Role.Button
+                    }
                     .clickable { viewModel.toggleQueen(point) },
                 contentAlignment = Alignment.Center
             ) {
@@ -254,7 +201,11 @@ private fun QueensPane(state: FunUiState, viewModel: FunViewModel) {
 
 @Composable
 private fun Grid(size: Int, cell: @Composable (x: Int, y: Int) -> Unit) {
-    Column(Modifier.padding(top = 18.dp)) {
+    Column(
+        Modifier
+            .padding(top = 18.dp)
+            .horizontalScroll(rememberScrollState())
+    ) {
         repeat(size) { y ->
             Row { repeat(size) { x -> cell(x, y) } }
         }
@@ -311,9 +262,3 @@ private fun regionColor(region: Int): Color {
     )
     return palette[Math.floorMod(region, palette.size)]
 }
-
-private fun relativeTime(value: String): String = runCatching {
-    val at = Instant.parse(value)
-    val local = at.atZone(ZoneId.systemDefault())
-    DateTimeFormatter.ofPattern("d MMM, h:mm a").format(local)
-}.getOrDefault(value)

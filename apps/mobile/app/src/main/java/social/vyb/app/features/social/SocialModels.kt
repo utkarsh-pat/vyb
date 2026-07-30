@@ -6,7 +6,7 @@ import kotlinx.serialization.Serializable
 data class SocialAuthor(
     val userId: String? = null,
     val username: String = "member",
-    val displayName: String = "Vybnet member",
+    val displayName: String = "Vyb member",
     val avatarUrl: String? = null,
     val isAnonymous: Boolean = false
 )
@@ -27,6 +27,7 @@ data class SocialPost(
     val comments: Int = 0,
     val savedCount: Int = 0,
     val isSaved: Boolean = false,
+    val viewerCanManage: Boolean = false,
     val viewerReactionType: String? = null,
     val createdAt: String = "",
     val author: SocialAuthor = SocialAuthor()
@@ -89,7 +90,7 @@ enum class PostReach(
     Public(
         wireValue = "public",
         label = "Public",
-        description = "Anyone on Vybnet can see this"
+        description = "Anyone on Vyb can see this"
     ),
     FollowersOnly(
         wireValue = "followers",
@@ -124,6 +125,14 @@ data class ReactionResult(
 )
 
 @Serializable
+data class CommentReactionResult(
+    val commentId: String,
+    val reactionType: String? = null,
+    val aggregateCount: Int = 0,
+    val active: Boolean = false
+)
+
+@Serializable
 data class SaveResult(
     val postId: String,
     val savedCount: Int = 0,
@@ -147,6 +156,62 @@ internal data class CreateCommentBody(
 @Serializable
 internal data class CreateCommentEnvelope(val item: SocialComment)
 
+@Serializable
+data class ReactionMember(
+    val membershipId: String,
+    val userId: String? = null,
+    val username: String = "vyb_user",
+    val displayName: String = "Vyb Student",
+    val avatarUrl: String? = null,
+    val reactionType: String = "like",
+    val reactedAt: String = ""
+)
+
+@Serializable
+internal data class ReactionMembersEnvelope(
+    val postId: String,
+    val items: List<ReactionMember> = emptyList()
+)
+
+@Serializable
+internal data class RepostBody(
+    val quote: String? = null,
+    val placement: String = "feed"
+)
+
+@Serializable
+internal data class UpdatePostBody(
+    val title: String,
+    val body: String
+)
+
+@Serializable
+internal data class UpdatePostEnvelope(val item: SocialPost)
+
+@Serializable
+internal data class UpdateCommentBody(val body: String)
+
+@Serializable
+internal data class UpdateCommentEnvelope(val item: SocialComment)
+
+@Serializable
+internal data class ReportBody(
+    val targetType: String,
+    val targetId: String,
+    val reason: String
+)
+
+@Serializable
+internal data class ReportItem(
+    val id: String,
+    val targetType: String,
+    val targetId: String,
+    val reason: String
+)
+
+@Serializable
+internal data class ReportEnvelope(val item: ReportItem)
+
 data class PostEngagementState(
     val reactionCount: Int = 0,
     val viewerReactionType: String? = null,
@@ -164,10 +229,21 @@ data class CommentThreadState(
     val error: String? = null
 )
 
+data class ReactionMembersState(
+    val items: List<ReactionMember> = emptyList(),
+    val loading: Boolean = false,
+    val loaded: Boolean = false,
+    val error: String? = null
+)
+
 data class SocialActionsUiState(
     val creatingPost: Boolean = false,
     val createPostError: String? = null,
     val operationError: String? = null,
+    val operationNotice: String? = null,
+    val busyPostIds: Set<String> = emptySet(),
+    val busyCommentIds: Set<String> = emptySet(),
     val engagements: Map<String, PostEngagementState> = emptyMap(),
-    val commentThreads: Map<String, CommentThreadState> = emptyMap()
+    val commentThreads: Map<String, CommentThreadState> = emptyMap(),
+    val reactionMembers: Map<String, ReactionMembersState> = emptyMap()
 )

@@ -20,16 +20,18 @@ class SocialActionsViewModel(
         savedCount: Int = 0,
         isSaved: Boolean = false
     ) {
-        if (state.engagements.containsKey(postId)) return
+        val authoritative = PostEngagementState(
+            reactionCount = reactionCount,
+            viewerReactionType = viewerReactionType,
+            savedCount = savedCount,
+            isSaved = isSaved
+        )
+        val reconciled = state.engagements[postId]
+            ?.mergeAuthoritative(authoritative)
+            ?: authoritative
+        if (state.engagements[postId] == reconciled) return
         state = state.copy(
-            engagements = state.engagements + (
-                postId to PostEngagementState(
-                    reactionCount = reactionCount,
-                    viewerReactionType = viewerReactionType,
-                    savedCount = savedCount,
-                    isSaved = isSaved
-                )
-            )
+            engagements = state.engagements + (postId to reconciled)
         )
     }
 
@@ -190,8 +192,163 @@ class SocialActionsViewModel(
         }
     }
 
+    fun toggleCommentReaction(postId: String, commentId: String) {
+        if (commentId in state.busyCommentIds) return
+        state = state.copy(busyCommentIds = state.busyCommentIds + commentId)
+        viewModelScope.launch {
+            runCatching { repository.toggleCommentReaction(commentId) }
+                .onSuccess { result ->
+                    val current = state.commentThreads[postId] ?: CommentThreadState()
+                    updateThread(
+                        postId,
+                        current.copy(items = current.items.applyCommentReaction(result))
+                    )
+                    state = state.copy(busyCommentIds = state.busyCommentIds - commentId)
+                }
+                .onFailure {
+                    state = state.copy(
+                        busyCommentIds = state.busyCommentIds - commentId,
+                        operationError = it.userMessage("Could not update comment reaction.")
+                    )
+                }
+        }
+    }
+
+    fun loadReactionMembers(postId: String, force: Boolean = false) {
+        val current = state.reactionMembers[postId] ?: ReactionMembersState()
+        if (current.loading || (current.loaded && !force)) return
+        updateReactionMembers(postId, current.copy(loading = true, error = null))
+        viewModelScope.launch {
+            runCatching { repository.listReactionMembers(postId) }
+                .onSuccess {
+                    updateReactionMembers(
+                        postId,
+                        ReactionMembersState(items = it, loaded = true)
+                    )
+                }
+                .onFailure {
+                    updateReactionMembers(
+                        postId,
+                        current.copy(
+                            loading = false,
+                            error = it.userMessage("Could not load reactions.")
+                        )
+                    )
+                }
+        }
+    }
+
+    fun repost(
+        postId: String,
+        quote: String? = null,
+        placement: String = "feed",
+        onCreated: (SocialPost) -> Unit = {}
+    ) = runPostMutation(postId, "Could not repost.") {
+        val post = repository.repost(postId, quote, placement)
+        seedPost(post.id, post.reactions, post.viewerReactionType, post.savedCount, post.isSaved)
+        onCreated(post)
+        "Reposted to ${if (placement == "vibe") "Vibes" else "your feed"}."
+    }
+
+    fun updatePost(
+        postId: String,
+        title: String,
+        body: String,
+        onUpdated: (SocialPost) -> Unit = {}
+    ) = runPostMutation(postId, "Could not update post.") {
+        onUpdated(repository.updatePost(postId, title, body))
+        "Post updated."
+    }
+
+    fun deletePost(postId: String, onDeleted: () -> Unit = {}) =
+        runPostMutation(postId, "Could not delete post.") {
+            repository.deletePost(postId)
+            state = state.copy(
+                engagements = state.engagements - postId,
+                commentThreads = state.commentThreads - postId,
+                reactionMembers = state.reactionMembers - postId
+            )
+            onDeleted()
+            "Post deleted."
+        }
+
+    fun updateComment(postId: String, commentId: String, body: String) {
+        if (commentId in state.busyCommentIds) return
+        state = state.copy(busyCommentIds = state.busyCommentIds + commentId)
+        viewModelScope.launch {
+            runCatching { repository.updateComment(commentId, body) }
+                .onSuccess { updated ->
+                    val current = state.commentThreads[postId] ?: CommentThreadState()
+                    updateThread(
+                        postId,
+                        current.copy(items = current.items.replaceComment(updated))
+                    )
+                    state = state.copy(
+                        busyCommentIds = state.busyCommentIds - commentId,
+                        operationNotice = "Comment updated."
+                    )
+                }
+                .onFailure {
+                    state = state.copy(
+                        busyCommentIds = state.busyCommentIds - commentId,
+                        operationError = it.userMessage("Could not update comment.")
+                    )
+                }
+        }
+    }
+
+    fun deleteComment(postId: String, commentId: String) {
+        if (commentId in state.busyCommentIds) return
+        state = state.copy(busyCommentIds = state.busyCommentIds + commentId)
+        viewModelScope.launch {
+            runCatching { repository.deleteComment(commentId) }
+                .onSuccess {
+                    val current = state.commentThreads[postId] ?: CommentThreadState()
+                    updateThread(
+                        postId,
+                        current.copy(items = current.items.removeCommentBranch(commentId))
+                    )
+                    state = state.copy(
+                        busyCommentIds = state.busyCommentIds - commentId,
+                        operationNotice = "Comment deleted."
+                    )
+                }
+                .onFailure {
+                    state = state.copy(
+                        busyCommentIds = state.busyCommentIds - commentId,
+                        operationError = it.userMessage("Could not delete comment.")
+                    )
+                }
+        }
+    }
+
+    fun report(targetType: String, targetId: String, reason: String) {
+        val operationId = "$targetType:$targetId"
+        if (operationId in state.busyPostIds) return
+        state = state.copy(busyPostIds = state.busyPostIds + operationId)
+        viewModelScope.launch {
+            runCatching { repository.report(targetType, targetId, reason) }
+                .onSuccess {
+                    state = state.copy(
+                        busyPostIds = state.busyPostIds - operationId,
+                        operationNotice = "Report submitted for review."
+                    )
+                }
+                .onFailure {
+                    state = state.copy(
+                        busyPostIds = state.busyPostIds - operationId,
+                        operationError = it.userMessage("Could not submit report.")
+                    )
+                }
+        }
+    }
+
     fun clearOperationError() {
         state = state.copy(operationError = null)
+    }
+
+    fun clearOperationNotice() {
+        state = state.copy(operationNotice = null)
     }
 
     private fun updateEngagement(postId: String, value: PostEngagementState) {
@@ -202,6 +359,74 @@ class SocialActionsViewModel(
         state = state.copy(commentThreads = state.commentThreads + (postId to value))
     }
 
+    private fun updateReactionMembers(postId: String, value: ReactionMembersState) {
+        state = state.copy(reactionMembers = state.reactionMembers + (postId to value))
+    }
+
+    private fun runPostMutation(
+        postId: String,
+        fallback: String,
+        operation: suspend () -> String
+    ) {
+        if (postId in state.busyPostIds) return
+        state = state.copy(busyPostIds = state.busyPostIds + postId)
+        viewModelScope.launch {
+            runCatching { operation() }
+                .onSuccess {
+                    state = state.copy(
+                        busyPostIds = state.busyPostIds - postId,
+                        operationNotice = it
+                    )
+                }
+                .onFailure {
+                    state = state.copy(
+                        busyPostIds = state.busyPostIds - postId,
+                        operationError = it.userMessage(fallback)
+                    )
+                }
+        }
+    }
+
     private fun Throwable.userMessage(fallback: String): String =
         message?.takeIf { it.isNotBlank() } ?: fallback
+}
+
+internal fun PostEngagementState.mergeAuthoritative(
+    authoritative: PostEngagementState
+): PostEngagementState = copy(
+    reactionCount = if (reactionLoading) reactionCount else authoritative.reactionCount,
+    viewerReactionType = if (reactionLoading) viewerReactionType
+        else authoritative.viewerReactionType,
+    savedCount = if (saveLoading) savedCount else authoritative.savedCount,
+    isSaved = if (saveLoading) isSaved else authoritative.isSaved
+)
+
+internal fun List<SocialComment>.replaceComment(updated: SocialComment): List<SocialComment> =
+    map { if (it.id == updated.id) updated else it }
+
+internal fun List<SocialComment>.applyCommentReaction(
+    result: CommentReactionResult
+): List<SocialComment> = map { comment ->
+    if (comment.id == result.commentId) {
+        comment.copy(
+            reactions = result.aggregateCount.coerceAtLeast(0),
+            viewerHasLiked = result.active
+        )
+    } else {
+        comment
+    }
+}
+
+internal fun List<SocialComment>.removeCommentBranch(commentId: String): List<SocialComment> {
+    val removedIds = mutableSetOf(commentId)
+    var changed: Boolean
+    do {
+        changed = false
+        forEach { comment ->
+            if (comment.parentCommentId in removedIds && removedIds.add(comment.id)) {
+                changed = true
+            }
+        }
+    } while (changed)
+    return filterNot { it.id in removedIds }
 }

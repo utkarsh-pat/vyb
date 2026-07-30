@@ -43,6 +43,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -424,6 +425,7 @@ private fun GoogleAuthButton(
     enabled: Boolean,
     onClick: () -> Unit
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -431,7 +433,7 @@ private fun GoogleAuthButton(
             .clickable(
                 enabled = enabled,
                 role = Role.Button,
-                interactionSource = MutableInteractionSource(),
+                interactionSource = interactionSource,
                 indication = null,
                 onClick = onClick
             ),
@@ -465,7 +467,7 @@ private fun GradientAuthButton(
     loading: Boolean,
     onClick: () -> Unit
 ) {
-    val interactionSource = MutableInteractionSource()
+    val interactionSource = remember { MutableInteractionSource() }
     Box(
         modifier = Modifier
             .fillMaxWidth()

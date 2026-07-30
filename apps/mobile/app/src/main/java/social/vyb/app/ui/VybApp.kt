@@ -1,6 +1,7 @@
 package social.vyb.app.ui
 
 import android.Manifest
+import android.net.Uri
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -22,7 +23,9 @@ import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material3.Icon
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -55,6 +58,10 @@ import social.vyb.app.features.market.MarketFeatureScreen
 import social.vyb.app.features.hub.CampusHubScreen
 import social.vyb.app.features.funhub.FunHubScreen
 import social.vyb.app.features.realtime.NotificationDeviceRepository
+import social.vyb.app.features.search.SearchScreen
+import social.vyb.app.features.profile.ProfileFeatureScreen
+import social.vyb.app.features.notifications.NotificationScreen
+import social.vyb.app.features.social.SocialActionsViewModel
 import social.vyb.app.features.stories.NativeVibesScreen
 import social.vyb.app.features.update.AppUpdatePrompt
 
@@ -73,17 +80,21 @@ private val destinations = listOf(
 )
 
 @Composable
-fun VybApp(viewModel: VybViewModel = viewModel()) {
+fun VybApp(
+    viewModel: VybViewModel = viewModel(),
+    notificationHref: String? = null,
+    onNotificationHrefConsumed: () -> Unit = {}
+) {
     var startupHoldComplete by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        // Keep the branded loader visible long enough to avoid a one-frame auth flash.
-        delay(2_400)
+        // A short anti-flash window keeps transitions stable without delaying a ready app.
+        delay(250)
         startupHoldComplete = true
     }
 
     val showBrandedLoader =
         !startupHoldComplete ||
-            (!viewModel.state.isAuthenticated && viewModel.state.isLoading)
+            viewModel.state.isLoading
 
     Crossfade(
         targetState = showBrandedLoader,
@@ -91,12 +102,20 @@ fun VybApp(viewModel: VybViewModel = viewModel()) {
         label = "Vyb startup transition"
     ) { loading ->
         if (loading) VybLoadingScreen()
-        else VybAppContent(viewModel)
+        else VybAppContent(
+            viewModel = viewModel,
+            notificationHref = notificationHref,
+            onNotificationHrefConsumed = onNotificationHrefConsumed
+        )
     }
 }
 
 @Composable
-private fun VybAppContent(viewModel: VybViewModel) {
+private fun VybAppContent(
+    viewModel: VybViewModel,
+    notificationHref: String?,
+    onNotificationHrefConsumed: () -> Unit
+) {
     val context = LocalContext.current
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -116,7 +135,7 @@ private fun VybAppContent(viewModel: VybViewModel) {
         }
 
         runCatching {
-            NotificationDeviceRepository(context).registerCurrentToken()
+            NotificationDeviceRepository(context).registerCurrentInstallation()
         }
     }
 
@@ -132,7 +151,41 @@ private fun VybAppContent(viewModel: VybViewModel) {
         return
     }
 
+    if (viewModel.state.profileCompleted == null) {
+        VybPageBackground(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                VybEmptyState(
+                    icon = Icons.Default.CloudOff,
+                    title = "Could not load your campus",
+                    body = userFacingCampusLoadError(viewModel.state.profileError),
+                    actionLabel = "Try again",
+                    onAction = viewModel::retryAppSession,
+                    modifier = Modifier.padding(24.dp)
+                )
+            }
+        }
+        return
+    }
+
+    if (viewModel.state.profileCompleted == false) {
+        OnboardingScreen(
+            displayName = viewModel.state.displayName,
+            email = viewModel.state.email,
+            collegeName = viewModel.state.college,
+            saving = viewModel.state.profileSaving,
+            error = viewModel.state.profileError,
+            catalog = viewModel.state.profileCatalog,
+            usernameAvailable = viewModel.state.usernameAvailability,
+            usernameChecking = viewModel.state.usernameChecking,
+            onLoadCatalog = viewModel::loadOnboardingCatalog,
+            onUsernameChanged = viewModel::checkUsername,
+            onSubmit = viewModel::completeProfile
+        )
+        return
+    }
+
     val navController = rememberNavController()
+    val socialActionsViewModel: SocialActionsViewModel = viewModel()
     val backStack by navController.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
     val navigateTo: (String) -> Unit = { route ->
@@ -144,6 +197,11 @@ private fun VybAppContent(viewModel: VybViewModel) {
             restoreState = true
         }
     }
+    LaunchedEffect(notificationHref) {
+        val href = notificationHref ?: return@LaunchedEffect
+        navigateTo(notificationDestination(href))
+        onNotificationHrefConsumed()
+    }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val useNavigationRail = maxWidth >= 700.dp && maxHeight < 600.dp
@@ -153,35 +211,38 @@ private fun VybAppContent(viewModel: VybViewModel) {
                 if (!useNavigationRail) {
                 BoxWithConstraints {
                     val compact = maxHeight < 680.dp || maxWidth < 350.dp
-                NavigationBar(
-                    modifier = Modifier.height(if (compact) 64.dp else 76.dp),
-                    containerColor = VybPanel.copy(alpha = .97f),
-                    tonalElevation = 0.dp
-                ) {
-                    destinations.forEach { destination ->
-                        NavigationBarItem(
-                            selected = currentRoute == destination.route,
-                            onClick = { navigateTo(destination.route) },
-                            icon = { Icon(destination.icon, destination.label) },
-                            label = if (compact) null else ({ Text(destination.label) }),
-                            alwaysShowLabel = !compact,
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = VybText,
-                                selectedTextColor = VybText,
-                                indicatorColor = VybIndigo.copy(alpha = .24f),
-                                unselectedIconColor = VybMuted,
-                                unselectedTextColor = VybMuted
-                            )
-                        )
+                    Column {
+                        HorizontalDivider(color = VybBorder)
+                        NavigationBar(
+                            modifier = Modifier.height(if (compact) 64.dp else 76.dp),
+                            containerColor = VybPanel.copy(alpha = .90f),
+                            tonalElevation = 0.dp
+                        ) {
+                            destinations.forEach { destination ->
+                                NavigationBarItem(
+                                    selected = currentRoute == destination.route,
+                                    onClick = { navigateTo(destination.route) },
+                                    icon = { Icon(destination.icon, destination.label) },
+                                    label = if (compact) null else ({ Text(destination.label) }),
+                                    alwaysShowLabel = !compact,
+                                    colors = NavigationBarItemDefaults.colors(
+                                        selectedIconColor = VybText,
+                                        selectedTextColor = VybText,
+                                        indicatorColor = VybIndigo.copy(alpha = .24f),
+                                        unselectedIconColor = VybMuted,
+                                        unselectedTextColor = VybMuted
+                                    )
+                                )
+                            }
+                        }
                     }
-                }
                 }
                 }
             }
         ) { padding ->
             Row(Modifier.fillMaxSize().padding(padding)) {
                 if (useNavigationRail) {
-                    NavigationRail(containerColor = VybPanel.copy(alpha = .97f)) {
+                    NavigationRail(containerColor = VybPanel.copy(alpha = .90f)) {
                         destinations.forEach { destination ->
                             NavigationRailItem(
                                 selected = currentRoute == destination.route,
@@ -197,17 +258,68 @@ private fun VybAppContent(viewModel: VybViewModel) {
                         composable("home") {
                             HomeScreen(
                                 state = viewModel.state,
-                                repository = viewModel.repository,
                                 onRefresh = viewModel::refreshHomeFeed,
-                                onOpenMessages = { navController.navigate("messages") }
+                                onOpenSearch = { navController.navigate("search") },
+                                onOpenMessages = { navController.navigate("messages") },
+                                onOpenNotifications = { navController.navigate("notifications") },
+                                socialViewModel = socialActionsViewModel
                             )
                         }
-                        composable("vibes") { NativeVibesScreen() }
-                        composable("messages") { MessagesFeatureScreen() }
+                        composable("vibes") {
+                            NativeVibesScreen(
+                                viewerUserId = viewModel.state.userId,
+                                socialViewModel = socialActionsViewModel
+                            )
+                        }
+                        composable("messages") {
+                            MessagesFeatureScreen(
+                                onOpenCommunity = { slug ->
+                                    navController.navigate(
+                                        "messages/community/${Uri.encode(slug)}"
+                                    )
+                                }
+                            )
+                        }
+                        composable("messages/community/{slug}") { entry ->
+                            MessagesFeatureScreen(
+                                communitySlug = entry.arguments
+                                    ?.getString("slug")
+                                    ?.let(Uri::decode),
+                                onCloseCommunity = navController::navigateUp
+                            )
+                        }
+                        composable("search") {
+                            SearchScreen(
+                                onBack = navController::navigateUp,
+                                onOpenPost = { navigateTo("home") },
+                                onOpenVibe = { navigateTo("vibes") },
+                                onOpenMarket = { navigateTo("market") }
+                            )
+                        }
+                        composable("notifications") {
+                            NotificationScreen(
+                                onBack = navController::navigateUp,
+                                onNavigateHref = { href ->
+                                    navigateTo(notificationDestination(href))
+                                }
+                            )
+                        }
+                        composable("search-profile/{username}") { entry ->
+                            SearchScreen(
+                                onBack = navController::navigateUp,
+                                initialUsername = entry.arguments?.getString("username"),
+                                onOpenPost = { navigateTo("home") },
+                                onOpenVibe = { navigateTo("vibes") },
+                                onOpenMarket = { navigateTo("market") }
+                            )
+                        }
                         composable("market") { MarketFeatureScreen() }
                         composable("hub") { UnifiedHubScreen() }
                         composable("profile") {
-                            ProfileScreen(viewModel.state, onSignOut = { viewModel.signOut(context) })
+                            ProfileFeatureScreen(
+                                email = viewModel.state.email,
+                                onSignOut = { viewModel.signOut(context) }
+                            )
                         }
                     }
                 }
@@ -216,6 +328,56 @@ private fun VybAppContent(viewModel: VybViewModel) {
         AppUpdatePrompt(enabled = true)
     }
 }
+
+internal fun userFacingCampusLoadError(error: String?): String {
+    val normalized = error?.lowercase().orEmpty()
+    return when {
+        "permission" in normalized || "unauthorized" in normalized ->
+            "Your campus access could not be verified. Sign in again and retry."
+        else -> "We couldn't reach Vyb. Check your connection and try again."
+    }
+}
+
+internal fun notificationDestination(href: String): String {
+    val uri = runCatching { java.net.URI(href.trim()) }.getOrNull() ?: return "home"
+    val host = uri.host?.lowercase()
+    if (host != null && host != "vybnet.app" && !host.endsWith(".vybnet.app")) {
+        return "home"
+    }
+    val path = uri.path?.takeIf(String::isNotBlank) ?: href.substringBefore("?")
+    return when {
+        path.startsWith("/u/") -> {
+            val username = path.removePrefix("/u/").substringBefore("/").trim()
+            if (username.isBlank()) {
+                "search"
+            } else {
+                "search-profile/${encodeRouteSegment(username)}"
+            }
+        }
+        path.startsWith("/messages/community/") -> {
+            val slug = path
+                .removePrefix("/messages/community/")
+                .substringBefore("/")
+                .trim()
+            if (slug.isBlank()) "messages" else {
+                "messages/community/${encodeRouteSegment(slug)}"
+            }
+        }
+        path.startsWith("/messages") -> "messages"
+        path.startsWith("/market") -> "market"
+        path.startsWith("/vibes") || path.startsWith("/reels") -> "vibes"
+        path.startsWith("/search") -> "search"
+        path.startsWith("/dashboard") || path.startsWith("/profile") || path.startsWith("/settings") -> "profile"
+        path.startsWith("/hub") || path.startsWith("/events") -> "hub"
+        else -> "home"
+    }
+}
+
+private fun encodeRouteSegment(value: String): String =
+    java.net.URLEncoder.encode(
+        value,
+        java.nio.charset.StandardCharsets.UTF_8.toString()
+    ).replace("+", "%20")
 
 @Composable
 private fun UnifiedHubScreen() {
@@ -231,7 +393,7 @@ private fun UnifiedHubScreen() {
             BoxWithConstraints {
                 val compactTabs = maxWidth < 360.dp
                 Row(Modifier.padding(4.dp)) {
-                    listOf("Campus", "Games & Alerts").forEachIndexed { index, label ->
+                    listOf("Campus", "Games").forEachIndexed { index, label ->
                         Surface(
                             onClick = { selectedTab = index },
                             modifier = Modifier.weight(1f),

@@ -137,60 +137,6 @@ class MediaComposerViewModel(
         }
     }
 
-    fun schedule(
-        publishAtMillis: Long,
-        isAnonymous: Boolean,
-        allowAnonymousComments: Boolean,
-        visibility: String,
-        communityId: String?
-    ) {
-        val snapshot = _uiState.value
-        if (!snapshot.canPublish) return
-        _uiState.update {
-            it.copy(
-                isPublishing = true,
-                progressLabel = "Saving scheduled media",
-                error = null,
-                scheduled = false
-            )
-        }
-        viewModelScope.launch {
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    ScheduledMediaWorker.stageAndSchedule(
-                        context = getApplication(),
-                        intent = snapshot.intent,
-                        selected = snapshot.selected,
-                        caption = snapshot.caption,
-                        location = snapshot.location,
-                        isAnonymous = isAnonymous && snapshot.intent != MediaPublishIntent.Story,
-                        allowAnonymousComments = allowAnonymousComments,
-                        visibility = visibility,
-                        communityId = communityId,
-                        publishAtMillis = publishAtMillis
-                    )
-                }
-            }.onSuccess {
-                _uiState.update {
-                    MediaComposerUiState(
-                        intent = snapshot.intent,
-                        progress = 1f,
-                        progressLabel = "Scheduled",
-                        scheduled = true
-                    )
-                }
-            }.onFailure { error ->
-                _uiState.update {
-                    it.copy(
-                        isPublishing = false,
-                        progressLabel = null,
-                        error = error.message ?: "Could not schedule this ${snapshot.intent.name.lowercase()}."
-                    )
-                }
-            }
-        }
-    }
-
     fun clearMessage() {
         _uiState.update { it.copy(error = null, publishedItem = null) }
     }

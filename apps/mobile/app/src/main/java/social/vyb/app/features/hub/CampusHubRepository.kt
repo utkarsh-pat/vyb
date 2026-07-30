@@ -1,45 +1,14 @@
 package social.vyb.app.features.hub
 
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.FirebaseUser
-import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.serialization.json.Json
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.HttpException
-import retrofit2.Retrofit
-import social.vyb.app.BuildConfig
-import java.util.concurrent.TimeUnit
+import social.vyb.app.data.network.VybNetwork
+import social.vyb.app.data.network.requireBearerToken
 
 class CampusHubRepository(
     private val auth: FirebaseAuth = FirebaseAuth.getInstance()
 ) {
-    private val api = Retrofit.Builder()
-        .baseUrl(BuildConfig.API_BASE_URL.trim().let { if (it.endsWith("/")) it else "$it/" })
-        .client(
-            OkHttpClient.Builder()
-                .connectTimeout(10, TimeUnit.SECONDS)
-                .readTimeout(20, TimeUnit.SECONDS)
-                .addInterceptor(
-                    HttpLoggingInterceptor().apply {
-                        level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC
-                        else HttpLoggingInterceptor.Level.NONE
-                    }
-                )
-                .build()
-        )
-        .addConverterFactory(
-            Json {
-                ignoreUnknownKeys = true
-                explicitNulls = false
-            }.asConverterFactory("application/json".toMediaType())
-        )
-        .build()
-        .create(CampusHubApi::class.java)
+    private val api: CampusHubApi = VybNetwork.create()
 
     suspend fun loadEvents(): List<HubEvent> = call {
         val dashboard = api.events(bearer())
@@ -48,6 +17,18 @@ class CampusHubRepository(
 
     suspend fun loadEvent(eventId: String): HubEvent = call {
         api.event(bearer(), eventId).item
+    }
+
+    suspend fun createEvent(draft: HubEventHostDraft): Pair<List<HubEvent>, String> = call {
+        draft.validationError()?.let { throw IllegalArgumentException(it) }
+        val response = api.createEvent(bearer(), draft.toRequest())
+        response.dashboard.mergedEvents() to response.eventId
+    }
+
+    suspend fun updateEvent(event: HubEvent, draft: HubEventHostDraft): Pair<List<HubEvent>, String> = call {
+        draft.validationError()?.let { throw IllegalArgumentException(it) }
+        val response = api.updateEvent(bearer(), event.id, draft.toRequest(event))
+        response.dashboard.mergedEvents() to response.eventId
     }
 
     suspend fun toggleEventSave(eventId: String): List<HubEvent> = call {
@@ -61,7 +42,37 @@ class CampusHubRepository(
             eventId,
             RegisterEventRequestDto(eventId = eventId)
         ).dashboard
-        (dashboard.events + dashboard.hostedEvents).distinctBy(HubEvent::id)
+        dashboard.mergedEvents()
+    }
+
+    suspend fun loadRegistrations(eventId: String): Pair<HubEvent, List<HubEventRegistration>> = call {
+        val response = api.registrations(bearer(), eventId)
+        response.event to response.registrations.sortedByDescending(HubEventRegistration::updatedAt)
+    }
+
+    suspend fun manageRegistration(
+        eventId: String,
+        registrationId: String,
+        status: String,
+        reviewNote: String?,
+    ): Triple<List<HubEvent>, HubEvent, List<HubEventRegistration>> = call {
+        require(status in setOf("approved", "waitlisted", "rejected")) {
+            "Choose approved, waitlisted, or rejected."
+        }
+        val response = api.manageRegistration(
+            bearer(),
+            eventId,
+            registrationId,
+            ManageHubEventRegistrationRequest(
+                status = status,
+                reviewNote = reviewNote?.trim()?.takeIf(String::isNotBlank),
+            ),
+        )
+        Triple(
+            response.dashboard.mergedEvents(),
+            response.event,
+            response.registrations,
+        )
     }
 
     suspend fun loadResources(): List<HubResource> = call {
@@ -81,10 +92,7 @@ class CampusHubRepository(
         detail to members
     }
 
-    private suspend fun bearer(): String {
-        val user = auth.currentUser ?: error("Your session expired. Please sign in again.")
-        return "Bearer ${user.hubIdToken()}"
-    }
+    private suspend fun bearer(): String = auth.requireBearerToken()
 
     private suspend fun <T> call(block: suspend () -> T): T = try {
         block()
@@ -102,14 +110,5 @@ class CampusHubRepository(
     }
 }
 
-private suspend fun FirebaseUser.hubIdToken(): String =
-    suspendCancellableCoroutine { continuation ->
-        getIdToken(false)
-            .addOnSuccessListener { result ->
-                result.token?.let(continuation::resume)
-                    ?: continuation.resumeWithException(
-                        IllegalStateException("Firebase returned an empty ID token.")
-                    )
-            }
-            .addOnFailureListener(continuation::resumeWithException)
-    }
+private fun EventsDashboardDto.mergedEvents(): List<HubEvent> =
+    (events + hostedEvents).distinctBy(HubEvent::id)

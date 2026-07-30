@@ -2,6 +2,8 @@ import { createServer } from "node:http";
 import { loadRootEnv } from "../../../packages/config/src/index.mjs";
 import { attachCorsContext, buildCorsHeaders, sendError, sendJson } from "./lib/http.mjs";
 import { createRequestContext } from "./lib/request-context.mjs";
+import { evaluateRuntimeReadiness } from "./lib/readiness.mjs";
+import { buildAndroidUpdateManifest } from "./lib/android-update.mjs";
 import { launchCollege } from "./modules/identity/college-access.mjs";
 import { getCampusModuleHealth, handleCampusRoute } from "./modules/campus/index.mjs";
 import { canOpenChatRealtimeConnection, getChatModuleHealth, handleChatRoute } from "./modules/chat/index.mjs";
@@ -17,30 +19,15 @@ import { attachSocialWebSocketServer } from "./modules/social/realtime-hub.mjs";
 import {
   attachScribbleWebSocketServer,
   getScribbleModuleHealth,
-  handleScribblePublicRoomsRoute
+  handleScribblePublicRoomsRoute,
+  handleScribbleSocketTokenRoute
 } from "./modules/games/scribble-realtime-hub.mjs";
+import { getGamesModuleHealth, handleGamesRoute } from "./modules/games/index.mjs";
 
 loadRootEnv();
 
 const port = Number(process.env.PORT ?? 4000);
-const routeHandlers = [handleIdentityRoute, handleCampusRoute, handleSocialRoute, handleChatRoute, handleResourcesRoute, handleMarketRoute, handleEventsRoute, handleNotificationsRoute, handleModerationRoute];
-
-function getAndroidUpdateManifest(url, request) {
-  const latestVersionCode = Number(process.env.VYB_ANDROID_LATEST_VERSION_CODE ?? 3);
-  const latestVersionName = process.env.VYB_ANDROID_LATEST_VERSION_NAME ?? "0.1.2";
-  const apkUrl = process.env.VYB_ANDROID_APK_URL?.trim() ?? "";
-
-  return {
-    platform: "android",
-    latestVersionCode,
-    latestVersionName,
-    minimumSupportedVersionCode: Number(process.env.VYB_ANDROID_MIN_SUPPORTED_VERSION_CODE ?? 1),
-    forceUpdate: process.env.VYB_ANDROID_FORCE_UPDATE === "1",
-    apkUrl,
-    releaseNotes: (process.env.VYB_ANDROID_RELEASE_NOTES ?? "Custom APK updates, theme toggle, app logo, and smoother publishing.").split("|"),
-    updatedAt: process.env.VYB_ANDROID_UPDATED_AT ?? "2026-07-28T00:00:00.000Z"
-  };
-}
+const routeHandlers = [handleIdentityRoute, handleCampusRoute, handleSocialRoute, handleChatRoute, handleResourcesRoute, handleMarketRoute, handleEventsRoute, handleNotificationsRoute, handleModerationRoute, handleGamesRoute];
 
 export async function handleBackendRequest(request, response) {
   const startedAt = Date.now();
@@ -94,6 +81,7 @@ export async function handleBackendRequest(request, response) {
             getEventsModuleHealth(),
             getNotificationsModuleHealth(),
             getModerationModuleHealth(),
+            getGamesModuleHealth(),
             getScribbleModuleHealth()
           ]
         },
@@ -154,25 +142,41 @@ export async function handleBackendRequest(request, response) {
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/ready") {
+      const readiness = evaluateRuntimeReadiness();
+      sendJson(
+        response,
+        readiness.ready ? 200 : 503,
+        {
+          service: "backend",
+          status: readiness.ready ? "ready" : "not-ready",
+          ...readiness,
+          revision: process.env.K_REVISION ?? null
+        },
+        {
+          "cache-control": "no-store",
+          "x-request-id": context.requestId
+        }
+      );
+      return;
+    }
+
     if (request.method === "GET" && url.pathname === "/v1/app-updates/android") {
       const currentVersionCode = Number(url.searchParams.get("versionCode") ?? 0);
-      const manifest = getAndroidUpdateManifest(url, request);
+      const manifest = buildAndroidUpdateManifest({ currentVersionCode });
       sendJson(
         response,
         200,
-        {
-          ...manifest,
-          updateAvailable:
-            Number.isFinite(currentVersionCode) &&
-            Number.isFinite(manifest.latestVersionCode) &&
-            currentVersionCode > 0 &&
-            currentVersionCode < manifest.latestVersionCode
-        },
+        manifest,
         {
           "cache-control": "public, max-age=60",
           "x-request-id": context.requestId
         }
       );
+      return;
+    }
+
+    if (await handleScribbleSocketTokenRoute({ request, response, url, context })) {
       return;
     }
 

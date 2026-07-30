@@ -1,6 +1,5 @@
 package social.vyb.app.features.funhub
 
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -39,13 +38,18 @@ data class ConnectSubmitRequest(
 
 @Serializable
 data class ConnectHint(
+    val sessionId: String,
     val message: String,
     val nextMove: Coordinate? = null,
     val hintsUsed: Int = 0
 )
 
 @Serializable
-data class ConnectSubmitResult(val solved: Boolean, val message: String)
+data class ConnectSubmitResult(
+    val solved: Boolean,
+    val message: String,
+    val sessionId: String
+)
 
 @Serializable
 data class QueensLevel(
@@ -83,6 +87,7 @@ data class QueensSubmitRequest(
 
 @Serializable
 data class QueensHint(
+    val sessionId: String,
     val message: String,
     val errorCells: List<Coordinate> = emptyList(),
     val autoMarkCells: List<Coordinate> = emptyList(),
@@ -95,36 +100,9 @@ data class QueensHint(
 data class QueensSubmitResult(
     val solved: Boolean,
     val message: String,
+    val sessionId: String,
     val errorCells: List<Coordinate> = emptyList()
 )
-
-@Serializable
-data class NotificationCopy(val title: String, val body: String, val href: String = "")
-
-@Serializable
-data class NotificationReadState(@SerialName("read_at") val readAt: String? = null)
-
-@Serializable
-data class VybNotification(
-    val id: String,
-    val category: String,
-    val copy: NotificationCopy,
-    val state: NotificationReadState,
-    @SerialName("created_at") val createdAt: String
-)
-
-@Serializable
-data class NotificationInbox(
-    val items: List<VybNotification> = emptyList(),
-    val unreadCount: Int = 0,
-    val nextCursor: String? = null
-)
-
-@Serializable
-data class ReadAllRequest(val category: String? = null)
-
-@Serializable
-data class ReadAllResult(val updatedCount: Int, val readAt: String)
 
 data class FunUiState(
     val isLoading: Boolean = false,
@@ -132,7 +110,6 @@ data class FunUiState(
     val isActionRunning: Boolean = false,
     val error: String? = null,
     val message: String? = null,
-    val inbox: NotificationInbox = NotificationInbox(),
     val connect: ConnectDaily? = null,
     val connectPath: List<Coordinate> = emptyList(),
     val queens: QueensDaily? = null,

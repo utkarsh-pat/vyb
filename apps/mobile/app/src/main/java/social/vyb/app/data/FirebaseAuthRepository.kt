@@ -111,12 +111,13 @@ class FirebaseAuthRepository {
                 .getCredential(context, request)
                 .credential
 
-            require(
-                credential is CustomCredential &&
-                    credential.type == TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
-            ) { "Google did not return a valid ID credential." }
-
-            val token = GoogleIdTokenCredential.createFrom(credential.data).idToken
+            val customCredential = credential as? CustomCredential
+                ?: error("Google did not return a custom credential.")
+            val token = when (customCredential.type) {
+                TYPE_GOOGLE_ID_TOKEN_CREDENTIAL ->
+                    GoogleIdTokenCredential.createFrom(customCredential.data).idToken
+                else -> error("Google did not return a valid ID credential.")
+            }
             val firebaseCredential = GoogleAuthProvider.getCredential(token, null)
             val task = auth.signInWithCredential(firebaseCredential)
             val user = kotlinx.coroutines.suspendCancellableCoroutine<FirebaseUser> { continuation ->

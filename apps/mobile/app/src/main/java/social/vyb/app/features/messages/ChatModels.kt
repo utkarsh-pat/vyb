@@ -1,6 +1,7 @@
 package social.vyb.app.features.messages
 
 import kotlinx.serialization.Serializable
+import social.vyb.app.data.RemotePost
 
 @Serializable
 internal data class ChatSocketTokenDto(
@@ -161,4 +162,60 @@ data class ChatMessageItem(
     val timestamp: String,
     val isMine: Boolean,
     val isReadable: Boolean
+)
+
+@Serializable
+internal data class SendCommunityMessageRequestDto(
+    val tenantId: String,
+    val membershipId: String,
+    val communityId: String,
+    val placement: String = "feed",
+    val kind: String = "text",
+    val title: String = "Community message",
+    val body: String,
+    val visibility: String = "community",
+    val isAnonymous: Boolean = false,
+    val allowAnonymousComments: Boolean = true
+)
+
+@Serializable
+internal data class CommunityMessageEnvelopeDto(val item: RemotePost)
+
+data class CommunityInboxItem(
+    val id: String,
+    val slug: String,
+    val name: String,
+    val type: String,
+    val memberCount: Int,
+    val membershipRole: String?,
+    val isOfficial: Boolean
+)
+
+data class CommunityConversationContext(
+    val id: String,
+    val slug: String,
+    val name: String,
+    val type: String,
+    val memberCount: Int,
+    val tenantId: String,
+    val membershipId: String,
+    val viewerUserId: String
+)
+
+data class CommunityMessageItem(
+    val id: String,
+    val body: String,
+    val authorName: String,
+    val authorHandle: String,
+    val timestamp: String,
+    val createdAt: String,
+    val isMine: Boolean,
+    val isAnonymous: Boolean,
+    val reactionCount: Int,
+    val replyCount: Int
+)
+
+data class CommunityConversationResult(
+    val context: CommunityConversationContext,
+    val messages: List<CommunityMessageItem>
 )

@@ -89,7 +89,7 @@ fun AppUpdatePrompt(
                 Icon(Icons.Default.SystemUpdate, contentDescription = null)
             }
         },
-        title = { Text("Vybnet update available") },
+        title = { Text("Vyb update available") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(

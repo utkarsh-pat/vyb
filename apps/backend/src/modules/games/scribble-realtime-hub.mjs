@@ -4,7 +4,9 @@ import path from "node:path";
 import { WebSocketServer } from "ws";
 import { getFirebaseDataConnect } from "../../../../../packages/config/src/index.mjs";
 import { getConfiguredInternalApiKey } from "../../lib/internal-auth.mjs";
-import { sendJson } from "../../lib/http.mjs";
+import { sendError as sendHttpError, sendJson } from "../../lib/http.mjs";
+import { getProfileByUserId } from "../identity/profile-repository.mjs";
+import { resolveLiveContext } from "../shared/viewer-context.mjs";
 
 const SCRIBBLE_SOCKET_PATH = "/ws/games/scribble";
 const SCRIBBLE_PUBLIC_ROOMS_PATH = "/v1/games/scribble/public-rooms";
@@ -2296,6 +2298,67 @@ export function handleScribblePublicRoomsRoute({ request, response, url }) {
     roomCount: payload.rooms.length
   });
   sendJson(response, 200, payload);
+  return true;
+}
+
+export async function handleScribbleSocketTokenRoute({ request, response, url, context }) {
+  if (request.method !== "GET" || url.pathname !== "/v1/games/scribble/socket-token") {
+    return false;
+  }
+  if (!context.actor) {
+    sendHttpError(response, 401, "UNAUTHENTICATED", "Sign in before opening Scribble.");
+    return true;
+  }
+
+  const resolved = await resolveLiveContext(context.actor);
+  if (!resolved?.live?.tenant || !resolved.live.user || !resolved.live.membership) {
+    sendHttpError(response, 401, "UNAUTHENTICATED", "A verified campus membership is required.");
+    return true;
+  }
+  const profile = await getProfileByUserId({
+    tenantId: resolved.live.tenant.id,
+    userId: resolved.live.user.id,
+    firebaseIdToken: context.actor.firebaseIdToken ?? null
+  }).catch(() => null);
+  if (!profile?.profileCompleted) {
+    sendHttpError(response, 403, "PROFILE_INCOMPLETE", "Complete your profile before opening Scribble.");
+    return true;
+  }
+
+  const secret = getConfiguredInternalApiKey();
+  if (!secret) {
+    sendHttpError(response, 503, "REALTIME_UNAVAILABLE", "Scribble realtime is not configured.");
+    return true;
+  }
+  const expiresAt = Date.now() + 5 * 60 * 1000;
+  const payload = {
+    tenantId: resolved.live.tenant.id,
+    userId: resolved.live.user.id,
+    membershipId: resolved.live.membership.id,
+    displayName: profile.fullName || context.actor.displayName || "Vyb Student",
+    username: profile.username || context.actor.email?.split("@")[0] || resolved.live.user.id,
+    exp: expiresAt
+  };
+  const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  const signature = createHmac("sha256", secret).update(encoded).digest("base64url");
+  const forwardedProto = String(request.headers["x-forwarded-proto"] ?? "").split(",")[0].trim();
+  const forwardedHost = String(request.headers["x-forwarded-host"] ?? "").split(",")[0].trim();
+  const secure = forwardedProto ? forwardedProto === "https" : Boolean(request.socket?.encrypted);
+  const host = forwardedHost || request.headers.host;
+  const token = encodeURIComponent(`${encoded}.${signature}`);
+  const wsUrl = `${secure ? "wss" : "ws"}://${host}${SCRIBBLE_SOCKET_PATH}?token=${token}`;
+
+  sendJson(response, 200, {
+    wsUrl,
+    expiresAt,
+    tenantId: payload.tenantId,
+    viewer: {
+      userId: payload.userId,
+      membershipId: payload.membershipId,
+      username: payload.username,
+      displayName: payload.displayName
+    }
+  });
   return true;
 }
 

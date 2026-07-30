@@ -1,8 +1,12 @@
 import { getFirebaseAdminAuth, isSuperAdminEmail } from "../../../../../packages/config/src/index.mjs";
 import { readJson, sendError, sendJson } from "../../lib/http.mjs";
-import { buildFallbackDisplayName, resolveLiveContext } from "../shared/viewer-context.mjs";
+import {
+  buildFallbackDisplayName,
+  canUseDemoViewerFallback,
+  resolveLiveContext
+} from "../shared/viewer-context.mjs";
 import { getAllowedCollegeDomains, isAllowedCollegeEmail, launchCollege, normalizeEmail } from "./college-access.mjs";
-import { getProfileByUserId, updateUsername, upsertProfile } from "./profile-repository.mjs";
+import { getProfileByUserId, getUsernameAvailability, updateUsername, upsertProfile } from "./profile-repository.mjs";
 import { z } from "zod";
 
 function requireNonEmptyString(value) {
@@ -328,15 +332,20 @@ export async function handleIdentityRoute({ request, response, url, context }) {
       return true;
     }
 
-    sendJson(response, 200, {
-      user: resolved.viewer,
-      membershipSummary: {
-        id: "membership-demo-1",
-        tenantId: "tenant-demo",
-        role: "student",
-        verificationStatus: "verified"
-      }
-    });
+    if (canUseDemoViewerFallback(context)) {
+      sendJson(response, 200, {
+        user: resolved.viewer,
+        membershipSummary: {
+          id: "membership-demo-1",
+          tenantId: "tenant-demo",
+          role: "student",
+          verificationStatus: "verified"
+        }
+      });
+      return true;
+    }
+
+    sendError(response, 401, "MEMBERSHIP_UNAVAILABLE", "Your active campus membership could not be verified.");
     return true;
   }
 
@@ -344,6 +353,10 @@ export async function handleIdentityRoute({ request, response, url, context }) {
     const resolved = await resolveLiveContext(context.actor);
     if (!resolved) {
       sendError(response, 401, "UNAUTHENTICATED", "Viewer context is required.");
+      return true;
+    }
+    if ((!resolved.live?.tenant || !resolved.live.user) && !canUseDemoViewerFallback(context)) {
+      sendError(response, 401, "MEMBERSHIP_UNAVAILABLE", "Your active campus membership could not be verified.");
       return true;
     }
 
@@ -358,6 +371,33 @@ export async function handleIdentityRoute({ request, response, url, context }) {
       buildProfileResponse({
         profile,
         collegeName: resolved.live?.tenant?.name ?? launchCollege.name
+      })
+    );
+    return true;
+  }
+
+  if (request.method === "GET" && url.pathname === "/v1/profile/username-availability") {
+    const resolved = await resolveLiveContext(context.actor);
+    if (!resolved?.live?.tenant || !resolved.live.user) {
+      sendError(response, 401, "UNAUTHENTICATED", "An authenticated membership is required.");
+      return true;
+    }
+
+    const parsed = usernameUpdateSchema.safeParse({
+      username: url.searchParams.get("username")
+    });
+    if (!parsed.success) {
+      sendError(response, 400, "INVALID_USERNAME", parsed.error.issues[0]?.message ?? "User ID is invalid.");
+      return true;
+    }
+
+    sendJson(
+      response,
+      200,
+      await getUsernameAvailability({
+        tenantId: resolved.live.tenant.id,
+        userId: resolved.live.user.id,
+        username: parsed.data.username
       })
     );
     return true;
@@ -419,9 +459,11 @@ export async function handleIdentityRoute({ request, response, url, context }) {
         hostelName: normalizeOptionalString(normalizedPayload.hostelName),
         phoneNumber: normalizePhoneNumber(normalizedPayload.phoneNumber),
         bio: normalizeOptionalString(normalizedPayload.bio),
-        avatarUrl: normalizeOptionalString(normalizedPayload.avatarUrl),
         firebaseIdToken: context.actor.firebaseIdToken ?? null
       };
+      if (Object.prototype.hasOwnProperty.call(normalizedPayload, "avatarUrl")) {
+        profileInput.avatarUrl = normalizeOptionalString(normalizedPayload.avatarUrl);
+      }
       if (Object.prototype.hasOwnProperty.call(normalizedPayload, "socialLinks")) {
         profileInput.socialLinks = normalizedPayload.socialLinks;
       }

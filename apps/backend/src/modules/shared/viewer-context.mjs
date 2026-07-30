@@ -6,6 +6,10 @@ export function buildFallbackDisplayName(email) {
   return email.split("@")[0]?.replace(/[-._]+/g, " ") || "Vyb Explorer";
 }
 
+export function canUseDemoViewerFallback(context, nodeEnv = process.env.NODE_ENV) {
+  return nodeEnv !== "production" && context?.isTrustedInternalRequest === true;
+}
+
 export function buildViewerFromActor(actor) {
   if (!actor) {
     return null;

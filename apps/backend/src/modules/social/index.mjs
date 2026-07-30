@@ -122,6 +122,15 @@ function requireNonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+export function isValidSocialUploadMimeType(intent, mimeType) {
+  if (!requireNonEmptyString(mimeType)) {
+    return false;
+  }
+
+  const normalizedMimeType = mimeType.trim().toLowerCase();
+  return intent !== "avatar" || normalizedMimeType.startsWith("image/");
+}
+
 function normalizeOptionalString(value) {
   if (value === null || value === undefined) {
     return null;
@@ -1056,7 +1065,10 @@ export async function handleSocialRoute({ request, response, url, context }) {
       return true;
     }
 
-    const intent = payload.intent === "post" || payload.intent === "story" || payload.intent === "vibe" ? payload.intent : null;
+    const intent =
+      payload.intent === "post" || payload.intent === "story" || payload.intent === "vibe" || payload.intent === "avatar"
+        ? payload.intent
+        : null;
     if (!intent) {
       sendError(response, 400, "INVALID_INTENT", "Upload intent is missing or invalid.");
       return true;
@@ -1064,6 +1076,10 @@ export async function handleSocialRoute({ request, response, url, context }) {
 
     if (!requireNonEmptyString(payload.mimeType) || !requireNonEmptyString(payload.fileName) || !requireNonEmptyString(payload.base64Data)) {
       sendError(response, 400, "INVALID_FILE", "Choose an image or video before uploading.");
+      return true;
+    }
+    if (!isValidSocialUploadMimeType(intent, payload.mimeType)) {
+      sendError(response, 400, "INVALID_AVATAR", "Profile photos must be images.");
       return true;
     }
 
@@ -1130,6 +1146,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
       sendError(response, 400, "INVALID_VISIBILITY", "visibility must be public, followers, or community.");
       return true;
     }
+
     if (visibility === "community" && !communityId) {
       sendError(response, 400, "COMMUNITY_REQUIRED", "Choose a community for a community-only post.");
       return true;

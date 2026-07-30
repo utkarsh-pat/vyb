@@ -1,49 +1,15 @@
 package social.vyb.app.features.social
 
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.FirebaseUser
-import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.HttpException
-import retrofit2.Retrofit
-import social.vyb.app.BuildConfig
-import java.util.concurrent.TimeUnit
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
+import social.vyb.app.data.network.VybNetwork
+import social.vyb.app.data.network.requireBearerToken
 
 class SocialActionsRepository(
     private val auth: FirebaseAuth = FirebaseAuth.getInstance()
 ) {
-    private val json = Json {
-        ignoreUnknownKeys = true
-        explicitNulls = false
-    }
-
-    private val api = Retrofit.Builder()
-        .baseUrl(BuildConfig.API_BASE_URL.trim().let { if (it.endsWith("/")) it else "$it/" })
-        .client(
-            OkHttpClient.Builder()
-                .connectTimeout(10, TimeUnit.SECONDS)
-                .readTimeout(20, TimeUnit.SECONDS)
-                .addInterceptor(
-                    HttpLoggingInterceptor().apply {
-                        level = if (BuildConfig.DEBUG) {
-                            HttpLoggingInterceptor.Level.BASIC
-                        } else {
-                            HttpLoggingInterceptor.Level.NONE
-                        }
-                    }
-                )
-                .build()
-        )
-        .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
-        .build()
-        .create(SocialActionsApi::class.java)
+    private val api: SocialActionsApi = VybNetwork.create()
 
     suspend fun createTextPost(
         text: String,
@@ -101,6 +67,60 @@ class SocialActionsRepository(
         ).item
     }
 
+    suspend fun toggleCommentReaction(commentId: String): CommentReactionResult =
+        apiCall { api.toggleCommentReaction(bearerToken(), commentId) }
+
+    suspend fun listReactionMembers(postId: String): List<ReactionMember> =
+        apiCall { api.reactionMembers(bearerToken(), postId).items }
+
+    suspend fun repost(
+        postId: String,
+        quote: String? = null,
+        placement: String = "feed"
+    ): SocialPost = apiCall {
+        api.repost(
+            bearerToken(),
+            postId,
+            RepostBody(
+                quote = quote?.trim()?.takeIf(String::isNotEmpty),
+                placement = placement.takeIf { it == "feed" || it == "vibe" } ?: "feed"
+            )
+        ).item
+    }
+
+    suspend fun updatePost(postId: String, title: String, body: String): SocialPost = apiCall {
+        val trimmedBody = body.trim()
+        require(trimmedBody.isNotEmpty()) { "Post cannot be empty." }
+        api.updatePost(
+            bearerToken(),
+            postId,
+            UpdatePostBody(title = title.trim(), body = trimmedBody)
+        ).item
+    }
+
+    suspend fun deletePost(postId: String) = apiCall {
+        api.deletePost(bearerToken(), postId)
+    }
+
+    suspend fun updateComment(commentId: String, body: String): SocialComment = apiCall {
+        val trimmed = body.trim()
+        require(trimmed.length >= 2) { "Comment must be at least 2 characters." }
+        api.updateComment(bearerToken(), commentId, UpdateCommentBody(trimmed)).item
+    }
+
+    suspend fun deleteComment(commentId: String) = apiCall {
+        api.deleteComment(bearerToken(), commentId)
+    }
+
+    internal suspend fun report(targetType: String, targetId: String, reason: String) = apiCall {
+        val trimmed = reason.trim()
+        require(trimmed.isNotEmpty()) { "Choose or enter a report reason." }
+        api.report(
+            bearerToken(),
+            ReportBody(targetType = targetType, targetId = targetId, reason = trimmed)
+        ).item
+    }
+
     private suspend fun verifiedViewer(bearer: String): ViewerMembership {
         val membership = api.viewer(bearer).membershipSummary
         check(membership.verificationStatus == "verified") {
@@ -109,29 +129,16 @@ class SocialActionsRepository(
         return membership
     }
 
-    private suspend fun bearerToken(): String {
-        val user = auth.currentUser ?: error("Your session expired. Please sign in again.")
-        return "Bearer ${user.idToken()}"
-    }
-
-    private suspend fun FirebaseUser.idToken(): String =
-        suspendCancellableCoroutine { continuation ->
-            getIdToken(false)
-                .addOnSuccessListener { result ->
-                    result.token?.let(continuation::resume)
-                        ?: continuation.resumeWithException(
-                            IllegalStateException("Firebase returned an empty ID token.")
-                        )
-                }
-                .addOnFailureListener(continuation::resumeWithException)
-        }
+    private suspend fun bearerToken(): String = auth.requireBearerToken()
 
     private suspend fun <T> apiCall(block: suspend () -> T): T = try {
         block()
     } catch (error: HttpException) {
         val responseBody = error.response()?.errorBody()?.string()
         val backendMessage = responseBody?.let {
-            runCatching { json.decodeFromString<ErrorEnvelope>(it).error?.message }.getOrNull()
+            runCatching {
+                VybNetwork.json.decodeFromString<ErrorEnvelope>(it).error?.message
+            }.getOrNull()
         }
         throw SocialActionException(
             backendMessage ?: "Request failed (${error.code()}). Please try again.",

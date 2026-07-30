@@ -113,8 +113,7 @@ data class MediaComposerUiState(
     val progress: Float = 0f,
     val progressLabel: String? = null,
     val error: String? = null,
-    val publishedItem: CreatedMediaItem? = null,
-    val scheduled: Boolean = false
+    val publishedItem: CreatedMediaItem? = null
 ) {
     val canPublish: Boolean
         get() = selected.isNotEmpty() && !isPublishing &&

@@ -3,47 +3,19 @@ package social.vyb.app.features.media
 import android.content.ContentResolver
 import android.util.Base64
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.FirebaseUser
-import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.HttpException
-import retrofit2.Retrofit
-import social.vyb.app.BuildConfig
-import java.util.concurrent.TimeUnit
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
+import social.vyb.app.data.network.VybNetwork
+import social.vyb.app.data.network.requireBearerToken
 
 class MediaComposerRepository(
     private val auth: FirebaseAuth = FirebaseAuth.getInstance()
 ) {
-    private val json = Json {
-        ignoreUnknownKeys = true
-        explicitNulls = false
-    }
-
-    private val api = Retrofit.Builder()
-        .baseUrl(BuildConfig.API_BASE_URL.trim().let { if (it.endsWith("/")) it else "$it/" })
-        .client(
-            OkHttpClient.Builder()
-                .connectTimeout(20, TimeUnit.SECONDS)
-                .writeTimeout(120, TimeUnit.SECONDS)
-                .readTimeout(120, TimeUnit.SECONDS)
-                .addInterceptor(
-                    HttpLoggingInterceptor().apply {
-                        level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC
-                        else HttpLoggingInterceptor.Level.NONE
-                    }
-                )
-                .build()
-        )
-        .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
-        .build()
-        .create(MediaComposerApi::class.java)
+    private val api: MediaComposerApi = VybNetwork.create(
+        connectTimeoutSeconds = 20,
+        readTimeoutSeconds = 120,
+        writeTimeoutSeconds = 120
+    )
 
     suspend fun publish(
         resolver: ContentResolver,
@@ -146,28 +118,15 @@ class MediaComposerRepository(
         result.item
     }
 
-    private suspend fun bearerToken(): String {
-        val user = auth.currentUser ?: error("Your session expired. Please sign in again.")
-        return "Bearer ${user.idToken()}"
-    }
-
-    private suspend fun FirebaseUser.idToken(): String =
-        suspendCancellableCoroutine { continuation ->
-            getIdToken(false)
-                .addOnSuccessListener { result ->
-                    result.token?.let(continuation::resume)
-                        ?: continuation.resumeWithException(
-                            IllegalStateException("Firebase returned an empty ID token.")
-                        )
-                }
-                .addOnFailureListener(continuation::resumeWithException)
-        }
+    private suspend fun bearerToken(): String = auth.requireBearerToken()
 
     private suspend fun <T> apiCall(block: suspend () -> T): T = try {
         block()
     } catch (error: HttpException) {
         val backendMessage = error.response()?.errorBody()?.string()?.let {
-            runCatching { json.decodeFromString<MediaErrorEnvelope>(it).error?.message }.getOrNull()
+            runCatching {
+                VybNetwork.json.decodeFromString<MediaErrorEnvelope>(it).error?.message
+            }.getOrNull()
         }
         throw MediaComposerException(
             backendMessage ?: "Request failed (${error.code()}). Please try again.",

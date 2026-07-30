@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -17,6 +18,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -43,17 +46,17 @@ data class VybPalette(
 )
 
 val VybDarkPalette = VybPalette(
-    background = Color(0xFF0B1220),
-    backgroundDeep = Color(0xFF080D19),
-    panel = Color(0xFF111A2E),
-    panelLifted = Color(0xFF1C2740),
-    border = Color(0x24FFFFFF),
-    text = Color(0xFFF8FAFC),
-    muted = Color(0xFF9CA9B9),
+    background = Color(0xFF0F172A),
+    backgroundDeep = Color(0xFF020617),
+    panel = Color(0xFF0F1424),
+    panelLifted = Color(0xFF272E40),
+    border = Color(0x1FFFFFFF),
+    text = Color(0xFFE6EEFC),
+    muted = Color(0xFF94A3B8),
     indigo = Color(0xFF6366F1),
     purple = Color(0xFF7C3AED),
     teal = Color(0xFF14B8A6),
-    pink = Color(0xFFFF49A2)
+    pink = Color(0xFFEC4899)
 )
 
 val VybLightPalette = VybPalette(
@@ -101,6 +104,22 @@ fun VybPageBackground(
                 )
             )
     ) {
+        Box(
+            Modifier
+                .align(Alignment.TopStart)
+                .offset(x = (-110).dp, y = (-80).dp)
+                .size(300.dp)
+                .blur(92.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded)
+                .background(VybIndigo.copy(alpha = .14f), RoundedCornerShape(150.dp))
+        )
+        Box(
+            Modifier
+                .align(Alignment.TopEnd)
+                .offset(x = 90.dp, y = 50.dp)
+                .size(220.dp)
+                .blur(84.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded)
+                .background(VybTeal.copy(alpha = .10f), RoundedCornerShape(110.dp))
+        )
         content()
     }
 }
@@ -114,7 +133,7 @@ fun VybBrandLockup(
     Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         Image(
             painter = painterResource(R.drawable.vyb_logo),
-            contentDescription = "Vybnet",
+            contentDescription = "Vyb",
             modifier = Modifier
                 .size(if (compact) 34.dp else 38.dp)
                 .clip(RoundedCornerShape(if (compact) 11.dp else 13.dp)),
@@ -123,7 +142,7 @@ fun VybBrandLockup(
         Spacer(Modifier.width(10.dp))
         Column {
             Text(
-                text = "vybnet",
+                text = "vyb",
                 color = VybText,
                 fontSize = if (compact) 18.sp else 20.sp,
                 lineHeight = 20.sp,
@@ -147,15 +166,15 @@ fun VybBrandLockup(
 @Composable
 fun VybGlassPanel(
     modifier: Modifier = Modifier,
-    radius: Int = 22,
+    radius: Int = 16,
     content: @Composable () -> Unit
 ) {
     Surface(
         modifier = modifier,
-        color = VybPanel.copy(alpha = .92f),
+        color = VybPanel.copy(alpha = .88f),
         shape = RoundedCornerShape(radius.dp),
         border = BorderStroke(1.dp, VybBorder),
-        shadowElevation = 12.dp,
+        shadowElevation = 6.dp,
         content = content
     )
 }

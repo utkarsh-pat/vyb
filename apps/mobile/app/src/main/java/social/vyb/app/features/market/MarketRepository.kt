@@ -1,26 +1,14 @@
 package social.vyb.app.features.market
 
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.FirebaseUser
-import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.serialization.json.Json
 import retrofit2.HttpException
-import retrofit2.Retrofit
-import social.vyb.app.BuildConfig
-import okhttp3.MediaType.Companion.toMediaType
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
+import social.vyb.app.data.network.VybNetwork
+import social.vyb.app.data.network.requireIdToken
 
 class MarketRepository(
     private val auth: FirebaseAuth = FirebaseAuth.getInstance(),
 ) {
-    private val json = Json { ignoreUnknownKeys = true }
-    private val api = Retrofit.Builder()
-        .baseUrl(BuildConfig.API_BASE_URL.trim().let { if (it.endsWith("/")) it else "$it/" })
-        .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
-        .build()
-        .create(MarketApi::class.java)
+    private val api: MarketApi = VybNetwork.create()
 
     suspend fun dashboard(): MarketDashboard = call { api.dashboard(bearer()) }
 
@@ -63,22 +51,8 @@ class MarketRepository(
 
     private suspend fun bearer(): String {
         val user = auth.currentUser ?: throw MarketException("Please sign in to use Campus Market.")
-        return "Bearer ${user.idToken()}"
+        return "Bearer ${user.requireIdToken()}"
     }
-
-    private suspend fun FirebaseUser.idToken(): String =
-        suspendCancellableCoroutine { continuation ->
-            getIdToken(false)
-                .addOnSuccessListener { result ->
-                    val token = result.token
-                    if (token.isNullOrBlank()) {
-                        continuation.resumeWithException(MarketException("Could not verify your session."))
-                    } else {
-                        continuation.resume(token)
-                    }
-                }
-                .addOnFailureListener(continuation::resumeWithException)
-        }
 
     private suspend fun <T> call(block: suspend () -> T): T = try {
         block()

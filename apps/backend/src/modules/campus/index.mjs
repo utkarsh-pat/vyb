@@ -6,7 +6,7 @@ import {
   listCommunityMembers as listCommunityMembersQuery
 } from "../../../../../packages/dataconnect/campus-admin-sdk/esm/index.esm.js";
 import { readJson, sendError, sendJson } from "../../lib/http.mjs";
-import { resolveLiveContext } from "../shared/viewer-context.mjs";
+import { canUseDemoViewerFallback, resolveLiveContext } from "../shared/viewer-context.mjs";
 import {
   createCommunityInvite,
   getCommunityViewerState,
@@ -376,14 +376,19 @@ export async function handleCampusRoute({ request, response, url, context }) {
       return true;
     }
 
-    sendJson(response, 200, {
-      tenant: {
-        id: "tenant-demo",
-        name: "Vyb Demo Institute",
-        slug: "vyb-demo"
-      },
-      communities: fallbackCommunities
-    });
+    if (canUseDemoViewerFallback(context)) {
+      sendJson(response, 200, {
+        tenant: {
+          id: "tenant-demo",
+          name: "Vyb Demo Institute",
+          slug: "vyb-demo"
+        },
+        communities: fallbackCommunities
+      });
+      return true;
+    }
+
+    sendError(response, 401, "MEMBERSHIP_UNAVAILABLE", "Your active campus membership could not be verified.");
     return true;
   }
 
@@ -401,6 +406,11 @@ export async function handleCampusRoute({ request, response, url, context }) {
 
     const resolved = await resolveLiveContext(context.actor);
     if (!resolved?.live?.tenant || !resolved.live.membership) {
+      if (!canUseDemoViewerFallback(context)) {
+        sendError(response, 401, "MEMBERSHIP_UNAVAILABLE", "Your active campus membership could not be verified.");
+        return true;
+      }
+
       const community = fallbackCommunities.find((item) => item.slug === slug);
       if (!community) {
         sendError(response, 404, "COMMUNITY_NOT_FOUND", "Community not found.");

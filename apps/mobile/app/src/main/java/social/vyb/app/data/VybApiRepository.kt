@@ -1,45 +1,12 @@
 package social.vyb.app.data
 
 import com.google.firebase.auth.FirebaseAuth
-import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.serialization.json.Json
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.HttpException
-import retrofit2.Retrofit
-import social.vyb.app.BuildConfig
-import java.util.concurrent.TimeUnit
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
+import social.vyb.app.data.network.VybNetwork
+import social.vyb.app.data.network.requireIdToken
 
 class VybApiRepository {
-    private val api: ApiService = Retrofit.Builder()
-        .baseUrl(normalizeBaseUrl(BuildConfig.API_BASE_URL))
-        .client(
-            OkHttpClient.Builder()
-                .connectTimeout(10, TimeUnit.SECONDS)
-                .readTimeout(15, TimeUnit.SECONDS)
-                .addInterceptor(
-                    HttpLoggingInterceptor().apply {
-                        level = if (BuildConfig.DEBUG) {
-                            HttpLoggingInterceptor.Level.BASIC
-                        } else {
-                            HttpLoggingInterceptor.Level.NONE
-                        }
-                    }
-                )
-                .build()
-        )
-        .addConverterFactory(
-            Json {
-                ignoreUnknownKeys = true
-                explicitNulls = false
-            }.asConverterFactory("application/json".toMediaType())
-        )
-        .build()
-        .create(ApiService::class.java)
+    private val api: ApiService = VybNetwork.create(readTimeoutSeconds = 15)
 
     suspend fun loadHomeFeed(): HomeFeedResult {
         val user = FirebaseAuth.getInstance().currentUser
@@ -54,10 +21,51 @@ class VybApiRepository {
         return HomeFeedResult(me, feed)
     }
 
+    suspend fun loadAppSession(): AppSessionResult {
+        val user = FirebaseAuth.getInstance().currentUser
+            ?: error("Your session expired. Please sign in again.")
+        val bearer = "Bearer ${bootstrapBackendSession(user)}"
+        val profile = api.profile(bearer)
+        if (!profile.profileCompleted) return AppSessionResult(profile = profile)
+
+        val me = api.me(bearer)
+        check(me.membershipSummary.verificationStatus == "verified") {
+            "Your campus membership is not verified yet."
+        }
+        return AppSessionResult(
+            profile = profile,
+            home = HomeFeedResult(
+                me = me,
+                feed = api.feed(bearer, me.membershipSummary.tenantId)
+            )
+        )
+    }
+
+    suspend fun completeProfile(request: UpsertProfileRequest): ProfileEnvelope {
+        val user = FirebaseAuth.getInstance().currentUser
+            ?: error("Your session expired. Please sign in again.")
+        val bearer = "Bearer ${bootstrapBackendSession(user)}"
+        return api.upsertProfile(bearer, request)
+    }
+
+    suspend fun loadOnboardingCatalog(): List<CourseCatalogItem> {
+        val user = FirebaseAuth.getInstance().currentUser
+            ?: error("Your session expired. Please sign in again.")
+        val bearer = "Bearer ${bootstrapBackendSession(user)}"
+        return api.courses(bearer).items
+    }
+
+    suspend fun isUsernameAvailable(username: String): Boolean {
+        val user = FirebaseAuth.getInstance().currentUser
+            ?: error("Your session expired. Please sign in again.")
+        val bearer = "Bearer ${bootstrapBackendSession(user)}"
+        return api.usernameAvailability(bearer, username).available
+    }
+
     private suspend fun bootstrapBackendSession(
         user: com.google.firebase.auth.FirebaseUser
     ): String {
-        var token = user.idToken(forceRefresh = false)
+        var token = user.requireIdToken(forceRefresh = false)
         var response = api.bootstrapSession(
             SessionBootstrapRequest(
                 idToken = token,
@@ -66,7 +74,7 @@ class VybApiRepository {
         )
 
         if (response.code() == 409) {
-            token = user.idToken(forceRefresh = true)
+            token = user.requireIdToken(forceRefresh = true)
             response = api.bootstrapSession(
                 SessionBootstrapRequest(
                     idToken = token,
@@ -81,26 +89,14 @@ class VybApiRepository {
         return token
     }
 
-    private suspend fun com.google.firebase.auth.FirebaseUser.idToken(
-        forceRefresh: Boolean
-    ): String =
-        suspendCancellableCoroutine { continuation ->
-            getIdToken(forceRefresh)
-                .addOnSuccessListener { result ->
-                    val token = result.token
-                    if (token != null) continuation.resume(token)
-                    else continuation.resumeWithException(
-                        IllegalStateException("Firebase returned an empty ID token.")
-                    )
-                }
-                .addOnFailureListener(continuation::resumeWithException)
-        }
-
-    private fun normalizeBaseUrl(value: String): String =
-        value.trim().let { if (it.endsWith("/")) it else "$it/" }
 }
 
 data class HomeFeedResult(
     val me: MeEnvelope,
     val feed: FeedEnvelope
+)
+
+data class AppSessionResult(
+    val profile: ProfileEnvelope,
+    val home: HomeFeedResult? = null
 )

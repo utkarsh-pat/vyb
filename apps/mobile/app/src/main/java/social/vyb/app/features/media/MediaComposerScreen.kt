@@ -30,7 +30,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Movie
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -60,8 +59,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import social.vyb.app.features.social.PostUtilityDialog
-import social.vyb.app.features.social.SchedulePostDialog
 import social.vyb.app.ui.VybMuted
 import social.vyb.app.ui.VybResponsiveFrame
 import social.vyb.app.ui.VybText
@@ -81,13 +78,10 @@ fun MediaComposerScreen(
     communityId: String? = null,
     onCancelCreation: () -> Unit = {},
     onExternalPickerChanged: (Boolean) -> Unit = {},
-    onScheduled: () -> Unit = {},
     onPublished: (CreatedMediaItem) -> Unit = {},
     viewModel: MediaComposerViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    var utilityDialogOpen by remember { mutableStateOf(false) }
-    var scheduleDialogOpen by remember { mutableStateOf(false) }
     var storyBuilderMedia by remember { mutableStateOf<SelectedMedia?>(null) }
     var editedStoryUri by remember { mutableStateOf<Uri?>(null) }
     var autoLaunchConsumed by remember { mutableStateOf(false) }
@@ -141,9 +135,6 @@ fun MediaComposerScreen(
     }
     LaunchedEffect(state.publishedItem) {
         state.publishedItem?.let(onPublished)
-    }
-    LaunchedEffect(state.scheduled) {
-        if (state.scheduled) onScheduled()
     }
     LaunchedEffect(state.intent, state.selected) {
         val storyMedia = state.selected.singleOrNull()
@@ -316,7 +307,6 @@ fun MediaComposerScreen(
                 progress = state.progress,
                 progressLabel = state.progressLabel,
                 canPublish = state.canPublish,
-                onOpenUtilities = { utilityDialogOpen = true },
                 onPublish = {
                     viewModel.publish(
                         isAnonymous = effectiveAnonymous,
@@ -329,38 +319,6 @@ fun MediaComposerScreen(
         }
     }
 
-    if (utilityDialogOpen) {
-        PostUtilityDialog(
-            onDismiss = { utilityDialogOpen = false },
-            onCancelCreation = {
-                utilityDialogOpen = false
-                onCancelCreation()
-            },
-            onSaveDraft = {},
-            onSchedule = {
-                utilityDialogOpen = false
-                scheduleDialogOpen = true
-            },
-            creationType = state.intent.name,
-            showDraft = false
-        )
-    }
-    if (scheduleDialogOpen) {
-        SchedulePostDialog(
-            onDismiss = { scheduleDialogOpen = false },
-            onSchedule = { publishAtMillis ->
-                scheduleDialogOpen = false
-                viewModel.schedule(
-                    publishAtMillis = publishAtMillis,
-                    isAnonymous = effectiveAnonymous,
-                    allowAnonymousComments = allowAnonymousComments,
-                    visibility = visibility,
-                    communityId = communityId
-                )
-            },
-            creationType = state.intent.name
-        )
-    }
     storyBuilderMedia?.let { selected ->
         StoryBuilderScreen(
             media = selected,
@@ -384,7 +342,7 @@ private fun MediaPublisherRow(
     anonymous: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val authorName = displayName.ifBlank { "Vybnet member" }
+    val authorName = displayName.ifBlank { "Vyb member" }
     val shownName = if (anonymous) "Anonymous Vyber" else authorName
     val shownUsername = if (anonymous) "@anonymous" else "@${username.ifBlank { "member" }}"
     val initials = authorName
@@ -482,7 +440,6 @@ private fun MediaComposerFooter(
     progress: Float,
     progressLabel: String?,
     canPublish: Boolean,
-    onOpenUtilities: () -> Unit,
     onPublish: () -> Unit
 ) {
     val enabled = canPublish && !publishing
@@ -524,31 +481,10 @@ private fun MediaComposerFooter(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Surface(
-                onClick = onOpenUtilities,
-                enabled = enabled,
-                modifier = Modifier.size(50.dp),
-                shape = CircleShape,
-                color = MediaViolet.copy(alpha = if (enabled) .16f else .06f),
-                border = androidx.compose.foundation.BorderStroke(
-                    1.dp,
-                    MediaViolet.copy(alpha = if (enabled) .38f else .14f)
-                )
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        Icons.Default.Tune,
-                        contentDescription = "${intent.name} utilities",
-                        tint = if (enabled) Color(0xFFC4B5FD)
-                        else VybMuted.copy(alpha = .35f),
-                        modifier = Modifier.size(23.dp)
-                    )
-                }
-            }
             Button(
                 onClick = onPublish,
                 enabled = enabled,
-                modifier = Modifier.weight(1f).height(50.dp),
+                modifier = Modifier.fillMaxWidth().height(50.dp),
                 shape = RoundedCornerShape(99.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MediaIndigo,

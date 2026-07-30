@@ -10,15 +10,21 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -45,17 +51,19 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import social.vyb.app.ui.VybBackground
 import social.vyb.app.ui.VybIndigo
 import social.vyb.app.ui.VybMuted
@@ -63,6 +71,8 @@ import social.vyb.app.ui.VybPanel
 import social.vyb.app.ui.VybText
 import social.vyb.app.ui.VybEmptyState
 import social.vyb.app.ui.VybLoadingMark
+import social.vyb.app.ui.VybRemoteImage
+import social.vyb.app.ui.VybRemoteVideo
 import social.vyb.app.ui.VybResponsiveFrame
 import java.text.NumberFormat
 import java.util.Locale
@@ -76,7 +86,7 @@ fun MarketFeatureScreen(
     modifier: Modifier = Modifier,
     marketViewModel: MarketViewModel = viewModel(),
 ) {
-    val state by marketViewModel.state.collectAsState()
+    val state by marketViewModel.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
 
     LaunchedEffect(state.error, state.notice) {
@@ -147,6 +157,15 @@ fun MarketFeatureScreen(
         ) {
             if (state.mutating) LinearProgressIndicator(Modifier.fillMaxWidth())
             MarketTabs(selected = state.tab, onSelected = marketViewModel::selectTab)
+            state.dashboard?.let { dashboard ->
+                MarketDiscoveryControls(
+                    state = state,
+                    categories = dashboard.categoriesFor(state.tab),
+                    onQueryChanged = marketViewModel::setQuery,
+                    onCategorySelected = marketViewModel::selectCategory,
+                    onSortSelected = marketViewModel::selectSort,
+                )
+            }
             when {
                 state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     VybLoadingMark(width = 104.dp)
@@ -189,6 +208,72 @@ fun MarketFeatureScreen(
 }
 
 @Composable
+private fun MarketDiscoveryControls(
+    state: MarketUiState,
+    categories: List<String>,
+    onQueryChanged: (String) -> Unit,
+    onCategorySelected: (String?) -> Unit,
+    onSortSelected: (MarketSort) -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        OutlinedTextField(
+            value = state.query,
+            onValueChange = onQueryChanged,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            label = { Text("Search market") },
+            placeholder = {
+                Text(if (state.tab == "sale") "Items, sellers or categories" else "Requests, people or categories")
+            },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+            trailingIcon = {
+                if (state.query.isNotEmpty()) {
+                    IconButton(onClick = { onQueryChanged("") }) {
+                        Icon(Icons.Default.Clear, contentDescription = "Clear market search")
+                    }
+                }
+            },
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            FilterChip(
+                selected = state.category == null,
+                onClick = { onCategorySelected(null) },
+                label = { Text("All categories") },
+            )
+            categories.forEach { category ->
+                FilterChip(
+                    selected = state.category?.equals(category, ignoreCase = true) == true,
+                    onClick = { onCategorySelected(category) },
+                    label = { Text(category) },
+                )
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            MarketSort.entries.forEach { option ->
+                FilterChip(
+                    selected = state.sort == option,
+                    onClick = { onSortSelected(option) },
+                    label = { Text(option.label) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = VybIndigo.copy(alpha = 0.24f),
+                        selectedLabelColor = VybText,
+                    ),
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun MarketTabs(selected: String, onSelected: (String) -> Unit) {
     Row(
         modifier = Modifier
@@ -220,14 +305,23 @@ private fun MarketContent(
     onSave: (String) -> Unit,
 ) {
     val dashboard = checkNotNull(state.dashboard)
-    val listings = if (state.showSavedOnly) dashboard.listings.filter { it.isSaved } else dashboard.listings
-    val requests = dashboard.requests.filter { it.tab == state.tab }
+    val visible = dashboard.visibleContent(state)
+    val listings = visible.listings
+    val requests = visible.requests
 
     if ((state.tab == "sale" && listings.isEmpty()) || (state.tab != "sale" && requests.isEmpty())) {
+        val hasFilters = state.query.isNotBlank() || state.category != null
         MarketEmpty(
-            title = if (state.showSavedOnly) "No saved listings" else "Nothing here yet",
-            body = if (state.showSavedOnly) "Bookmark a listing and it will appear here."
-            else "Be the first person to publish in this section.",
+            title = when {
+                state.showSavedOnly -> "No saved listings"
+                hasFilters -> "No matching market posts"
+                else -> "Nothing here yet"
+            },
+            body = when {
+                state.showSavedOnly -> "Bookmark a listing and it will appear here."
+                hasFilters -> "Try another search, category or sort option."
+                else -> "Be the first person to publish in this section."
+            },
         )
         return
     }
@@ -270,6 +364,14 @@ private fun ListingCard(
 ) {
     Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            listing.media.firstOrNull { it.url.isNotBlank() }?.let { media ->
+                MarketMediaItem(
+                    media = media,
+                    contentDescription = "${listing.title} media",
+                    modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+                        .clip(RoundedCornerShape(14.dp)),
+                )
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = listing.title,
@@ -310,6 +412,14 @@ private fun ListingCard(
 private fun RequestCard(request: MarketRequest, onClick: () -> Unit) {
     Card(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            request.media.firstOrNull { it.url.isNotBlank() }?.let { media ->
+                MarketMediaItem(
+                    media = media,
+                    contentDescription = "${request.title} media",
+                    modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+                        .clip(RoundedCornerShape(14.dp)),
+                )
+            }
             Text(request.tag, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             Text(request.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(request.detail, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -345,7 +455,14 @@ private fun MarketDetailDialog(
         onDismissRequest = onDismiss,
         title = { Text(listing?.title ?: request?.title.orEmpty()) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                MarketMediaGallery(
+                    media = listing?.media ?: request?.media.orEmpty(),
+                    title = listing?.title ?: request?.title.orEmpty(),
+                )
                 Text(
                     listing?.let { rupees(it.priceAmount) }
                         ?: request?.budgetLabel.orEmpty().ifBlank { "Budget open" },
@@ -394,6 +511,51 @@ private fun MarketDetailDialog(
             }
         },
     )
+}
+
+@Composable
+private fun MarketMediaGallery(media: List<MarketMedia>, title: String) {
+    val visibleMedia = media.filter { it.url.isNotBlank() }
+    if (visibleMedia.isEmpty()) return
+
+    LazyRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        items(visibleMedia, key = { it.id.ifBlank { it.url } }) { item ->
+            MarketMediaItem(
+                media = item,
+                contentDescription = "$title media",
+                modifier = Modifier.fillParentMaxWidth().aspectRatio(16f / 9f)
+                    .clip(RoundedCornerShape(14.dp)),
+            )
+        }
+    }
+}
+
+@Composable
+private fun MarketMediaItem(
+    media: MarketMedia,
+    contentDescription: String,
+    modifier: Modifier,
+) {
+    val isVideo = media.kind.equals("video", ignoreCase = true) ||
+        media.mimeType.startsWith("video/", ignoreCase = true)
+    if (isVideo) {
+        VybRemoteVideo(
+            url = media.url,
+            contentDescription = contentDescription,
+            modifier = modifier,
+            autoPlay = false,
+        )
+    } else {
+        VybRemoteImage(
+            url = media.url,
+            contentDescription = contentDescription,
+            modifier = modifier,
+            contentScale = ContentScale.Crop,
+        )
+    }
 }
 
 @Composable

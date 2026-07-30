@@ -1,5 +1,7 @@
 package social.vyb.app.features.social
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -27,16 +29,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Drafts
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.FavoriteBorder
-import androidx.compose.material.icons.outlined.PermMedia
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -52,7 +51,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
@@ -68,16 +66,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.launch
 import social.vyb.app.features.media.MediaComposerScreen
 import social.vyb.app.features.media.MediaPublishIntent
@@ -102,32 +98,13 @@ fun CreatePostComposer(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    val draftPreferences = remember(context) {
-        context.getSharedPreferences("vybnet_post_draft", android.content.Context.MODE_PRIVATE)
-    }
-    var text by remember {
-        mutableStateOf(draftPreferences.getString("text", "").orEmpty())
-    }
-    var anonymous by remember {
-        mutableStateOf(draftPreferences.getBoolean("anonymous", false))
-    }
-    var allowAnonymousComments by remember {
-        mutableStateOf(draftPreferences.getBoolean("allow_anonymous_comments", true))
-    }
+    var text by remember { mutableStateOf("") }
+    var anonymous by remember { mutableStateOf(false) }
+    var allowAnonymousComments by remember { mutableStateOf(true) }
     var selectedCommunityId by remember(communities) {
-        mutableStateOf(
-            draftPreferences.getString("community_id", null)
-                ?.takeIf { savedId -> communities.any { it.id == savedId } }
-        )
+        mutableStateOf<String?>(null)
     }
-    var reach by remember {
-        mutableStateOf(
-            PostReach.fromWireValue(
-                draftPreferences.getString("visibility", PostReach.Public.wireValue)
-            )
-        )
-    }
+    var reach by remember { mutableStateOf(PostReach.Public) }
     LaunchedEffect(communities) {
         if (reach == PostReach.CommunityOnly && selectedCommunityId == null) {
             selectedCommunityId = communities.firstOrNull()?.id
@@ -137,8 +114,6 @@ fun CreatePostComposer(
     var selectedIntent by remember { mutableStateOf(MediaPublishIntent.Post) }
     var mediaComposerOpen by remember { mutableStateOf(false) }
     var settingsDialogOpen by remember { mutableStateOf(false) }
-    var utilityDialogOpen by remember { mutableStateOf(false) }
-    var scheduleDialogOpen by remember { mutableStateOf(false) }
     var externalPickerOpen by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
@@ -212,7 +187,6 @@ fun CreatePostComposer(
                     },
                     onCancelCreation = ::hideThenDismiss,
                     onExternalPickerChanged = { externalPickerOpen = it },
-                    onScheduled = ::hideThenDismiss,
                     onPublished = {
                         mediaComposerOpen = false
                         hideThenDismiss()
@@ -235,21 +209,6 @@ fun CreatePostComposer(
                 onOpenSettings = { settingsDialogOpen = true },
                 onAddPhoto = { mediaComposerOpen = true },
                 onDismiss = ::hideThenDismiss,
-                onSaveDraft = {
-                    draftPreferences.edit()
-                        .putString("text", text)
-                        .putBoolean("anonymous", anonymous)
-                        .putBoolean(
-                            "allow_anonymous_comments",
-                            allowAnonymousComments
-                        )
-                        .putString("visibility", reach.wireValue)
-                        .putString("community_id", selectedCommunityId)
-                        .putLong("saved_at", System.currentTimeMillis())
-                        .apply()
-                    hideThenDismiss()
-                },
-                onOpenSchedule = { utilityDialogOpen = true },
                 onPublish = {
                     onPublish(
                         text,
@@ -262,55 +221,6 @@ fun CreatePostComposer(
                 }
             )
         }
-    }
-
-    if (utilityDialogOpen) {
-        PostUtilityDialog(
-            onDismiss = { utilityDialogOpen = false },
-            onCancelCreation = {
-                utilityDialogOpen = false
-                hideThenDismiss()
-            },
-            onSaveDraft = {
-                utilityDialogOpen = false
-                draftPreferences.edit()
-                    .putString("text", text)
-                    .putBoolean("anonymous", anonymous)
-                    .putBoolean(
-                        "allow_anonymous_comments",
-                        allowAnonymousComments
-                    )
-                    .putString("visibility", reach.wireValue)
-                    .putString("community_id", selectedCommunityId)
-                    .putLong("saved_at", System.currentTimeMillis())
-                    .apply()
-                hideThenDismiss()
-            },
-            onSchedule = {
-                utilityDialogOpen = false
-                scheduleDialogOpen = true
-            }
-        )
-    }
-
-    if (scheduleDialogOpen) {
-        SchedulePostDialog(
-            onDismiss = { scheduleDialogOpen = false },
-            onSchedule = { publishAtMillis ->
-                ScheduledPostWorker.schedule(
-                    context = context,
-                    text = text,
-                    isAnonymous = anonymous,
-                    allowAnonymousComments = allowAnonymousComments,
-                    visibility = reach.wireValue,
-                    communityId = selectedCommunityId.takeIf { reach == PostReach.CommunityOnly },
-                    publishAtMillis = publishAtMillis
-                )
-                draftPreferences.edit().clear().apply()
-                scheduleDialogOpen = false
-                hideThenDismiss()
-            }
-        )
     }
 
     if (settingsDialogOpen) {
@@ -351,11 +261,9 @@ private fun CreationStudioPostContent(
     onOpenSettings: () -> Unit,
     onAddPhoto: () -> Unit,
     onDismiss: () -> Unit,
-    onSaveDraft: () -> Unit,
-    onOpenSchedule: () -> Unit,
     onPublish: () -> Unit
 ) {
-    val authorName = displayName.ifBlank { "Vybnet member" }
+    val authorName = displayName.ifBlank { "Vyb member" }
     val initials = authorName
         .split(" ")
         .filter(String::isNotBlank)
@@ -507,9 +415,6 @@ private fun CreationStudioPostContent(
         StudioFooter(
             publishing = state.creatingPost,
             canPublish = text.isNotBlank(),
-            onDismiss = onDismiss,
-            onSaveDraft = onSaveDraft,
-            onOpenSchedule = onOpenSchedule,
             onPublish = onPublish
         )
     }
@@ -624,7 +529,7 @@ private fun StudioCircleButton(
         onClick = onClick,
         enabled = enabled,
         modifier = Modifier
-            .size(38.dp)
+            .size(48.dp)
             .border(1.dp, Color.White.copy(alpha = .1f), CircleShape)
             .background(Color.White.copy(alpha = .05f), CircleShape)
     ) {
@@ -936,9 +841,6 @@ private fun StudioToggle(
 private fun StudioFooter(
     publishing: Boolean,
     canPublish: Boolean,
-    onDismiss: () -> Unit,
-    onSaveDraft: () -> Unit,
-    onOpenSchedule: () -> Unit,
     onPublish: () -> Unit
 ) {
     HorizontalDivider(color = StudioViolet.copy(alpha = .22f))
@@ -955,43 +857,10 @@ private fun StudioFooter(
             color = VybMuted.copy(alpha = .75f),
             fontSize = 11.sp
         )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                onClick = onOpenSchedule,
-                enabled = canPublish && !publishing,
-                modifier = Modifier.size(50.dp),
-                shape = CircleShape,
-                color = StudioViolet.copy(
-                    alpha = if (canPublish && !publishing) .16f else .06f
-                ),
-                border = androidx.compose.foundation.BorderStroke(
-                    1.dp,
-                    StudioViolet.copy(
-                        alpha = if (canPublish && !publishing) .38f else .14f
-                    )
-                )
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        Icons.Default.Tune,
-                        contentDescription = "Post utilities",
-                        tint = if (canPublish && !publishing) {
-                            Color(0xFFC4B5FD)
-                        } else {
-                            VybMuted.copy(alpha = .35f)
-                        },
-                        modifier = Modifier.size(23.dp)
-                    )
-                }
-            }
-            Button(
+        Button(
                 onClick = onPublish,
                 enabled = canPublish && !publishing,
-                modifier = Modifier.weight(1f).height(50.dp),
+                modifier = Modifier.fillMaxWidth().height(50.dp),
                 shape = RoundedCornerShape(99.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = StudioIndigo,
@@ -1010,587 +879,236 @@ private fun StudioFooter(
                 } else {
                     Text("Publish Post ✦", fontWeight = FontWeight.Bold, maxLines = 1)
                 }
-            }
         }
     }
 }
-
-@Composable
-private fun LegacyStudioFooterWithSplitActions(
-    publishing: Boolean,
-    canPublish: Boolean,
-    onDismiss: () -> Unit,
-    onSaveDraft: () -> Unit,
-    onOpenSchedule: () -> Unit,
-    onPublish: () -> Unit
-) {
-    HorizontalDivider(color = StudioViolet.copy(alpha = .22f))
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color(0xFF0A0E1A).copy(alpha = .92f))
-            .padding(horizontal = 18.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        Text(
-            "Up to 6 photos · Text-only posts are fine too",
-            modifier = Modifier.fillMaxWidth(),
-            color = VybMuted.copy(alpha = .75f),
-            fontSize = 11.sp
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedButton(
-                onClick = onDismiss,
-                enabled = !publishing,
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(99.dp),
-                border = androidx.compose.foundation.BorderStroke(
-                    1.dp,
-                    Color.White.copy(alpha = .1f)
-                )
-            ) {
-                Text("Cancel", color = VybMuted, fontSize = 12.sp, maxLines = 1)
-            }
-            OutlinedButton(
-                onClick = onSaveDraft,
-                enabled = canPublish && !publishing,
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(99.dp),
-                border = androidx.compose.foundation.BorderStroke(
-                    1.dp,
-                    StudioTeal.copy(alpha = .32f)
-                )
-            ) {
-                Icon(
-                    Icons.Default.Drafts,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                    tint = StudioTeal
-                )
-                Spacer(Modifier.width(5.dp))
-                Text("Save draft", color = StudioTeal, fontSize = 12.sp, maxLines = 1)
-            }
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                onClick = onOpenSchedule,
-                enabled = canPublish && !publishing,
-                modifier = Modifier.size(48.dp),
-                shape = CircleShape,
-                color = StudioViolet.copy(
-                    alpha = if (canPublish && !publishing) .18f else .06f
-                ),
-                border = androidx.compose.foundation.BorderStroke(
-                    1.dp,
-                    StudioViolet.copy(alpha = .38f)
-                )
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        Icons.Default.Schedule,
-                        contentDescription = "Schedule post",
-                        tint = if (canPublish && !publishing) {
-                            Color(0xFFC4B5FD)
-                        } else {
-                            VybMuted.copy(alpha = .35f)
-                        },
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-            }
-            Button(
-                onClick = onPublish,
-                enabled = canPublish && !publishing,
-                modifier = Modifier.weight(1f).height(48.dp),
-                shape = RoundedCornerShape(99.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = StudioIndigo,
-                    disabledContainerColor = StudioIndigo.copy(alpha = .12f),
-                    disabledContentColor = StudioViolet.copy(alpha = .45f)
-                )
-            ) {
-                if (publishing) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(17.dp),
-                        color = Color.White,
-                        strokeWidth = 2.dp
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text("Queueing…")
-                } else {
-                    Text("Publish Post ✦", fontWeight = FontWeight.Bold, maxLines = 1)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun LegacyStudioFooter(
-    publishing: Boolean,
-    canPublish: Boolean,
-    onDismiss: () -> Unit,
-    onSaveDraft: () -> Unit,
-    onOpenSchedule: () -> Unit,
-    onPublish: () -> Unit
-) {
-    HorizontalDivider(color = StudioViolet.copy(alpha = .22f))
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color(0xFF0A0E1A).copy(alpha = .92f))
-            .padding(horizontal = 18.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        Text(
-            "Up to 6 photos · Text-only posts are fine too",
-            modifier = Modifier.fillMaxWidth(),
-            color = VybMuted.copy(alpha = .75f),
-            fontSize = 11.sp
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(
-                modifier = Modifier.weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(5.dp)
-            ) {
-                OutlinedButton(
-                    onClick = onDismiss,
-                    enabled = !publishing,
-                    modifier = Modifier.weight(1f),
-                    contentPadding = ButtonDefaults.ContentPadding,
-                    shape = RoundedCornerShape(99.dp),
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        Color.White.copy(alpha = .1f)
-                    )
-                ) {
-                    Text("Cancel", color = VybMuted, fontSize = 11.sp)
-                }
-                OutlinedButton(
-                    onClick = onSaveDraft,
-                    enabled = canPublish && !publishing,
-                    modifier = Modifier.weight(1f),
-                    contentPadding = ButtonDefaults.ContentPadding,
-                    shape = RoundedCornerShape(99.dp),
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        StudioTeal.copy(alpha = .28f)
-                    )
-                ) {
-                    Icon(
-                        Icons.Default.Drafts,
-                        contentDescription = null,
-                        modifier = Modifier.size(15.dp),
-                        tint = StudioTeal
-                    )
-                    Spacer(Modifier.width(3.dp))
-                    Text("Draft", color = StudioTeal, fontSize = 11.sp)
-                }
-            }
-            Row(
-                modifier = Modifier.weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Surface(
-                    onClick = onOpenSchedule,
-                    enabled = canPublish && !publishing,
-                    modifier = Modifier.size(44.dp),
-                    shape = CircleShape,
-                    color = StudioViolet.copy(
-                        alpha = if (canPublish && !publishing) .18f else .06f
-                    ),
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        StudioViolet.copy(alpha = .35f)
-                    )
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            Icons.Default.Schedule,
-                            contentDescription = "Schedule post",
-                            tint = if (canPublish && !publishing) {
-                                Color(0xFFC4B5FD)
-                            } else {
-                                VybMuted.copy(alpha = .35f)
-                            },
-                            modifier = Modifier.size(21.dp)
-                        )
-                    }
-                }
-                Button(
-                    onClick = onPublish,
-                    enabled = canPublish && !publishing,
-                    modifier = Modifier.weight(1f),
-                    contentPadding = ButtonDefaults.ContentPadding,
-                    shape = RoundedCornerShape(99.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = StudioIndigo,
-                        disabledContainerColor = StudioIndigo.copy(alpha = .12f),
-                        disabledContentColor = StudioViolet.copy(alpha = .45f)
-                    )
-                ) {
-                    if (publishing) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            color = Color.White,
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Text("Publish ✦", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-internal fun PostUtilityDialog(
-    onDismiss: () -> Unit,
-    onCancelCreation: () -> Unit,
-    onSaveDraft: () -> Unit,
-    onSchedule: () -> Unit,
-    creationType: String = "Post",
-    showDraft: Boolean = true
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Color(0xFF0B1120),
-        icon = {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .background(StudioViolet.copy(alpha = .16f), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Default.Tune,
-                    contentDescription = null,
-                    tint = Color(0xFFC4B5FD)
-                )
-            }
-        },
-        title = {
-            Text(
-                "$creationType utilities",
-                color = VybText,
-                fontWeight = FontWeight.Bold
-            )
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                UtilityAction(
-                    icon = Icons.Default.Close,
-                    title = "Cancel creation",
-                    detail = "Discard this editing session",
-                    accent = Color(0xFFFCA5A5),
-                    onClick = onCancelCreation
-                )
-                if (showDraft) {
-                    UtilityAction(
-                        icon = Icons.Default.Drafts,
-                        title = "Save draft",
-                        detail = "Continue this ${creationType.lowercase()} later",
-                        accent = StudioTeal,
-                        onClick = onSaveDraft
-                    )
-                }
-                UtilityAction(
-                    icon = Icons.Default.Schedule,
-                    title = "Schedule ${creationType.lowercase()}",
-                    detail = "Choose a future publish time",
-                    accent = Color(0xFFC4B5FD),
-                    onClick = onSchedule
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Back", color = VybMuted)
-            }
-        }
-    )
-}
-
-@Composable
-private fun UtilityAction(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    title: String,
-    detail: String,
-    accent: Color,
-    onClick: () -> Unit
-) {
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        color = Color.White.copy(alpha = .035f),
-        shape = RoundedCornerShape(14.dp),
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            accent.copy(alpha = .22f)
-        )
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(38.dp)
-                    .background(accent.copy(alpha = .13f), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    icon,
-                    contentDescription = null,
-                    tint = accent,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-            Column(Modifier.padding(start = 12.dp)) {
-                Text(
-                    title,
-                    color = VybText,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 13.sp
-                )
-                Text(detail, color = VybMuted, fontSize = 11.sp)
-            }
-        }
-    }
-}
-
-@Composable
-internal fun SchedulePostDialog(
-    onDismiss: () -> Unit,
-    onSchedule: (Long) -> Unit,
-    creationType: String = "Post"
-) {
-    val options = remember {
-        val now = ZonedDateTime.now()
-        val inOneHour = now.plusHours(1)
-        val todayAtEight = now
-            .withHour(20)
-            .withMinute(0)
-            .withSecond(0)
-            .withNano(0)
-        val evening = if (todayAtEight.isAfter(now)) {
-            todayAtEight
-        } else {
-            todayAtEight.plusDays(1)
-        }
-        listOf(
-            ScheduleChoice("In 1 hour", inOneHour),
-            ScheduleChoice("Evening", evening),
-            ScheduleChoice(
-                "Tomorrow morning",
-                now.plusDays(1)
-                    .withHour(9)
-                    .withMinute(0)
-                    .withSecond(0)
-                    .withNano(0)
-            )
-        )
-    }
-    var selected by remember { mutableStateOf(options.first()) }
-    val formatter = remember {
-        DateTimeFormatter.ofPattern("EEE, d MMM · h:mm a")
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Color(0xFF0B1120),
-        icon = {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .background(StudioViolet.copy(alpha = .16f), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Default.Schedule,
-                    contentDescription = null,
-                    tint = Color(0xFFC4B5FD)
-                )
-            }
-        },
-        title = {
-            Text(
-                "Schedule ${creationType.lowercase()}",
-                color = VybText,
-                fontWeight = FontWeight.Bold
-            )
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                Text(
-                    "Choose when Vybnet should publish this ${creationType.lowercase()}.",
-                    color = VybMuted,
-                    fontSize = 13.sp
-                )
-                options.forEach { option ->
-                    val active = selected == option
-                    Surface(
-                        onClick = { selected = option },
-                        modifier = Modifier.fillMaxWidth(),
-                        color = if (active) {
-                            StudioViolet.copy(alpha = .14f)
-                        } else {
-                            Color.White.copy(alpha = .035f)
-                        },
-                        shape = RoundedCornerShape(14.dp),
-                        border = androidx.compose.foundation.BorderStroke(
-                            1.dp,
-                            if (active) {
-                                StudioViolet.copy(alpha = .4f)
-                            } else {
-                                Color.White.copy(alpha = .08f)
-                            }
-                        )
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                Modifier
-                                    .size(9.dp)
-                                    .background(
-                                        if (active) StudioTeal else VybMuted.copy(alpha = .25f),
-                                        CircleShape
-                                    )
-                            )
-                            Column(Modifier.padding(start = 11.dp)) {
-                                Text(
-                                    option.label,
-                                    color = VybText,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 13.sp
-                                )
-                                Text(
-                                    option.time.format(formatter),
-                                    color = VybMuted,
-                                    fontSize = 11.sp
-                                )
-                            }
-                        }
-                    }
-                }
-                Text(
-                    "Scheduling uses this device and waits for an internet connection.",
-                    color = VybMuted.copy(alpha = .72f),
-                    fontSize = 10.sp
-                )
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Back", color = VybMuted)
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    onSchedule(selected.time.toInstant().toEpochMilli())
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = StudioIndigo),
-                shape = RoundedCornerShape(99.dp)
-            ) {
-                Text("Schedule $creationType", fontWeight = FontWeight.Bold)
-            }
-        }
-    )
-}
-
-private data class ScheduleChoice(
-    val label: String,
-    val time: ZonedDateTime
-)
 
 private val StudioBackground = Color(0xFF080D1A)
 private val StudioIndigo = Color(0xFF6366F1)
 private val StudioViolet = Color(0xFFA855F7)
 private val StudioTeal = Color(0xFF22D3C5)
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LegacyCreatePostComposer(
+fun SocialOperationFeedback(
     state: SocialActionsUiState,
-    onPublish: (text: String, isAnonymous: Boolean) -> Unit,
-    modifier: Modifier = Modifier
+    onDismissError: () -> Unit,
+    onDismissNotice: () -> Unit
 ) {
-    var text by remember { mutableStateOf("") }
-    var anonymous by remember { mutableStateOf(false) }
-    var mediaComposerOpen by remember { mutableStateOf(false) }
-    Column(modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Create post", style = MaterialTheme.typography.titleLarge)
-        OutlinedTextField(
-            value = text,
-            onValueChange = { text = it },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Share something with your campus") },
-            minLines = 4,
-            maxLines = 8,
-            enabled = !state.creatingPost
+    state.operationError?.let { message ->
+        AlertDialog(
+            onDismissRequest = onDismissError,
+            title = { Text("Action failed") },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = onDismissError) { Text("OK") }
+            }
         )
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedButton(
-                onClick = { anonymous = !anonymous },
-                enabled = !state.creatingPost,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(if (anonymous) "Anonymous ✓" else "Post anonymously")
+    } ?: state.operationNotice?.let { message ->
+        AlertDialog(
+            onDismissRequest = onDismissNotice,
+            title = { Text("Done") },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = onDismissNotice) { Text("OK") }
             }
-            Button(
-                onClick = { onPublish(text, anonymous) },
-                enabled = text.isNotBlank() && !state.creatingPost,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                if (state.creatingPost) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.width(18.dp).height(18.dp),
-                        strokeWidth = 2.dp
-                    )
-                    Spacer(Modifier.width(8.dp))
-                }
-                Text("Publish")
-            }
-        }
-        state.createPostError?.let {
-            Text(it, color = MaterialTheme.colorScheme.error)
-        }
-        OutlinedButton(
-            onClick = { mediaComposerOpen = true },
-            enabled = !state.creatingPost,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Icon(Icons.Outlined.PermMedia, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text("Create with photo or video")
+        )
+    }
+}
+
+@Composable
+fun PostOverflowActions(
+    postId: String,
+    title: String,
+    body: String,
+    isOwner: Boolean,
+    busy: Boolean,
+    reactionMembers: ReactionMembersState,
+    onLoadReactionMembers: () -> Unit,
+    onRepost: (quote: String) -> Unit,
+    onUpdate: (title: String, body: String) -> Unit,
+    onDelete: () -> Unit,
+    onReport: (reason: String) -> Unit,
+    iconTint: Color = MaterialTheme.colorScheme.onSurfaceVariant
+) {
+    val context = LocalContext.current
+    var menuOpen by remember(postId) { mutableStateOf(false) }
+    var dialog by remember(postId) { mutableStateOf<String?>(null) }
+    var draftTitle by remember(postId, title) { mutableStateOf(title) }
+    var draftBody by remember(postId, body) { mutableStateOf(body) }
+    var quote by remember(postId) { mutableStateOf("") }
+    var reason by remember(postId) { mutableStateOf("") }
+
+    IconButton(onClick = { menuOpen = true }, enabled = !busy) {
+        if (busy) {
+            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = iconTint)
+        } else {
+            Icon(Icons.Default.MoreHoriz, "More post actions", tint = iconTint)
         }
     }
-    if (mediaComposerOpen) {
-        ModalBottomSheet(onDismissRequest = { mediaComposerOpen = false }) {
-            MediaComposerScreen(
-                modifier = Modifier.fillMaxWidth().fillMaxHeight(.9f),
-                onPublished = { mediaComposerOpen = false }
-            )
-        }
+
+    if (menuOpen) {
+        AlertDialog(
+            onDismissRequest = { menuOpen = false },
+            title = { Text("Post actions") },
+            text = {
+                Column {
+                    TextButton(onClick = {
+                        val shareText = body.ifBlank { title }
+                        val url = "https://vybnet.app/post/${Uri.encode(postId)}"
+                        context.startActivity(
+                            Intent.createChooser(
+                                Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, "$shareText\n$url".trim())
+                                },
+                                "Share post"
+                            )
+                        )
+                        menuOpen = false
+                    }) { Text("Share") }
+                    TextButton(onClick = {
+                        onLoadReactionMembers()
+                        dialog = "likes"
+                        menuOpen = false
+                    }) { Text("View likes") }
+                    TextButton(onClick = {
+                        dialog = "repost"
+                        menuOpen = false
+                    }) { Text("Repost") }
+                    if (isOwner) {
+                        TextButton(onClick = {
+                            dialog = "edit"
+                            menuOpen = false
+                        }) { Text("Edit") }
+                        TextButton(onClick = {
+                            dialog = "delete"
+                            menuOpen = false
+                        }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                    } else {
+                        TextButton(onClick = {
+                            dialog = "report"
+                            menuOpen = false
+                        }) { Text("Report", color = MaterialTheme.colorScheme.error) }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { menuOpen = false }) { Text("Close") }
+            }
+        )
+    }
+
+    when (dialog) {
+        "likes" -> AlertDialog(
+            onDismissRequest = { dialog = null },
+            title = { Text("Likes") },
+            text = {
+                when {
+                    reactionMembers.loading -> CircularProgressIndicator()
+                    reactionMembers.error != null -> Text(
+                        reactionMembers.error,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    reactionMembers.items.isEmpty() -> Text("No likes yet.")
+                    else -> LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                        items(reactionMembers.items, key = { it.membershipId }) { member ->
+                            Column(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
+                                Text(member.displayName, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "@${member.username}",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { dialog = null }) { Text("Done") } }
+        )
+        "repost" -> AlertDialog(
+            onDismissRequest = { dialog = null },
+            title = { Text("Repost") },
+            text = {
+                OutlinedTextField(
+                    value = quote,
+                    onValueChange = { quote = it },
+                    label = { Text("Add a thought (optional)") },
+                    maxLines = 4
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onRepost(quote)
+                    dialog = null
+                }) { Text("Repost") }
+            },
+            dismissButton = { TextButton(onClick = { dialog = null }) { Text("Cancel") } }
+        )
+        "edit" -> AlertDialog(
+            onDismissRequest = { dialog = null },
+            title = { Text("Edit post") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = draftTitle,
+                        onValueChange = { draftTitle = it },
+                        label = { Text("Title") }
+                    )
+                    OutlinedTextField(
+                        value = draftBody,
+                        onValueChange = { draftBody = it },
+                        label = { Text("Post") },
+                        minLines = 3,
+                        maxLines = 8
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = draftBody.isNotBlank(),
+                    onClick = {
+                        onUpdate(draftTitle, draftBody)
+                        dialog = null
+                    }
+                ) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { dialog = null }) { Text("Cancel") } }
+        )
+        "delete" -> AlertDialog(
+            onDismissRequest = { dialog = null },
+            title = { Text("Delete post?") },
+            text = { Text("This cannot be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDelete()
+                    dialog = null
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { dialog = null }) { Text("Cancel") } }
+        )
+        "report" -> AlertDialog(
+            onDismissRequest = { dialog = null },
+            title = { Text("Report post") },
+            text = {
+                OutlinedTextField(
+                    value = reason,
+                    onValueChange = { reason = it },
+                    label = { Text("Reason") },
+                    minLines = 2,
+                    maxLines = 5
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = reason.isNotBlank(),
+                    onClick = {
+                        onReport(reason)
+                        dialog = null
+                    }
+                ) { Text("Submit report") }
+            },
+            dismissButton = { TextButton(onClick = { dialog = null }) { Text("Cancel") } }
+        )
     }
 }
 
@@ -1651,10 +1169,15 @@ fun CommentsBottomSheet(
     thread: CommentThreadState,
     onLoad: () -> Unit,
     onRetry: () -> Unit,
-    onAddComment: (text: String, onAdded: () -> Unit) -> Unit,
+    onAddComment: (text: String, parentCommentId: String?, onAdded: () -> Unit) -> Unit,
+    onToggleCommentReaction: (commentId: String) -> Unit,
+    onUpdateComment: (commentId: String, body: String) -> Unit,
+    onDeleteComment: (commentId: String) -> Unit,
+    busyCommentIds: Set<String>,
     onDismiss: () -> Unit
 ) {
     var text by remember(postId) { mutableStateOf("") }
+    var replyTo by remember(postId) { mutableStateOf<SocialComment?>(null) }
     LaunchedEffect(postId) { onLoad() }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -1678,7 +1201,15 @@ fun CommentsBottomSheet(
                 else -> {
                     LazyColumn(modifier = Modifier.weight(1f, fill = false)) {
                         items(thread.items, key = { it.id }) { comment ->
-                            CommentRow(comment, Modifier.fillMaxWidth())
+                            CommentRow(
+                                comment = comment,
+                                busy = comment.id in busyCommentIds,
+                                onReply = { replyTo = comment },
+                                onToggleReaction = { onToggleCommentReaction(comment.id) },
+                                onUpdate = onUpdateComment,
+                                onDelete = onDeleteComment,
+                                modifier = Modifier.fillMaxWidth()
+                            )
                         }
                     }
                 }
@@ -1687,6 +1218,16 @@ fun CommentsBottomSheet(
                 Text(it, color = MaterialTheme.colorScheme.error)
             }
             Spacer(Modifier.height(12.dp))
+            replyTo?.let { target ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Replying to ${target.author?.displayName ?: "member"}",
+                        modifier = Modifier.weight(1f),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    TextButton(onClick = { replyTo = null }) { Text("Cancel") }
+                }
+            }
             Row(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -1702,7 +1243,10 @@ fun CommentsBottomSheet(
                 Spacer(Modifier.width(8.dp))
                 Button(
                     onClick = {
-                        onAddComment(text) { text = "" }
+                        onAddComment(text, replyTo?.id) {
+                            text = ""
+                            replyTo = null
+                        }
                     },
                     enabled = text.trim().length >= 2 && !thread.submitting
                 ) {
@@ -1722,13 +1266,78 @@ fun CommentsBottomSheet(
 }
 
 @Composable
-private fun CommentRow(comment: SocialComment, modifier: Modifier = Modifier) {
-    Column(modifier.padding(vertical = 8.dp)) {
+private fun CommentRow(
+    comment: SocialComment,
+    busy: Boolean,
+    onReply: () -> Unit,
+    onToggleReaction: () -> Unit,
+    onUpdate: (String, String) -> Unit,
+    onDelete: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var editing by remember(comment.id) { mutableStateOf(false) }
+    var draft by remember(comment.id, comment.body) { mutableStateOf(comment.body) }
+    Column(
+        modifier
+            .padding(start = if (comment.parentCommentId == null) 0.dp else 22.dp)
+            .padding(vertical = 8.dp)
+    ) {
         Text(
             comment.author?.displayName
-                ?: if (comment.isAnonymous) "Anonymous" else "Vybnet member",
+                ?: if (comment.isAnonymous) "Anonymous" else "Vyb member",
             style = MaterialTheme.typography.labelLarge
         )
-        Text(comment.body, style = MaterialTheme.typography.bodyMedium)
+        if (editing) {
+            OutlinedTextField(
+                value = draft,
+                onValueChange = { draft = it },
+                enabled = !busy,
+                modifier = Modifier.fillMaxWidth()
+            )
+        } else {
+            Text(comment.body, style = MaterialTheme.typography.bodyMedium)
+        }
+        Row {
+            TextButton(
+                onClick = onToggleReaction,
+                enabled = !busy,
+                modifier = Modifier.defaultMinSize(minHeight = 48.dp)
+            ) {
+                Icon(
+                    imageVector = if (comment.viewerHasLiked) {
+                        Icons.Filled.Favorite
+                    } else {
+                        Icons.Outlined.FavoriteBorder
+                    },
+                    contentDescription = if (comment.viewerHasLiked) {
+                        "Unlike comment"
+                    } else {
+                        "Like comment"
+                    },
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    if (comment.reactions > 0) comment.reactions.toString() else "Like"
+                )
+            }
+            TextButton(onClick = onReply, enabled = !busy) { Text("Reply") }
+            if (comment.viewerCanManage) {
+                TextButton(
+                    onClick = {
+                        if (editing) {
+                            onUpdate(comment.id, draft)
+                            editing = false
+                        } else {
+                            editing = true
+                        }
+                    },
+                    enabled = !busy && (!editing || draft.trim().length >= 2)
+                ) { Text(if (editing) "Save" else "Edit") }
+                TextButton(onClick = { onDelete(comment.id) }, enabled = !busy) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
     }
 }

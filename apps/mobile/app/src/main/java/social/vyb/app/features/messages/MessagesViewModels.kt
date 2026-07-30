@@ -3,6 +3,7 @@ package social.vyb.app.features.messages
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,14 +16,26 @@ import social.vyb.app.features.realtime.ChatRealtimeEvent
 data class InboxUiState(
     val isLoading: Boolean = true,
     val items: List<ChatInboxItem> = emptyList(),
+    val communities: List<CommunityInboxItem> = emptyList(),
     val query: String = "",
-    val error: String? = null
+    val error: String? = null,
+    val communityError: String? = null
 ) {
     val filteredItems: List<ChatInboxItem>
         get() {
             val needle = query.trim()
             return if (needle.isEmpty()) items else items.filter {
                 it.peerName.contains(needle, true) || it.peerHandle.contains(needle, true)
+            }
+        }
+
+    val filteredCommunities: List<CommunityInboxItem>
+        get() {
+            val needle = query.trim()
+            return if (needle.isEmpty()) communities else communities.filter {
+                it.name.contains(needle, true) ||
+                    it.type.contains(needle, true) ||
+                    it.membershipRole?.contains(needle, true) == true
             }
         }
 }
@@ -32,26 +45,124 @@ class MessagesInboxViewModel(
 ) : ViewModel() {
     private val _state = MutableStateFlow(InboxUiState())
     val state: StateFlow<InboxUiState> = _state.asStateFlow()
+    private var refreshJob: Job? = null
 
     init {
         refresh()
     }
 
     fun refresh() {
-        viewModelScope.launch {
-            _state.update { it.copy(isLoading = true, error = null) }
-            runCatching { repository.loadInbox() }
-                .onSuccess { items -> _state.update { it.copy(isLoading = false, items = items) } }
-                .onFailure { error ->
-                    _state.update {
-                        it.copy(isLoading = false, error = error.message ?: "Messages could not load.")
-                    }
-                }
+        if (refreshJob?.isActive == true) return
+        refreshJob = viewModelScope.launch {
+            _state.update { it.copy(isLoading = true, error = null, communityError = null) }
+            val inbox = async { runCatching { repository.loadInbox() } }
+            val communities = async { runCatching { repository.loadCommunityInbox() } }
+            val inboxResult = inbox.await()
+            val communityResult = communities.await()
+            _state.update {
+                it.copy(
+                    isLoading = false,
+                    items = inboxResult.getOrDefault(it.items),
+                    communities = communityResult.getOrDefault(it.communities),
+                    error = inboxResult.exceptionOrNull()?.message
+                        ?: if (inboxResult.isFailure) "Messages could not load." else null,
+                    communityError = communityResult.exceptionOrNull()?.message
+                        ?: if (communityResult.isFailure) "Communities could not load." else null
+                )
+            }
+        }.also { job ->
+            job.invokeOnCompletion {
+                if (refreshJob === job) refreshJob = null
+            }
         }
     }
 
     fun updateQuery(value: String) {
-        _state.update { it.copy(query = value) }
+        _state.update { it.copy(query = value.take(80)) }
+    }
+}
+
+data class CommunityConversationUiState(
+    val isLoading: Boolean = true,
+    val isSending: Boolean = false,
+    val context: CommunityConversationContext? = null,
+    val messages: List<CommunityMessageItem> = emptyList(),
+    val draft: String = "",
+    val error: String? = null
+)
+
+class CommunityConversationViewModel(
+    private val slug: String,
+    private val repository: ChatRepository
+) : ViewModel() {
+    private val _state = MutableStateFlow(CommunityConversationUiState())
+    val state: StateFlow<CommunityConversationUiState> = _state.asStateFlow()
+    private var refreshJob: Job? = null
+
+    init {
+        refresh()
+    }
+
+    fun refresh() {
+        if (refreshJob?.isActive == true) return
+        refreshJob = viewModelScope.launch {
+            _state.update { it.copy(isLoading = true, error = null) }
+            runCatching { repository.loadCommunityConversation(slug) }
+                .onSuccess { result ->
+                    _state.update {
+                        it.copy(
+                            isLoading = false,
+                            context = result.context,
+                            messages = result.messages,
+                            error = null
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _state.update {
+                        it.copy(
+                            isLoading = false,
+                            error = error.message ?: "Community conversation could not load."
+                        )
+                    }
+                }
+        }.also { job ->
+            job.invokeOnCompletion {
+                if (refreshJob === job) refreshJob = null
+            }
+        }
+    }
+
+    fun updateDraft(value: String) {
+        _state.update { it.copy(draft = value.take(4_000), error = null) }
+    }
+
+    fun send() {
+        val current = _state.value
+        val context = current.context ?: return
+        val text = current.draft.trim()
+        if (text.isEmpty() || current.isSending) return
+        viewModelScope.launch {
+            _state.update { it.copy(isSending = true, error = null) }
+            runCatching { repository.sendCommunityText(context, text) }
+                .onSuccess { message ->
+                    _state.update {
+                        it.copy(
+                            isSending = false,
+                            draft = "",
+                            messages = mergeCommunityMessages(it.messages, listOf(message))
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _state.update {
+                        it.copy(
+                            isSending = false,
+                            error = error.message ?: "Community message could not be sent."
+                        )
+                    }
+                }
+        }
     }
 }
 
@@ -189,7 +300,8 @@ class ConversationViewModel(
 
 class MessagesViewModelFactory(
     private val repository: ChatRepository,
-    private val conversationId: String? = null
+    private val conversationId: String? = null,
+    private val communitySlug: String? = null
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T = when {
@@ -197,6 +309,9 @@ class MessagesViewModelFactory(
             MessagesInboxViewModel(repository) as T
         modelClass.isAssignableFrom(ConversationViewModel::class.java) && conversationId != null ->
             ConversationViewModel(conversationId, repository) as T
+        modelClass.isAssignableFrom(CommunityConversationViewModel::class.java) &&
+            communitySlug != null ->
+            CommunityConversationViewModel(communitySlug, repository) as T
         else -> error("Unknown messages ViewModel: ${modelClass.name}")
     }
 }

@@ -12,6 +12,7 @@ data class AndroidUpdateManifest(
     val minimumSupportedVersionCode: Int = 1,
     val forceUpdate: Boolean = false,
     val apkUrl: String,
+    val apkSha256: String,
     val releaseNotes: List<String> = emptyList(),
     val updateAvailable: Boolean = false,
     val updatedAt: String? = null

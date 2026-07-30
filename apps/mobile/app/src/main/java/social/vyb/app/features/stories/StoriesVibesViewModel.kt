@@ -2,7 +2,6 @@ package social.vyb.app.features.stories
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,17 +17,15 @@ class StoriesVibesViewModel(
     private val _vibes = MutableStateFlow(VibesUiState())
     val vibes: StateFlow<VibesUiState> = _vibes.asStateFlow()
 
-    private var initialized = false
+    private var storiesInitialized = false
+    private var vibesInitialized = false
 
-    fun initialize() {
-        if (initialized) return
-        initialized = true
+    fun loadStories() {
+        if (storiesInitialized) return
+        storiesInitialized = true
         viewModelScope.launch {
             _stories.update { it.copy(isLoading = true, error = null) }
-            _vibes.update { it.copy(isLoading = true, error = null) }
-            val storiesRequest = async { runCatching { repository.loadStories() } }
-            val vibesRequest = async { runCatching { repository.loadVibes() } }
-            storiesRequest.await().fold(
+            runCatching { repository.loadStories() }.fold(
                 onSuccess = { items ->
                     _stories.update { it.copy(isLoading = false, items = items) }
                 },
@@ -36,7 +33,15 @@ class StoriesVibesViewModel(
                     _stories.update { it.copy(isLoading = false, error = error.displayMessage()) }
                 }
             )
-            vibesRequest.await().fold(
+        }
+    }
+
+    fun loadVibes() {
+        if (vibesInitialized) return
+        vibesInitialized = true
+        viewModelScope.launch {
+            _vibes.update { it.copy(isLoading = true, error = null) }
+            runCatching { repository.loadVibes() }.fold(
                 onSuccess = { result ->
                     _vibes.update {
                         it.copy(
@@ -54,6 +59,7 @@ class StoriesVibesViewModel(
     }
 
     fun refreshStories() {
+        if (_stories.value.isLoading || _stories.value.isRefreshing) return
         viewModelScope.launch {
             _stories.update { it.copy(isRefreshing = true, error = null) }
             runCatching { repository.loadStories() }.fold(
@@ -72,6 +78,7 @@ class StoriesVibesViewModel(
     }
 
     fun refreshVibes() {
+        if (_vibes.value.isLoading || _vibes.value.isRefreshing) return
         viewModelScope.launch {
             _vibes.update { it.copy(isRefreshing = true, error = null) }
             runCatching { repository.loadVibes() }.fold(
@@ -96,7 +103,7 @@ class StoriesVibesViewModel(
     fun loadMoreVibes() {
         val state = _vibes.value
         val cursor = state.nextCursor ?: return
-        if (state.isLoadingMore) return
+        if (state.isLoading || state.isRefreshing || state.isLoadingMore) return
         viewModelScope.launch {
             _vibes.update { it.copy(isLoadingMore = true, error = null) }
             runCatching { repository.loadVibes(cursor) }.fold(

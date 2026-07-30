@@ -53,10 +53,14 @@ pnpm --filter @vyb/backend test:notifications
 
 Android:
 
-```bash
-cd apps/mobile
-./gradlew assembleDebug
+```powershell
+Set-Location apps/mobile
+.\gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon
 ```
+
+On macOS/Linux, run the same tasks with `./gradlew`. The complete signing,
+distribution, update, and rollback procedure is documented in the
+[Android Release Runbook](./docs/process/ANDROID_RELEASE_RUNBOOK.md).
 
 ## Documentation
 

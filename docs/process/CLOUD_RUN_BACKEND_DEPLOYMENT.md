@@ -7,7 +7,7 @@ Production backend: Cloud Run in `asia-south1`. Vercel is frontend-only.
 - Runtime service account with minimum Firebase/Data Connect, Cloud Tasks and Secret Manager access.
 - Secret bindings for `VYB_SESSION_SECRET` and all R2 credentials.
 - Plain configuration for project/service/location, CORS origins and public R2 base URL.
-- `min-instances=0`, `max-instances=10`, `concurrency=40`, initial memory 512 MiB.
+- `min-instances=0`, `max-instances=10`, `concurrency=80`, initial memory 512 MiB.
 - Cloud SQL/Data Connect connection pool maximum 5 per instance.
 
 Never ship service-account JSON, `.env`, Supabase credentials or R2 secrets in the image.

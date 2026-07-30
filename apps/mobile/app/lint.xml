@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!--
+      Adaptive icons are API 26 resources. The app minSdk is also 26, but AAPT
+      still requires the version-qualified folder and rejects the same XML from
+      the unqualified mipmap-anydpi folder.
+    -->
+    <issue id="ObsoleteSdkInt">
+        <ignore path="src/main/res/mipmap-anydpi-v26" />
+    </issue>
+</lint>

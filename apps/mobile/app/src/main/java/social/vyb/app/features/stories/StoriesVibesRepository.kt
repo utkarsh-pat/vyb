@@ -1,51 +1,18 @@
 package social.vyb.app.features.stories
 
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.FirebaseUser
-import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
-import java.util.concurrent.TimeUnit
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.serialization.json.Json
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.logging.HttpLoggingInterceptor
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import retrofit2.HttpException
-import retrofit2.Retrofit
-import social.vyb.app.BuildConfig
+import social.vyb.app.data.network.VybNetwork
+import social.vyb.app.data.network.requireIdToken
 
 class StoriesVibesRepository(
     private val auth: FirebaseAuth = FirebaseAuth.getInstance()
 ) {
-    private val api: StoriesVibesApi = Retrofit.Builder()
-        .baseUrl(normalizeBaseUrl(BuildConfig.API_BASE_URL))
-        .client(
-            OkHttpClient.Builder()
-                .connectTimeout(10, TimeUnit.SECONDS)
-                .readTimeout(20, TimeUnit.SECONDS)
-                .addInterceptor(
-                    HttpLoggingInterceptor().apply {
-                        level = if (BuildConfig.DEBUG) {
-                            HttpLoggingInterceptor.Level.BASIC
-                        } else {
-                            HttpLoggingInterceptor.Level.NONE
-                        }
-                    }
-                )
-                .build()
-        )
-        .addConverterFactory(
-            Json {
-                ignoreUnknownKeys = true
-                explicitNulls = false
-                coerceInputValues = true
-            }.asConverterFactory("application/json".toMediaType())
-        )
-        .build()
-        .create(StoriesVibesApi::class.java)
+    private val api: StoriesVibesApi = VybNetwork.create()
 
-    private var cachedTenantId: String? = null
+    private val tenantIds = TenantIdResolver()
 
     suspend fun loadStories(): List<StoryItem> = authenticated { bearer, tenantId ->
         api.stories(bearer, tenantId).items
@@ -70,17 +37,19 @@ class StoriesVibesRepository(
     ): T {
         val user = auth.currentUser
             ?: throw StoriesVibesException("Your session expired. Please sign in again.")
-        val bearer = "Bearer ${user.idToken()}"
-        val tenantId = cachedTenantId ?: api.me(bearer).membershipSummary.let { membership ->
-            check(membership.verificationStatus == "verified") {
-                "Your campus membership is not verified yet."
+        val bearer = "Bearer ${user.requireIdToken()}"
+        val tenantId = tenantIds.resolve(user.uid) {
+            api.me(bearer).membershipSummary.let { membership ->
+                check(membership.verificationStatus == "verified") {
+                    "Your campus membership is not verified yet."
+                }
+                membership.tenantId
             }
-            membership.tenantId.also { cachedTenantId = it }
         }
         return try {
             operation(bearer, tenantId)
         } catch (error: HttpException) {
-            if (error.code() == 401) cachedTenantId = null
+            if (error.code() == 401) tenantIds.invalidate(user.uid)
             throw StoriesVibesException(
                 when (error.code()) {
                     401 -> "Your session expired. Please sign in again."
@@ -93,20 +62,31 @@ class StoriesVibesRepository(
         }
     }
 
-    private suspend fun FirebaseUser.idToken(): String =
-        suspendCancellableCoroutine { continuation ->
-            getIdToken(false)
-                .addOnSuccessListener { result ->
-                    result.token?.let(continuation::resume)
-                        ?: continuation.resumeWithException(
-                            StoriesVibesException("Firebase returned an empty ID token.")
-                        )
-                }
-                .addOnFailureListener(continuation::resumeWithException)
-        }
+}
 
-    private fun normalizeBaseUrl(value: String): String =
-        value.trim().let { if (it.endsWith("/")) it else "$it/" }
+internal class TenantIdResolver {
+    private data class CachedTenant(val uid: String, val tenantId: String)
+
+    private val mutex = Mutex()
+
+    @Volatile
+    private var cached: CachedTenant? = null
+
+    suspend fun resolve(uid: String, lookup: suspend () -> String): String {
+        cached?.takeIf { it.uid == uid }?.let { return it.tenantId }
+        return mutex.withLock {
+            cached?.takeIf { it.uid == uid }?.tenantId
+                ?: lookup().also { tenantId ->
+                    cached = CachedTenant(uid = uid, tenantId = tenantId)
+                }
+        }
+    }
+
+    suspend fun invalidate(uid: String) {
+        mutex.withLock {
+            if (cached?.uid == uid) cached = null
+        }
+    }
 }
 
 class StoriesVibesException(

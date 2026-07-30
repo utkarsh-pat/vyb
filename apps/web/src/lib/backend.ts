@@ -97,6 +97,7 @@ import type {
   UserSearchResponse
 } from "@vyb/contracts";
 import type { DevSession } from "./dev-session";
+import { parseBackendErrorBody } from "./backend-error";
 import { getInternalApiKey } from "./internal-api-key";
 import { buildResourceFileDownloadUrl } from "./resource-files-server";
 
@@ -251,26 +252,14 @@ async function readResponseJson<T>(response: Response): Promise<T> {
 
 async function buildBackendRequestError(response: Response, path: string) {
   const fallbackMessage = `Backend request failed for ${path} with ${response.status}`;
-
-  try {
-    const payload = (await response.json()) as {
-      error?: {
-        code?: string;
-        message?: string;
-        details?: unknown;
-      };
-    };
-
-    return new BackendRequestError(
-      response.status,
-      payload?.error?.code?.trim() || "BACKEND_REQUEST_FAILED",
-      payload?.error?.message?.trim() || fallbackMessage,
-      payload?.error?.details ?? null
-    );
-  } catch {
-    const text = await response.text().catch(() => "");
-    return new BackendRequestError(response.status, "BACKEND_REQUEST_FAILED", text || fallbackMessage);
-  }
+  const responseText = await response.text().catch(() => "");
+  const parsed = parseBackendErrorBody(responseText, fallbackMessage);
+  return new BackendRequestError(
+    response.status,
+    parsed.code,
+    parsed.message,
+    parsed.details
+  );
 }
 
 export function isBackendRequestError(error: unknown): error is BackendRequestError {

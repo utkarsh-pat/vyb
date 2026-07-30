@@ -131,7 +131,7 @@ class ChatRealtimeClient(
 
                     override fun onFailure(
                         webSocket: WebSocket,
-                        throwable: Throwable,
+                        t: Throwable,
                         response: Response?
                     ) {
                         if (activeSocket === webSocket) activeSocket = null

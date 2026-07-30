@@ -1,6 +1,6 @@
 {
   "name": "@vyb/config",
-  "version": "0.1.0",
+  "version": "0.1.4",
   "private": true,
   "type": "module",
   "types": "./src/index.d.ts",
@@ -9,5 +9,8 @@
       "types": "./src/index.d.ts",
       "default": "./src/index.mjs"
     }
+  },
+  "dependencies": {
+    "firebase-admin": "^13.8.0"
   }
 }

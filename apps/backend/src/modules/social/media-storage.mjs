@@ -60,8 +60,16 @@ function getR2Config() {
   return config;
 }
 
+let cachedR2Client = null;
+let cachedR2ClientKey = null;
+
 function getR2Client(config) {
-  return new S3Client({
+  const clientKey = `${config.accountId}:${config.accessKeyId}`;
+  if (cachedR2Client && cachedR2ClientKey === clientKey) {
+    return cachedR2Client;
+  }
+
+  cachedR2Client = new S3Client({
     region: "auto",
     endpoint: `https://${config.accountId}.r2.cloudflarestorage.com`,
     credentials: {
@@ -69,9 +77,18 @@ function getR2Client(config) {
       secretAccessKey: config.secretAccessKey
     }
   });
+  cachedR2ClientKey = clientKey;
+  return cachedR2Client;
 }
 
 function resolveAssetType(intent) {
+  if (intent === "avatar") {
+    return {
+      assetType: "profiles",
+      placement: "avatar"
+    };
+  }
+
   if (intent === "story") {
     return {
       assetType: "stories",

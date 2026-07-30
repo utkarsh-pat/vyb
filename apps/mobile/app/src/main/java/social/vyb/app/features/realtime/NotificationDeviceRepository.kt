@@ -1,21 +1,19 @@
 package social.vyb.app.features.realtime
 
 import android.content.Context
-import android.provider.Settings
+import androidx.core.content.edit
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.messaging.FirebaseMessaging
-import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
+import java.util.UUID
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
-import okhttp3.MediaType.Companion.toMediaType
-import retrofit2.Retrofit
 import retrofit2.http.Body
 import retrofit2.http.Header
 import retrofit2.http.POST
-import social.vyb.app.BuildConfig
+import social.vyb.app.data.network.VybNetwork
+import social.vyb.app.data.network.requireIdToken
 
 internal interface NotificationDeviceApi {
     @POST("v1/notifications/register-device")
@@ -43,65 +41,79 @@ internal data class RegisterNotificationDeviceResponse(
 /**
  * Registers an FCM installation against the signed-in Vyb account.
  *
- * Call [registerCurrentToken] after sign-in as well as from
- * [VybFirebaseMessagingService.onNewToken], because FCM may issue a token before
- * Firebase Authentication has a current user.
+ * Call [registerCurrentInstallation] after sign-in as well as from
+ * [VybFirebaseMessagingService.onRegistered], because FCM may issue a Firebase
+ * Installation ID (FID) before Firebase Authentication has a current user.
  */
 class NotificationDeviceRepository(
     context: Context,
     private val auth: FirebaseAuth = FirebaseAuth.getInstance()
 ) {
     private val appContext = context.applicationContext
-    private val api = Retrofit.Builder()
-        .baseUrl(normalizeBaseUrl(BuildConfig.API_BASE_URL))
-        .addConverterFactory(
-            Json {
-                ignoreUnknownKeys = true
-                explicitNulls = false
-            }.asConverterFactory("application/json".toMediaType())
-        )
-        .build()
-        .create(NotificationDeviceApi::class.java)
+    private val api: NotificationDeviceApi = VybNetwork.create()
 
-    suspend fun registerCurrentToken(): Boolean {
-        val token = FirebaseMessaging.getInstance().awaitToken()
-        return registerToken(token)
+    suspend fun registerCurrentInstallation(): Boolean {
+        val storedInstallationId = notificationInstallationId()
+        val registeredStoredId = storedInstallationId?.let { registerInstallationId(it) } ?: false
+        FirebaseMessaging.getInstance().awaitRegistration()
+        return registeredStoredId
     }
 
-    suspend fun registerToken(token: String): Boolean {
+    suspend fun registerInstallationId(installationId: String): Boolean {
+        val normalizedInstallationId = installationId.trim()
+        if (normalizedInstallationId.isEmpty()) return false
+        storeNotificationInstallationId(normalizedInstallationId)
         val user = auth.currentUser ?: return false
-        val idToken = user.getIdToken(false).awaitResult().token ?: return false
-        val deviceId = "android-${Settings.Secure.getString(
-            appContext.contentResolver,
-            Settings.Secure.ANDROID_ID
-        )}"
+        val idToken = user.requireIdToken()
         val response = api.register(
             authorization = "Bearer $idToken",
             body = RegisterNotificationDeviceRequest(
-                deviceId = deviceId,
-                endpoint = token,
+                deviceId = localDeviceId(),
+                endpoint = normalizedInstallationId,
                 pushSubscription = mapOf(
-                    "provider" to "fcm",
-                    "token" to token
+                    "provider" to "fcm-fid",
+                    "fid" to normalizedInstallationId
                 )
             )
         )
         return response.registered
     }
 
-    private fun normalizeBaseUrl(value: String): String =
-        value.trim().let { if (it.endsWith("/")) it else "$it/" }
-}
+    private fun preferences() =
+        appContext.getSharedPreferences(INSTALLATION_PREFERENCES, Context.MODE_PRIVATE)
 
-private suspend fun FirebaseMessaging.awaitToken(): String =
-    suspendCancellableCoroutine { continuation ->
-        token
-            .addOnSuccessListener { continuation.resume(it) }
-            .addOnFailureListener { continuation.resumeWithException(it) }
+    private fun localDeviceId(): String {
+        val preferences = preferences()
+        preferences.getString(INSTALLATION_ID_KEY, null)?.let { return it }
+
+        return "android-${UUID.randomUUID()}".also { generatedId ->
+            preferences.edit {
+                putString(INSTALLATION_ID_KEY, generatedId)
+            }
+        }
     }
 
-private suspend fun <T> com.google.android.gms.tasks.Task<T>.awaitResult(): T =
+    private fun notificationInstallationId(): String? =
+        preferences().getString(NOTIFICATION_INSTALLATION_ID_KEY, null)
+            ?.trim()
+            ?.takeIf(String::isNotEmpty)
+
+    private fun storeNotificationInstallationId(installationId: String) {
+        preferences().edit {
+            putString(NOTIFICATION_INSTALLATION_ID_KEY, installationId)
+        }
+    }
+
+    private companion object {
+        const val INSTALLATION_PREFERENCES = "vyb_installation"
+        const val INSTALLATION_ID_KEY = "notification_device_id"
+        const val NOTIFICATION_INSTALLATION_ID_KEY = "fcm_installation_id"
+    }
+}
+
+private suspend fun FirebaseMessaging.awaitRegistration(): Unit =
     suspendCancellableCoroutine { continuation ->
-        addOnSuccessListener { continuation.resume(it) }
-        addOnFailureListener { continuation.resumeWithException(it) }
+        register()
+            .addOnSuccessListener { continuation.resume(Unit) }
+            .addOnFailureListener { continuation.resumeWithException(it) }
     }

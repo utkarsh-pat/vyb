@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:ignore="ObsoleteSdkInt">
+    <background android:drawable="@color/vyb_launcher_background" />
+    <foreground android:drawable="@drawable/vyb_logo_foreground" />
+    <monochrome android:drawable="@drawable/ic_notification_vyb" />
+</adaptive-icon>

@@ -10,6 +10,7 @@ import android.graphics.Path
 import android.media.MediaPlayer
 import android.net.Uri
 import android.widget.VideoView
+import androidx.core.graphics.createBitmap
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -33,15 +34,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Redo
+import androidx.compose.material.icons.automirrored.filled.RotateRight
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.FitScreen
-import androidx.compose.material.icons.filled.Redo
-import androidx.compose.material.icons.filled.RotateRight
 import androidx.compose.material.icons.filled.TextFields
-import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -55,11 +56,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -194,7 +197,7 @@ internal fun StoryBuilderScreen(
                         )
                         Row {
                             EditorCircleButton(
-                                Icons.Default.Undo,
+                                Icons.AutoMirrored.Filled.Undo,
                                 "Undo",
                                 enabled = undo.isNotEmpty()
                             ) {
@@ -202,7 +205,7 @@ internal fun StoryBuilderScreen(
                                 snapshot = undo.removeAt(undo.lastIndex)
                             }
                             EditorCircleButton(
-                                Icons.Default.Redo,
+                                Icons.AutoMirrored.Filled.Redo,
                                 "Redo",
                                 enabled = redo.isNotEmpty()
                             ) {
@@ -264,7 +267,7 @@ internal fun StoryBuilderScreen(
                             EditorToolButton("Draw", Icons.Default.Draw, tool == StoryTool.Draw) {
                                 tool = if (tool == StoryTool.Draw) StoryTool.Transform else StoryTool.Draw
                             }
-                            EditorToolButton("Rotate", Icons.Default.RotateRight, false) {
+                            EditorToolButton("Rotate", Icons.AutoMirrored.Filled.RotateRight, false) {
                                 commit(snapshot.copy(rotation = snapshot.rotation + 90f))
                             }
                             EditorToolButton(
@@ -378,12 +381,15 @@ private fun StoryCanvas(
     val currentOnTextMoved by rememberUpdatedState(onTextMoved)
     val currentOnTextEdit by rememberUpdatedState(onTextEdit)
     val currentOnStickerMoved by rememberUpdatedState(onStickerMoved)
-    val bitmap by produceState<Bitmap?>(null, media.uri) {
-        value = if (media.mediaType == "image") {
+    var bitmap by remember(media.uri) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(media.uri, media.mediaType) {
+        bitmap = if (media.mediaType == "image") {
             withContext(Dispatchers.IO) {
                 context.contentResolver.openInputStream(media.uri)?.use(BitmapFactory::decodeStream)
             }
-        } else null
+        } else {
+            null
+        }
     }
     BoxWithConstraints(
         modifier = modifier.background(Color.Black),
@@ -667,8 +673,8 @@ private fun StoryTextDialog(
     onSave: (StoryTextOverlay) -> Unit
 ) {
     var value by remember { mutableStateOf(initial.text) }
-    var color by remember { mutableStateOf(initial.color) }
-    var size by remember { mutableStateOf(initial.size) }
+    var color by remember { mutableIntStateOf(initial.color) }
+    var size by remember { mutableFloatStateOf(initial.size) }
     var bold by remember { mutableStateOf(initial.bold) }
     var background by remember { mutableStateOf(initial.background) }
     var align by remember { mutableStateOf(initial.align) }
@@ -780,7 +786,7 @@ private suspend fun exportStoryComposition(
         ?: error("The selected image could not be read.")
     val width = 1080
     val height = 1920
-    val output = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val output = createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val canvas = AndroidCanvas(output)
     canvas.drawColor(android.graphics.Color.BLACK)
 

@@ -1,7 +1,5 @@
 package social.vyb.app.features.stories
 
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.media.MediaPlayer
 import android.view.ViewGroup
 import android.widget.VideoView
@@ -32,6 +30,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.PlayArrow
@@ -45,17 +46,15 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.State
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -66,16 +65,22 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.graphics.toColorInt
 import androidx.lifecycle.viewmodel.compose.viewModel
-import java.net.HttpURLConnection
-import java.net.URL
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.serialization.decodeFromString
 import social.vyb.app.ui.VybEmptyState
 import social.vyb.app.ui.VybLoadingMark
+import social.vyb.app.ui.VybRemoteImage
 import social.vyb.app.features.media.StoryCompositionCodec
 import social.vyb.app.features.media.StoryCompositionJson
+import social.vyb.app.features.social.CommentThreadState
+import social.vyb.app.features.social.CommentsBottomSheet
+import social.vyb.app.features.social.PostEngagementState
+import social.vyb.app.features.social.PostOverflowActions
+import social.vyb.app.features.social.ReactionMembersState
+import social.vyb.app.features.social.SocialActionsViewModel
+import social.vyb.app.features.social.SocialOperationFeedback
 
 /**
  * Drop-in home-feed story lane. It owns no navigation and opens the full-screen
@@ -87,8 +92,8 @@ fun StoriesLane(
     showLoadingIndicator: Boolean = true,
     viewModel: StoriesVibesViewModel = viewModel()
 ) {
-    val state by viewModel.stories.collectAsState()
-    LaunchedEffect(viewModel) { viewModel.initialize() }
+    val state by viewModel.stories.collectAsStateWithLifecycle()
+    LaunchedEffect(viewModel) { viewModel.loadStories() }
 
     Column(modifier) {
         Row(
@@ -160,10 +165,14 @@ fun StoriesLane(
 @Composable
 fun NativeVibesScreen(
     modifier: Modifier = Modifier,
-    viewModel: StoriesVibesViewModel = viewModel()
+    viewModel: StoriesVibesViewModel = viewModel(),
+    viewerUserId: String? = null,
+    socialViewModel: SocialActionsViewModel
 ) {
-    val state by viewModel.vibes.collectAsState()
-    LaunchedEffect(viewModel) { viewModel.initialize() }
+    val state by viewModel.vibes.collectAsStateWithLifecycle()
+    val socialState = socialViewModel.state
+    var commentsPostId by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(viewModel) { viewModel.loadVibes() }
 
     when {
         state.isLoading -> {
@@ -199,11 +208,61 @@ fun NativeVibesScreen(
                     modifier = Modifier.fillMaxSize(),
                     key = { index -> state.items[index].id }
                 ) { page ->
+                    val vibe = state.items[page]
+                    LaunchedEffect(
+                        vibe.id,
+                        vibe.reactions,
+                        vibe.viewerReactionType,
+                        vibe.savedCount,
+                        vibe.isSaved
+                    ) {
+                        socialViewModel.seedPost(
+                            postId = vibe.id,
+                            reactionCount = vibe.reactions,
+                            viewerReactionType = vibe.viewerReactionType,
+                            savedCount = vibe.savedCount,
+                            isSaved = vibe.isSaved
+                        )
+                    }
                     VibePage(
-                        vibe = state.items[page],
+                        vibe = vibe,
                         isActive = pagerState.currentPage == page,
-                        isReactionBusy = state.items[page].id in state.busyVibeIds,
-                        onToggleLike = { viewModel.toggleVibeLike(state.items[page].id) }
+                        engagement = socialState.engagements[vibe.id] ?: PostEngagementState(),
+                        commentCount = socialState.commentThreads[vibe.id]
+                            ?.takeIf { it.loaded }
+                            ?.items
+                            ?.size
+                            ?: vibe.comments,
+                        isOwner = vibe.viewerCanManage ||
+                            (
+                                viewerUserId != null &&
+                                    viewerUserId == (vibe.author.userId ?: vibe.userId)
+                            ),
+                        busy = vibe.id in socialState.busyPostIds,
+                        reactionMembers = socialState.reactionMembers[vibe.id]
+                            ?: ReactionMembersState(),
+                        onToggleLike = { socialViewModel.toggleReaction(vibe.id) },
+                        onOpenComments = { commentsPostId = vibe.id },
+                        onToggleSave = { socialViewModel.toggleSave(vibe.id) },
+                        onLoadReactionMembers = {
+                            socialViewModel.loadReactionMembers(vibe.id)
+                        },
+                        onRepost = { quote ->
+                            socialViewModel.repost(vibe.id, quote, placement = "vibe") {
+                                viewModel.refreshVibes()
+                            }
+                        },
+                        onUpdate = { title, body ->
+                            socialViewModel.updatePost(vibe.id, title, body) {
+                                viewModel.refreshVibes()
+                            }
+                        },
+                        onDelete = {
+                            socialViewModel.deletePost(vibe.id, viewModel::refreshVibes)
+                        },
+                        onReport = { reason ->
+                            socialViewModel.report("post", vibe.id, reason)
+                        }
                     )
                 }
 
@@ -260,6 +319,39 @@ fun NativeVibesScreen(
             }
         }
     }
+
+    commentsPostId?.let { postId ->
+        CommentsBottomSheet(
+            postId = postId,
+            thread = socialState.commentThreads[postId] ?: CommentThreadState(),
+            onLoad = { socialViewModel.loadComments(postId) },
+            onRetry = { socialViewModel.loadComments(postId, force = true) },
+            onAddComment = { text, parentCommentId, done ->
+                socialViewModel.addComment(
+                    postId,
+                    text,
+                    parentCommentId = parentCommentId,
+                    onAdded = done
+                )
+            },
+            onToggleCommentReaction = { commentId ->
+                socialViewModel.toggleCommentReaction(postId, commentId)
+            },
+            onUpdateComment = { commentId, body ->
+                socialViewModel.updateComment(postId, commentId, body)
+            },
+            onDeleteComment = { commentId ->
+                socialViewModel.deleteComment(postId, commentId)
+            },
+            busyCommentIds = socialState.busyCommentIds,
+            onDismiss = { commentsPostId = null }
+        )
+    }
+    SocialOperationFeedback(
+        state = socialState,
+        onDismissError = socialViewModel::clearOperationError,
+        onDismissNotice = socialViewModel::clearOperationNotice
+    )
 }
 
 @Composable
@@ -399,8 +491,19 @@ private fun StoryViewerDialog(
 private fun VibePage(
     vibe: VibeItem,
     isActive: Boolean,
-    isReactionBusy: Boolean,
-    onToggleLike: () -> Unit
+    engagement: PostEngagementState,
+    commentCount: Int,
+    isOwner: Boolean,
+    busy: Boolean,
+    reactionMembers: ReactionMembersState,
+    onToggleLike: () -> Unit,
+    onOpenComments: () -> Unit,
+    onToggleSave: () -> Unit,
+    onLoadReactionMembers: () -> Unit,
+    onRepost: (String) -> Unit,
+    onUpdate: (String, String) -> Unit,
+    onDelete: () -> Unit,
+    onReport: (String) -> Unit
 ) {
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         val mediaUrl = vibe.playableMediaUrl
@@ -435,11 +538,11 @@ private fun VibePage(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             IconButton(
-                enabled = !isReactionBusy,
+                enabled = !engagement.reactionLoading,
                 onClick = onToggleLike,
                 modifier = Modifier.background(Color.Black.copy(alpha = .38f), CircleShape)
             ) {
-                if (isReactionBusy) {
+                if (engagement.reactionLoading) {
                     CircularProgressIndicator(
                         Modifier.size(22.dp),
                         color = Color.White,
@@ -447,19 +550,51 @@ private fun VibePage(
                     )
                 } else {
                     Icon(
-                        if (vibe.viewerReactionType != null) {
+                        if (engagement.viewerReactionType != null) {
                             Icons.Default.Favorite
                         } else {
                             Icons.Default.FavoriteBorder
                         },
                         "Like vibe",
-                        tint = if (vibe.viewerReactionType != null) Color(0xFFFF4D67) else Color.White
+                        tint = if (engagement.viewerReactionType != null) Color(0xFFFF4D67) else Color.White
                     )
                 }
             }
-            Text(vibe.reactions.toCompactMetric(), color = Color.White)
+            Text(engagement.reactionCount.toCompactMetric(), color = Color.White)
             Spacer(Modifier.height(14.dp))
-            Text("${vibe.comments} comments", color = Color.White)
+            IconButton(
+                onClick = onOpenComments,
+                modifier = Modifier.background(Color.Black.copy(alpha = .38f), CircleShape)
+            ) {
+                Icon(Icons.Default.ChatBubbleOutline, "Open comments", tint = Color.White)
+            }
+            Text(commentCount.toCompactMetric(), color = Color.White)
+            Spacer(Modifier.height(14.dp))
+            IconButton(
+                enabled = !engagement.saveLoading,
+                onClick = onToggleSave,
+                modifier = Modifier.background(Color.Black.copy(alpha = .38f), CircleShape)
+            ) {
+                Icon(
+                    if (engagement.isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                    "Save vibe",
+                    tint = Color.White
+                )
+            }
+            PostOverflowActions(
+                postId = vibe.id,
+                title = vibe.title,
+                body = vibe.body,
+                isOwner = isOwner,
+                busy = busy,
+                reactionMembers = reactionMembers,
+                onLoadReactionMembers = onLoadReactionMembers,
+                onRepost = onRepost,
+                onUpdate = onUpdate,
+                onDelete = onDelete,
+                onReport = onReport,
+                iconTint = Color.White
+            )
         }
 
         Column(
@@ -615,7 +750,7 @@ private fun StoryCompositionLayers(
 }
 
 private fun String?.toAndroidColor(): Int =
-    runCatching { android.graphics.Color.parseColor(this ?: "#FFFFFF") }
+    runCatching { (this ?: "#FFFFFF").toColorInt() }
         .getOrDefault(android.graphics.Color.WHITE)
 
 @Composable
@@ -625,36 +760,51 @@ private fun NativeVideo(
     modifier: Modifier = Modifier,
     crop: Boolean = false
 ) {
-    AndroidView(
-        modifier = modifier,
-        factory = { context ->
-            VideoView(context).apply {
-                layoutParams = ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
-                )
-                setOnPreparedListener { player ->
+    var prepared by remember(url) { mutableStateOf(false) }
+    var failed by remember(url) { mutableStateOf(false) }
+    Box(modifier.background(Color.Black), contentAlignment = Alignment.Center) {
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { context ->
+                VideoView(context).apply {
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                }
+            },
+            update = { video ->
+                video.setOnPreparedListener { player ->
+                    prepared = true
+                    failed = false
                     player.isLooping = true
                     player.setVideoScalingMode(
                         if (crop) MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
                         else MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT
                     )
-                    if (isActive) start()
+                    if (isActive) video.start()
                 }
-            }
-        },
-        update = { video ->
-            if (video.tag != url) {
-                video.tag = url
-                video.setVideoPath(url)
-            }
-            if (isActive && !video.isPlaying) video.start()
-            if (!isActive && video.isPlaying) video.pause()
-        },
-        onRelease = { video ->
-            video.stopPlayback()
+                video.setOnErrorListener { _, _, _ ->
+                    prepared = false
+                    failed = true
+                    true
+                }
+                if (video.tag != url) {
+                    prepared = false
+                    failed = false
+                    video.tag = url
+                    video.setVideoPath(url)
+                }
+                if (isActive && prepared && !video.isPlaying) video.start()
+                if (!isActive && video.isPlaying) video.pause()
+            },
+            onRelease = VideoView::stopPlayback
+        )
+        when {
+            failed -> Text("Media unavailable", color = Color.White.copy(alpha = .65f))
+            !prepared -> CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp)
         }
-    )
+    }
 }
 
 @Composable
@@ -663,37 +813,12 @@ private fun RemoteImage(
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop
 ) {
-    val bitmap by remoteBitmap(url)
-    Box(modifier.background(Color(0xFF182130)), contentAlignment = Alignment.Center) {
-        if (bitmap == null) {
-            CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
-        } else {
-            androidx.compose.foundation.Image(
-                bitmap = bitmap!!.asImageBitmap(),
-                contentDescription = null,
-                contentScale = contentScale,
-                modifier = Modifier.fillMaxSize()
-            )
-        }
-    }
-}
-
-@Composable
-private fun remoteBitmap(url: String): State<Bitmap?> {
-    val bitmapState = remember(url) { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(url) {
-        val loadedBitmap = withContext(Dispatchers.IO) {
-            runCatching {
-                val connection = URL(url).openConnection() as HttpURLConnection
-                connection.connectTimeout = 10_000
-                connection.readTimeout = 15_000
-                connection.instanceFollowRedirects = true
-                connection.inputStream.use(BitmapFactory::decodeStream)
-            }.getOrNull()
-        }
-        bitmapState.value = loadedBitmap
-    }
-    return bitmapState
+    VybRemoteImage(
+        url = url,
+        contentDescription = null,
+        modifier = modifier,
+        contentScale = contentScale
+    )
 }
 
 @Composable

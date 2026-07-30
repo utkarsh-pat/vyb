@@ -24,12 +24,11 @@ class FunViewModel(private val repository: FunRepository = FunRepository()) : Vi
     private fun load(refreshing: Boolean) = viewModelScope.launch {
         _state.update { it.copy(isLoading = !refreshing, isRefreshing = refreshing, error = null) }
         runCatching { repository.loadHub() }.fold(
-            onSuccess = { (inbox, connect, queens) ->
+            onSuccess = { (connect, queens) ->
                 _state.update {
                     it.copy(
                         isLoading = false,
                         isRefreshing = false,
-                        inbox = inbox,
                         connect = connect,
                         queens = queens,
                         connectPath = emptyList(),
@@ -40,21 +39,6 @@ class FunViewModel(private val repository: FunRepository = FunRepository()) : Vi
             },
             onFailure = { fail(it) }
         )
-    }
-
-    fun readAllNotifications() = action {
-        val result = repository.readAll()
-        _state.update { current ->
-            current.copy(
-                inbox = current.inbox.copy(
-                    unreadCount = 0,
-                    items = current.inbox.items.map {
-                        it.copy(state = NotificationReadState(result.readAt))
-                    }
-                ),
-                message = "${result.updatedCount} notifications marked read."
-            )
-        }
     }
 
     fun chooseConnect(dot: ConnectDot) {
@@ -79,6 +63,7 @@ class FunViewModel(private val repository: FunRepository = FunRepository()) : Vi
         _state.update {
             it.copy(
                 message = hint.message,
+                connect = it.connect?.copy(sessionId = hint.sessionId, hintsUsed = hint.hintsUsed),
                 connectPath = if (hint.nextMove != null && hint.nextMove !in it.connectPath) {
                     it.connectPath + hint.nextMove
                 } else it.connectPath
@@ -89,7 +74,7 @@ class FunViewModel(private val repository: FunRepository = FunRepository()) : Vi
     fun submitConnect() = action {
         val current = _state.value
         val result = repository.submitConnect(requireNotNull(current.connect).sessionId, current.connectPath)
-        _state.update { it.copy(message = result.message) }
+        _state.update { it.copy(message = result.message, connect = it.connect?.copy(sessionId = result.sessionId)) }
     }
 
     fun toggleQueen(point: Coordinate) {
@@ -111,6 +96,11 @@ class FunViewModel(private val repository: FunRepository = FunRepository()) : Vi
         _state.update {
             it.copy(
                 message = hint.message,
+                queens = it.queens?.copy(
+                    sessionId = hint.sessionId,
+                    hintsUsed = hint.hintsUsed,
+                    errorsMade = hint.errorsMade
+                ),
                 queenCells = hint.nextQueen?.let(it.queenCells::plus) ?: it.queenCells,
                 markedCells = it.markedCells + hint.autoMarkCells
             )
@@ -123,7 +113,7 @@ class FunViewModel(private val repository: FunRepository = FunRepository()) : Vi
             requireNotNull(current.queens).sessionId,
             current.queenCells.toList()
         )
-        _state.update { it.copy(message = result.message) }
+        _state.update { it.copy(message = result.message, queens = it.queens?.copy(sessionId = result.sessionId)) }
     }
 
     private fun action(block: suspend () -> Unit) = viewModelScope.launch {

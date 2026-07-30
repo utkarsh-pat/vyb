@@ -1,8 +1,8 @@
 # Vyb ADR 003: Phase 1 Chat Realtime and E2EE
 
 Owner: Architecture Team
-Last Updated: 2026-04-28
-Change Summary: Updated the accepted Phase 1 realtime implementation to backend-owned WebSocket fanout inside the modular monolith with Web Crypto based client-side E2EE.
+Last Updated: 2026-07-30
+Change Summary: Recorded the native Android API 26-35 key-storage strategy and disabled backup of device-bound ciphertext.
 
 ## 1. Metadata
 
@@ -27,7 +27,14 @@ Change Summary: Updated the accepted Phase 1 realtime implementation to backend-
 - Use backend-owned WebSocket fanout inside the modular monolith for conversation-scoped message, read, sync, and typing events.
 - Use the Web Crypto API in the client for Phase 1 E2EE.
 - Start with one-to-one conversations only.
-- Start with one active browser-held key per account in Phase 1 and defer secure multi-device key sync.
+- Start with one active client-held key per account in Phase 1 and defer secure multi-device key sync.
+- On Android API 31+, generate the P-256 ECDH private key inside Android
+  Keystore. On API 26-30, encrypt the exportable software P-256 private key
+  using an AES-GCM wrapping key that remains non-exportable in Android
+  Keystore. Persist ciphertext and the public key only.
+- Disable Android app-data backup and exclude account/key residue from data
+  extraction because restored ciphertext cannot be opened by a different
+  device Keystore.
 - Do not introduce a custom Socket.io microservice in Phase 1.
 
 ## 4. Alternatives Considered
@@ -59,12 +66,12 @@ Change Summary: Updated the accepted Phase 1 realtime implementation to backend-
 
 - security implications
   - Plaintext message bodies must not be persisted by backend-owned systems.
-  - Browser-held private keys become part of the trust model and must never be uploaded.
+  - Client-held private keys become part of the trust model and must never be uploaded in plaintext.
   - Secure multi-device recovery is not solved in Phase 1 and must be documented clearly.
 - failure modes
   - Missing or rotated browser keys can strand old message history for that browser.
   - Realtime delivery may degrade on backend restarts or multi-instance deployments until a shared Pub/Sub fanout is introduced.
-  - Browser storage loss can remove the local private key.
+  - Browser storage loss or Android app-data removal can remove the local private key.
 - rollback path
   - Hide chat entry points and disable message sends while preserving ciphertext history.
   - Keep the backend chat module dormant if realtime configuration is unavailable.

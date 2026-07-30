@@ -17,7 +17,93 @@ data class MarketUiState(
     val showComposer: Boolean = false,
     val showSavedOnly: Boolean = false,
     val tab: String = "sale",
+    val query: String = "",
+    val category: String? = null,
+    val sort: MarketSort = MarketSort.Recent,
 )
+
+enum class MarketSort(val label: String) {
+    Recent("Recent"),
+    PriceLowToHigh("Price: Low"),
+    PriceHighToLow("Price: High"),
+}
+
+internal data class MarketVisibleContent(
+    val listings: List<MarketListing> = emptyList(),
+    val requests: List<MarketRequest> = emptyList(),
+)
+
+internal fun MarketDashboard.visibleContent(state: MarketUiState): MarketVisibleContent {
+    val normalizedQuery = state.query.trim()
+    val normalizedCategory = state.category?.trim().orEmpty()
+
+    val listings = listings.asSequence()
+        .filter { state.tab == "sale" }
+        .filter { !state.showSavedOnly || it.isSaved }
+        .filter { normalizedCategory.isBlank() || it.category.equals(normalizedCategory, ignoreCase = true) }
+        .filter { listing ->
+            normalizedQuery.isBlank() || listOf(
+                listing.title,
+                listing.description,
+                listing.category,
+                listing.condition,
+                listing.location,
+                listing.campusSpot,
+                listing.seller.displayName,
+                listing.seller.username,
+            ).any { it.contains(normalizedQuery, ignoreCase = true) }
+        }
+        .sortedWith(
+            when (state.sort) {
+                MarketSort.Recent -> compareByDescending<MarketListing> { it.createdAt }
+                    .thenByDescending { it.id }
+                MarketSort.PriceLowToHigh -> compareBy<MarketListing> { it.priceAmount }
+                    .thenByDescending { it.createdAt }
+                MarketSort.PriceHighToLow -> compareByDescending<MarketListing> { it.priceAmount }
+                    .thenByDescending { it.createdAt }
+            }
+        )
+        .toList()
+
+    val requests = requests.asSequence()
+        .filter { !state.showSavedOnly && it.tab == state.tab }
+        .filter { normalizedCategory.isBlank() || it.category.equals(normalizedCategory, ignoreCase = true) }
+        .filter { request ->
+            normalizedQuery.isBlank() || listOf(
+                request.title,
+                request.detail,
+                request.category,
+                request.tag,
+                request.campusSpot,
+                request.budgetLabel,
+                request.requester.displayName,
+                request.requester.username,
+            ).any { it.contains(normalizedQuery, ignoreCase = true) }
+        }
+        .sortedWith(
+            when (state.sort) {
+                MarketSort.Recent -> compareByDescending<MarketRequest> { it.createdAt }
+                    .thenByDescending { it.id }
+                MarketSort.PriceLowToHigh -> compareBy<MarketRequest> {
+                    it.budgetAmount ?: Long.MAX_VALUE
+                }.thenByDescending { it.createdAt }
+                MarketSort.PriceHighToLow -> compareByDescending<MarketRequest> {
+                    it.budgetAmount ?: Long.MIN_VALUE
+                }.thenByDescending { it.createdAt }
+            }
+        )
+        .toList()
+
+    return MarketVisibleContent(listings = listings, requests = requests)
+}
+
+internal fun MarketDashboard.categoriesFor(tab: String): List<String> =
+    (if (tab == "sale") listings.map(MarketListing::category)
+    else requests.filter { it.tab == tab }.map(MarketRequest::category))
+        .map(String::trim)
+        .filter(String::isNotBlank)
+        .distinctBy { it.lowercase() }
+        .sortedBy { it.lowercase() }
 
 class MarketViewModel(
     private val repository: MarketRepository = MarketRepository(),
@@ -36,11 +122,34 @@ class MarketViewModel(
     }
 
     fun selectTab(tab: String) {
-        _state.value = _state.value.copy(tab = tab, selected = null)
+        _state.value = _state.value.copy(
+            tab = tab,
+            selected = null,
+            category = null,
+            showSavedOnly = if (tab == "sale") _state.value.showSavedOnly else false,
+        )
     }
 
     fun toggleSavedOnly() {
-        _state.value = _state.value.copy(showSavedOnly = !_state.value.showSavedOnly)
+        val enabled = !_state.value.showSavedOnly
+        _state.value = _state.value.copy(
+            showSavedOnly = enabled,
+            tab = if (enabled) "sale" else _state.value.tab,
+            category = if (enabled && _state.value.tab != "sale") null else _state.value.category,
+            selected = null,
+        )
+    }
+
+    fun setQuery(query: String) {
+        _state.value = _state.value.copy(query = query.take(120))
+    }
+
+    fun selectCategory(category: String?) {
+        _state.value = _state.value.copy(category = category?.trim()?.takeIf(String::isNotBlank))
+    }
+
+    fun selectSort(sort: MarketSort) {
+        _state.value = _state.value.copy(sort = sort)
     }
 
     fun setComposer(show: Boolean) {

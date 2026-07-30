@@ -1,18 +1,33 @@
 package social.vyb.app.data
 
-data class Story(val name: String, val accent: Long, val isYou: Boolean = false)
 data class FeedPost(
     val id: String,
+    val authorUserId: String?,
     val author: String,
     val handle: String,
+    val avatarUrl: String?,
     val time: String,
+    val title: String,
     val body: String,
+    val kind: String,
+    val media: List<FeedMedia>,
+    val location: String?,
+    val visibility: String,
+    val isAnonymous: Boolean,
     val likes: Int,
     val comments: Int,
+    val savedCount: Int,
+    val isSaved: Boolean,
+    val viewerReactionType: String?,
+    val viewerCanManage: Boolean,
     val category: String
 )
-data class Chat(val name: String, val preview: String, val time: String, val unread: Int = 0)
-data class Listing(val title: String, val price: String, val seller: String, val tag: String)
+
+data class FeedMedia(
+    val url: String,
+    val kind: String,
+    val mimeType: String? = null
+)
 
 data class VybUiState(
     val isAuthenticated: Boolean = false,
@@ -22,8 +37,14 @@ data class VybUiState(
     val displayName: String = "",
     val email: String = "",
     val photoUrl: String? = null,
+    val userId: String? = null,
+    val profileCompleted: Boolean? = null,
+    val profileSaving: Boolean = false,
+    val profileError: String? = null,
+    val profileCatalog: List<CourseCatalogItem> = emptyList(),
+    val usernameAvailability: Boolean? = null,
+    val usernameChecking: Boolean = false,
     val college: String = "Your campus",
-    val selectedPost: Int? = null,
     val feed: List<FeedPost> = emptyList(),
     val feedLoading: Boolean = false,
     val feedError: String? = null

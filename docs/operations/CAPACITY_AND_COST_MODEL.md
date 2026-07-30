@@ -27,7 +27,7 @@ This is time-limited credit, not a permanent monthly subsidy. The design must re
 | Component | Initial configuration | Planning range/month |
 |---|---|---:|
 | Cloud SQL/Data Connect | smallest compatible shared instance, 10 GB SSD, single zone | ₹800–₹1,500 |
-| Cloud Run API | 1 vCPU/512 MiB, min 0, launch max 3, concurrency 40 | ₹0–₹800 |
+| Cloud Run API | 1 vCPU/512 MiB, min 0, launch max 3, concurrency 80 | ₹0–₹800 |
 | Firebase Auth/FCM/Analytics/Crashlytics/Remote Config | free allowances, usage dependent | ₹0–₹300 |
 | Cloud Tasks, Secret Manager, logs, Artifact Registry | low-volume and retention-controlled | ₹0–₹500 |
 | Cloudflare R2 | image-first, free allowances then usage-based | ₹0–₹500 |
@@ -46,7 +46,7 @@ The verified trial credit should cover the expected initial Google infrastructur
 
 - Set a billing budget at ₹2,000/month initially with alerts at 50%, 80%, and 100%.
 - Add a second forecast alert at 120%; budgets notify but do not hard-stop services.
-- Cloud Run min 0, launch max 3, concurrency 40. The approved hard ceiling is
+- Cloud Run min 0, launch max 3, concurrency 80. The approved hard ceiling is
   10; raise toward it only after measured saturation.
 - Database pool maximum 5 connections per API instance.
 - Keep video/Stories off and enforce per-user media quotas.

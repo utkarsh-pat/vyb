@@ -27,8 +27,8 @@ android {
         applicationId = "social.vyb.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.1.2"
+        versionCode = 5
+        versionName = "0.1.4"
 
     }
 
@@ -46,7 +46,7 @@ android {
     buildTypes {
         debug {
             val debugApiUrl = providers.gradleProperty("vybApiBaseUrl")
-                .orElse("http://10.0.2.2:4000/")
+                .orElse("https://api.vybnet.app/")
                 .get()
             buildConfigField("String", "API_BASE_URL", "\"$debugApiUrl\"")
         }
@@ -83,6 +83,7 @@ kotlin {
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
@@ -91,17 +92,19 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons)
     implementation(libs.androidx.navigation.compose)
-    implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation(libs.retrofit.core)
     implementation(libs.retrofit.serialization)
     implementation(libs.okhttp.logging)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
-    implementation(platform("com.google.firebase:firebase-bom:34.16.0"))
-    implementation("com.google.firebase:firebase-auth")
-    implementation("com.google.firebase:firebase-messaging")
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.auth)
+    implementation(libs.firebase.messaging)
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.play.services.auth)
     implementation(libs.googleid)
+    implementation(libs.coil.compose)
+    implementation(libs.coil.network.okhttp)
+    testImplementation(libs.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

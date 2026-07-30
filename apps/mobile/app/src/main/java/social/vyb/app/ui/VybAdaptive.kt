@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -33,6 +34,19 @@ data class VybLayoutInfo(
     val sectionSpacing: Dp
 )
 
+internal fun resolveVybLayout(maxWidth: Dp, maxHeight: Dp): VybLayoutInfo =
+    VybLayoutInfo(
+        compactWidth = maxWidth < 360.dp,
+        compactHeight = maxHeight < 700.dp,
+        wide = maxWidth >= 600.dp,
+        horizontalPadding = when {
+            maxWidth < 360.dp -> 12.dp
+            maxWidth >= 600.dp -> 28.dp
+            else -> 16.dp
+        },
+        sectionSpacing = if (maxHeight < 700.dp) 10.dp else 16.dp
+    )
+
 @Composable
 fun VybResponsiveFrame(
     modifier: Modifier = Modifier,
@@ -40,17 +54,7 @@ fun VybResponsiveFrame(
     content: @Composable (VybLayoutInfo) -> Unit
 ) {
     BoxWithConstraints(modifier) {
-        val info = VybLayoutInfo(
-            compactWidth = maxWidth < 360.dp,
-            compactHeight = maxHeight < 700.dp,
-            wide = maxWidth >= 600.dp,
-            horizontalPadding = when {
-                maxWidth < 360.dp -> 12.dp
-                maxWidth >= 600.dp -> 28.dp
-                else -> 16.dp
-            },
-            sectionSpacing = if (maxHeight < 700.dp) 10.dp else 16.dp
-        )
+        val info = resolveVybLayout(maxWidth, maxHeight)
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             Box(
                 Modifier
@@ -111,7 +115,9 @@ fun VybEmptyState(
             if (actionLabel != null && onAction != null) {
                 Button(
                     onClick = onAction,
-                    modifier = Modifier.padding(top = 16.dp),
+                    modifier = Modifier
+                        .padding(top = 16.dp)
+                        .heightIn(min = 48.dp),
                     contentPadding = PaddingValues(horizontal = 22.dp, vertical = 11.dp)
                 ) {
                     Text(actionLabel)

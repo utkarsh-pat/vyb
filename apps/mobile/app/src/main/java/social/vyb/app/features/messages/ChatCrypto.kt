@@ -1,11 +1,14 @@
 package social.vyb.app.features.messages
 
+import android.content.Context
+import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
-import com.google.firebase.auth.FirebaseUser
-import kotlinx.coroutines.suspendCancellableCoroutine
+import androidx.annotation.RequiresApi
+import androidx.core.content.edit
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.Serializable
 import java.math.BigInteger
 import java.nio.charset.StandardCharsets
 import java.security.AlgorithmParameters
@@ -19,32 +22,47 @@ import java.security.spec.ECGenParameterSpec
 import java.security.spec.ECParameterSpec
 import java.security.spec.ECPoint
 import java.security.spec.ECPublicKeySpec
+import java.security.spec.PKCS8EncodedKeySpec
 import javax.crypto.Cipher
 import javax.crypto.KeyAgreement
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 internal object ChatCrypto {
     const val IDENTITY_ALGORITHM = "ECDH-P256"
     const val MESSAGE_ALGORITHM = "ECDH-P256/AES-GCM"
     private const val KEYSTORE = "AndroidKeyStore"
     private const val ALIAS_PREFIX = "vyb_chat_p256_"
+    private const val WRAP_ALIAS_PREFIX = "vyb_chat_wrap_"
+    private const val LEGACY_PREFERENCES = "vyb_chat_identity_v1"
     private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
 
     data class LocalIdentity(val publicKey: String, val privateKey: PrivateKey)
     data class EncryptedMessage(val cipherText: String, val cipherIv: String)
 
-    fun findLocalIdentity(userId: String): LocalIdentity? {
+    fun findLocalIdentity(context: Context, userId: String): LocalIdentity? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return findWrappedLegacyIdentity(context, userId)
+        }
         val store = KeyStore.getInstance(KEYSTORE).apply { load(null) }
         val alias = alias(userId)
         val privateKey = store.getKey(alias, null) as? PrivateKey ?: return null
         val publicKey = store.getCertificate(alias)?.publicKey as? ECPublicKey ?: return null
         return LocalIdentity(encodeRawPublicKey(publicKey), privateKey)
     }
-    fun getOrCreateLocalIdentity(userId: String): LocalIdentity {
-        findLocalIdentity(userId)?.let { return it }
+
+    fun getOrCreateLocalIdentity(context: Context, userId: String): LocalIdentity {
+        findLocalIdentity(context, userId)?.let { return it }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return createWrappedLegacyIdentity(context, userId)
+        }
+        return createHardwareIdentity(userId)
+    }
+
+    @RequiresApi(Build.VERSION_CODES.S)
+    private fun createHardwareIdentity(userId: String): LocalIdentity {
         val generator = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_EC, KEYSTORE)
         generator.initialize(
             KeyGenParameterSpec.Builder(
@@ -61,6 +79,93 @@ internal object ChatCrypto {
             publicKey = encodeRawPublicKey(pair.public as ECPublicKey),
             privateKey = pair.private
         )
+    }
+
+    /**
+     * Android Keystore only supports EC key-agreement keys from API 31. On
+     * API 26-30 we therefore generate the ECDH key in the platform provider
+     * and persist it only as an AES-GCM ciphertext whose non-exportable AES
+     * wrapping key lives in Android Keystore.
+     */
+    private fun createWrappedLegacyIdentity(context: Context, userId: String): LocalIdentity {
+        val pair = KeyPairGenerator.getInstance("EC").apply {
+            initialize(ECGenParameterSpec("secp256r1"), SecureRandom())
+        }.generateKeyPair()
+        val identity = LocalIdentity(
+            publicKey = encodeRawPublicKey(pair.public as ECPublicKey),
+            privateKey = pair.private
+        )
+        val plaintext = json.encodeToString(
+            WrappedIdentity.serializer(),
+            WrappedIdentity(
+                publicKey = identity.publicKey,
+                privateKey = encode(pair.private.encoded)
+            )
+        ).toByteArray(StandardCharsets.UTF_8)
+        val iv = ByteArray(12).also(SecureRandom()::nextBytes)
+        val encrypted = Cipher.getInstance("AES/GCM/NoPadding").run {
+            init(Cipher.ENCRYPT_MODE, legacyWrappingKey(userId), GCMParameterSpec(128, iv))
+            doFinal(plaintext)
+        }
+        context.applicationContext
+            .getSharedPreferences(LEGACY_PREFERENCES, Context.MODE_PRIVATE)
+            .edit {
+                putString(preferenceKey(userId), "${encode(iv)}.${encode(encrypted)}")
+            }
+        return identity
+    }
+
+    private fun findWrappedLegacyIdentity(context: Context, userId: String): LocalIdentity? =
+        runCatching {
+            val encodedIdentity = context.applicationContext
+                .getSharedPreferences(LEGACY_PREFERENCES, Context.MODE_PRIVATE)
+                .getString(preferenceKey(userId), null)
+                ?: return null
+            val parts = encodedIdentity.split('.', limit = 2)
+            require(parts.size == 2) { "Stored chat identity is invalid." }
+            val plaintext = Cipher.getInstance("AES/GCM/NoPadding").run {
+                init(
+                    Cipher.DECRYPT_MODE,
+                    legacyWrappingKey(userId, createIfMissing = false),
+                    GCMParameterSpec(128, decode(parts[0]))
+                )
+                doFinal(decode(parts[1]))
+            }
+            val stored = json.decodeFromString(
+                WrappedIdentity.serializer(),
+                plaintext.toString(StandardCharsets.UTF_8)
+            )
+            LocalIdentity(
+                publicKey = stored.publicKey,
+                privateKey = KeyFactory.getInstance("EC")
+                    .generatePrivate(PKCS8EncodedKeySpec(decode(stored.privateKey)))
+            )
+        }.getOrNull()
+
+    private fun legacyWrappingKey(
+        userId: String,
+        createIfMissing: Boolean = true
+    ): SecretKey {
+        val store = KeyStore.getInstance(KEYSTORE).apply { load(null) }
+        val keyAlias = wrapAlias(userId)
+        (store.getEntry(keyAlias, null) as? KeyStore.SecretKeyEntry)?.secretKey?.let {
+            return it
+        }
+        check(createIfMissing) { "Chat identity wrapping key is missing." }
+        return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE).run {
+            init(
+                KeyGenParameterSpec.Builder(
+                    keyAlias,
+                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+                )
+                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                    .setRandomizedEncryptionRequired(true)
+                    .setUserAuthenticationRequired(false)
+                    .build()
+            )
+            generateKey()
+        }
     }
 
     fun encrypt(
@@ -146,16 +251,16 @@ internal object ChatCrypto {
     }
 
     private fun alias(userId: String) = ALIAS_PREFIX + userId.replace(Regex("[^A-Za-z0-9_.-]"), "_")
+    private fun wrapAlias(userId: String) =
+        WRAP_ALIAS_PREFIX + userId.replace(Regex("[^A-Za-z0-9_.-]"), "_")
+    private fun preferenceKey(userId: String) =
+        userId.replace(Regex("[^A-Za-z0-9_.-]"), "_")
     private fun encode(value: ByteArray) = Base64.encodeToString(value, Base64.NO_WRAP)
     private fun decode(value: String) = Base64.decode(value, Base64.DEFAULT)
-}
 
-internal suspend fun FirebaseUser.chatIdToken(): String =
-    suspendCancellableCoroutine { continuation ->
-        getIdToken(false)
-            .addOnSuccessListener { result ->
-                result.token?.let(continuation::resume)
-                    ?: continuation.resumeWithException(IllegalStateException("Firebase returned an empty ID token."))
-            }
-            .addOnFailureListener(continuation::resumeWithException)
-    }
+    @Serializable
+    private data class WrappedIdentity(
+        val publicKey: String,
+        val privateKey: String
+    )
+}

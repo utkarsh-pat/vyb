@@ -28,7 +28,8 @@ Production starts with an empty canonical database. Legacy test data is not a la
 3. Provision Data Connect/Cloud SQL in `asia-south1`; compile and deploy schema/connectors.
 4. Seed only required tenants, verified domains, official communities, categories, and admin account.
 5. Create R2 bucket, scoped token, CORS, public media domain, lifecycle, and upload/read/delete smoke test.
-6. Create Secret Manager values and deploy Cloud Run with min 0, max 10, concurrency 40, and no initial traffic.
+6. Create Secret Manager values and deploy Cloud Run with min 0, max 10,
+   concurrency 80, and no initial traffic.
 7. Run health, auth, two-tenant isolation, Marketplace, chat, notification, and media tests.
 8. Deploy `apps/web` from `utkarsh-pat/vyb` on the new Vercel ownership.
 9. Attach `vybnet.app` and `www.vybnet.app`; attach `api.vybnet.app` to Cloud Run.

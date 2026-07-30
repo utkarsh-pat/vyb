@@ -1,7 +1,7 @@
 # Vyb Documentation Hub
 
 Owner: Architecture and Product
-Last Updated: 2026-07-29
+Last Updated: 2026-07-30
 Status: Marketplace-first MVP documentation set
 
 ## Canonical Review Order
@@ -18,10 +18,13 @@ Status: Marketplace-first MVP documentation set
 10. [Fresh Production Ownership](./operations/FRESH_ACCOUNT_OWNERSHIP.md)
 11. [Production Infrastructure Specification](./operations/PRODUCTION_INFRASTRUCTURE_SPEC.md)
 12. [Fresh Stack Deployment Verification](./operations/FRESH_STACK_DEPLOYMENT_VERIFICATION_2026-07-29.md)
-12. [Client Platform Strategy](./architecture/CLIENT_PLATFORM_STRATEGY.md)
-13. relevant module LLD under `lld/phase-1`;
-14. matching API contract, query review, and ADR;
-15. [Complete System Test Cases](./qa/SYSTEM_TEST_CASES.md).
+13. [Backend Runtime and Cost Guardrails](./operations/BACKEND_RUNTIME_GUARDRAILS.md)
+14. [Android/Web Quality and Parity Audit](./qa/QUALITY_PARITY_AUDIT_2026-07-30.md)
+15. [Android Release Runbook](./process/ANDROID_RELEASE_RUNBOOK.md)
+16. [Client Platform Strategy](./architecture/CLIENT_PLATFORM_STRATEGY.md)
+17. relevant module LLD under `lld/phase-1`;
+18. matching API contract, query review, and ADR;
+19. [Complete System Test Cases](./qa/SYSTEM_TEST_CASES.md).
 
 ## Architecture Decisions
 

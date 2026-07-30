@@ -2,24 +2,53 @@ substitutions:
   _SERVICE: vyb-backend
   _REGION: asia-south1
   _AR_REPO: vyb
+  _MIN_INSTANCES: "0"
+  _MAX_INSTANCES: "10"
+  _CONCURRENCY: "80"
+  _CPU: "1"
+  _MEMORY: 512Mi
+  _TIMEOUT: 300s
 
 options:
   logging: CLOUD_LOGGING_ONLY
 
 steps:
   - name: gcr.io/cloud-builders/docker
+    id: restore-build-cache
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        docker pull "asia-south1-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_SERVICE}:build-cache" || true
+
+  - name: gcr.io/cloud-builders/docker
+    id: build-backend
     args:
       - build
+      - --cache-from
+      - asia-south1-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_SERVICE}:build-cache
       - --tag
       - asia-south1-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_SERVICE}:$COMMIT_SHA
+      - --tag
+      - asia-south1-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_SERVICE}:build-cache
       - .
 
   - name: gcr.io/cloud-builders/docker
+    id: push-immutable-image
     args:
       - push
       - asia-south1-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_SERVICE}:$COMMIT_SHA
 
+  - name: gcr.io/cloud-builders/docker
+    id: push-build-cache
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        docker push "asia-south1-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_SERVICE}:build-cache" || true
+
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: deploy-cloud-run
     entrypoint: gcloud
     args:
       - run
@@ -31,6 +60,19 @@ steps:
       - ${_REGION}
       - --platform
       - managed
+      - --min-instances
+      - ${_MIN_INSTANCES}
+      - --max-instances
+      - ${_MAX_INSTANCES}
+      - --concurrency
+      - ${_CONCURRENCY}
+      - --cpu
+      - ${_CPU}
+      - --memory
+      - ${_MEMORY}
+      - --timeout
+      - ${_TIMEOUT}
+      - --cpu-throttling
       - --quiet
 
 images:

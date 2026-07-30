@@ -74,6 +74,130 @@ class CampusHubViewModel(
         _state.update { it.copy(selectedEvent = null, busyId = null, error = null) }
     }
 
+    fun openHostEditor(event: HubEvent? = null) {
+        if (event != null && !event.isHostedByViewer) return
+        _state.update {
+            it.copy(
+                hostEditorOpen = true,
+                hostEditorEvent = event,
+                error = null,
+            )
+        }
+    }
+
+    fun closeHostEditor() {
+        if (_state.value.busyId == "host-event") return
+        _state.update { it.copy(hostEditorOpen = false, hostEditorEvent = null, error = null) }
+    }
+
+    fun saveHostedEvent(draft: HubEventHostDraft) {
+        val validationError = draft.validationError()
+        if (validationError != null) {
+            _state.update { it.copy(error = validationError) }
+            return
+        }
+        if (_state.value.busyId != null) return
+        val existing = _state.value.hostEditorEvent
+        viewModelScope.launch {
+            _state.update { it.copy(busyId = "host-event", error = null) }
+            runCatching {
+                if (existing == null) repository.createEvent(draft)
+                else repository.updateEvent(existing, draft)
+            }.fold(
+                onSuccess = { (events, eventId) ->
+                    val saved = events.firstOrNull { it.id == eventId }
+                    _state.update {
+                        it.copy(
+                            events = events,
+                            selectedEvent = saved ?: it.selectedEvent,
+                            hostEditorOpen = false,
+                            hostEditorEvent = null,
+                            busyId = null,
+                            error = null,
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    _state.update { it.copy(busyId = null, error = error.displayMessage()) }
+                },
+            )
+        }
+    }
+
+    fun openRegistrationAdmin(event: HubEvent) {
+        if (!event.isHostedByViewer || _state.value.registrationsLoading) return
+        _state.update {
+            it.copy(
+                registrationAdminEvent = event,
+                hostRegistrations = emptyList(),
+                registrationsLoading = true,
+                error = null,
+            )
+        }
+        viewModelScope.launch {
+            runCatching { repository.loadRegistrations(event.id) }.fold(
+                onSuccess = { (loadedEvent, registrations) ->
+                    _state.update {
+                        it.copy(
+                            registrationAdminEvent = loadedEvent,
+                            hostRegistrations = registrations,
+                            registrationsLoading = false,
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    _state.update {
+                        it.copy(registrationsLoading = false, error = error.displayMessage())
+                    }
+                },
+            )
+        }
+    }
+
+    fun closeRegistrationAdmin() {
+        if (_state.value.busyId?.startsWith("registration:") == true) return
+        _state.update {
+            it.copy(
+                registrationAdminEvent = null,
+                hostRegistrations = emptyList(),
+                registrationsLoading = false,
+                error = null,
+            )
+        }
+    }
+
+    fun reviewRegistration(
+        registrationId: String,
+        status: String,
+        reviewNote: String?,
+    ) {
+        val event = _state.value.registrationAdminEvent ?: return
+        if (_state.value.busyId != null) return
+        viewModelScope.launch {
+            _state.update {
+                it.copy(busyId = "registration:$registrationId", error = null)
+            }
+            runCatching {
+                repository.manageRegistration(event.id, registrationId, status, reviewNote)
+            }.fold(
+                onSuccess = { (events, updatedEvent, registrations) ->
+                    _state.update {
+                        it.copy(
+                            events = events,
+                            selectedEvent = updatedEvent,
+                            registrationAdminEvent = updatedEvent,
+                            hostRegistrations = registrations,
+                            busyId = null,
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    _state.update { it.copy(busyId = null, error = error.displayMessage()) }
+                },
+            )
+        }
+    }
+
     fun toggleSave(eventId: String) = mutateEvent(eventId) {
         repository.toggleEventSave(eventId)
     }

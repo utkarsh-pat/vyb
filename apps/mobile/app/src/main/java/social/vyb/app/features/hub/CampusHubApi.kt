@@ -22,6 +22,19 @@ internal interface CampusHubApi {
         @Path("eventId") eventId: String
     ): EventEnvelopeDto
 
+    @POST("v1/events")
+    suspend fun createEvent(
+        @Header("Authorization") authorization: String,
+        @Body request: UpsertHubEventRequest,
+    ): EventMutationDto
+
+    @PUT("v1/events/{eventId}")
+    suspend fun updateEvent(
+        @Header("Authorization") authorization: String,
+        @Path("eventId") eventId: String,
+        @Body request: UpsertHubEventRequest,
+    ): EventMutationDto
+
     @PUT("v1/events/{eventId}/save")
     suspend fun toggleEventSave(
         @Header("Authorization") authorization: String,
@@ -34,6 +47,20 @@ internal interface CampusHubApi {
         @Path("eventId") eventId: String,
         @Body request: RegisterEventRequestDto
     ): EventRegistrationMutationDto
+
+    @GET("v1/events/{eventId}/registrations")
+    suspend fun registrations(
+        @Header("Authorization") authorization: String,
+        @Path("eventId") eventId: String,
+    ): HubEventRegistrationListDto
+
+    @PUT("v1/events/{eventId}/registrations/{registrationId}")
+    suspend fun manageRegistration(
+        @Header("Authorization") authorization: String,
+        @Path("eventId") eventId: String,
+        @Path("registrationId") registrationId: String,
+        @Body request: ManageHubEventRegistrationRequest,
+    ): ManageHubEventRegistrationDto
 
     @GET("v1/resources")
     suspend fun resources(

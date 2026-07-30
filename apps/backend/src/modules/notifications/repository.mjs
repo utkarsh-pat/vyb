@@ -43,15 +43,60 @@ function belongs(item, viewer) {
   return item.tenant_id === viewer.tenantId && Array.isArray(item.recipient_user_ids) && item.recipient_user_ids.includes(viewer.userId);
 }
 
+function emptyNotificationState() {
+  return { read_at: null, seen_at: null, archived_at: null };
+}
+
+function getViewerNotificationState(item, viewer) {
+  const ownState = item.recipient_states?.[viewer.userId];
+  if (ownState && typeof ownState === "object") {
+    return { ...emptyNotificationState(), ...ownState };
+  }
+
+  // Legacy records with one recipient used the top-level state field. It is
+  // safe to preserve that state only when it cannot belong to another user.
+  if (item.recipient_user_ids?.length === 1 && item.state && typeof item.state === "object") {
+    return { ...emptyNotificationState(), ...item.state };
+  }
+
+  return emptyNotificationState();
+}
+
+function ensureViewerNotificationState(item, viewer) {
+  const current = getViewerNotificationState(item, viewer);
+  item.recipient_states =
+    item.recipient_states && typeof item.recipient_states === "object"
+      ? item.recipient_states
+      : {};
+  item.recipient_states[viewer.userId] = current;
+  return current;
+}
+
+function buildViewerNotification(item, viewer) {
+  const { recipient_states: _recipientStates, ...safeItem } = item;
+  return {
+    ...safeItem,
+    state: getViewerNotificationState(item, viewer)
+  };
+}
+
 function cleanString(value) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function getFcmToken(device) {
+function getFcmTarget(device) {
   if (device?.platform !== "android") return null;
   const subscription = device.pushSubscription;
-  if (!subscription || typeof subscription !== "object" || subscription.provider !== "fcm") return null;
-  return cleanString(subscription.token) ?? cleanString(device.endpoint);
+  if (!subscription || typeof subscription !== "object") return null;
+  if (subscription.provider === "fcm-fid") {
+    const fid = cleanString(subscription.fid) ?? cleanString(device.endpoint);
+    return fid ? { field: "fid", value: fid } : null;
+  }
+  if (subscription.provider === "fcm") {
+    const token = cleanString(subscription.token) ?? cleanString(device.endpoint);
+    return token ? { field: "token", value: token } : null;
+  }
+  return null;
 }
 
 function isFcmDelivery(delivery) {
@@ -106,7 +151,7 @@ function queueFcmDeliveries(store, now = Date.now()) {
         (device) =>
           device.tenantId === item.tenant_id &&
           device.userId === userId &&
-          Boolean(getFcmToken(device)) &&
+          Boolean(getFcmTarget(device)) &&
           Date.parse(item.created_at) >= Date.parse(device.updatedAt)
       );
       for (const device of devices) {
@@ -155,7 +200,11 @@ function getFcmErrorMessage(error) {
 
 function isInvalidFcmTokenError(error) {
   const code = getFcmErrorCode(error);
-  return code === "messaging/registration-token-not-registered" || code === "messaging/invalid-registration-token";
+  return (
+    code === "messaging/installation-id-not-registered" ||
+    code === "messaging/registration-token-not-registered" ||
+    code === "messaging/invalid-registration-token"
+  );
 }
 
 function buildFcmMessage(delivery, device, item) {
@@ -163,8 +212,10 @@ function buildFcmMessage(delivery, device, item) {
     ? item.delivery_policy.ttl_seconds
     : DEFAULT_PUSH_TTL_SECONDS;
   const collapseKey = normalizeCollapseKey(delivery.payload.collapseKey);
+  const target = getFcmTarget(device);
+  if (!target) throw new Error("FCM device registration is unavailable.");
   return {
-    token: getFcmToken(device),
+    [target.field]: target.value,
     notification: {
       title: delivery.payload.title,
       body: delivery.payload.body
@@ -214,7 +265,7 @@ export async function runFcmNotificationDeliveryOutbox({ tenantId = null, limit 
         candidate.tenantId === delivery.tenantId &&
         candidate.userId === delivery.userId &&
         candidate.deviceId === delivery.deviceId &&
-        Boolean(getFcmToken(candidate))
+        Boolean(getFcmTarget(candidate))
     );
     const item = store.notifications.find((candidate) => candidate.id === delivery.notificationId);
     if (!device || !item) {
@@ -287,16 +338,21 @@ export async function listNotifications(viewer, { state = "all", category = null
     .filter((item) => belongs(item, viewer))
     .filter((item) => !category || item.category === category)
     .filter((item) => {
-      if (state === "unread") return !item.state?.read_at && !item.state?.archived_at;
-      if (state === "read") return Boolean(item.state?.read_at) && !item.state?.archived_at;
-      if (state === "archived") return Boolean(item.state?.archived_at);
-      return !item.state?.archived_at;
+      const viewerState = getViewerNotificationState(item, viewer);
+      if (state === "unread") return !viewerState.read_at && !viewerState.archived_at;
+      if (state === "read") return Boolean(viewerState.read_at) && !viewerState.archived_at;
+      if (state === "archived") return Boolean(viewerState.archived_at);
+      return !viewerState.archived_at;
     })
     .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
   return {
     tenantId: viewer.tenantId,
-    items: filtered.slice(cursor, cursor + limit),
-    unreadCount: store.notifications.filter((item) => belongs(item, viewer) && !item.state?.read_at && !item.state?.archived_at).length,
+    items: filtered.slice(cursor, cursor + limit).map((item) => buildViewerNotification(item, viewer)),
+    unreadCount: store.notifications.filter((item) => {
+      if (!belongs(item, viewer)) return false;
+      const viewerState = getViewerNotificationState(item, viewer);
+      return !viewerState.read_at && !viewerState.archived_at;
+    }).length,
     nextCursor: cursor + limit < filtered.length ? String(cursor + limit) : null
   };
 }
@@ -306,11 +362,11 @@ export async function markRead(viewer, notificationId) {
   const item = store.notifications.find((candidate) => candidate.id === notificationId && belongs(candidate, viewer));
   if (!item) throw new Error("Notification not found.");
   const now = new Date().toISOString();
-  item.state = item.state ?? { read_at: null, seen_at: null, archived_at: null };
-  item.state.read_at ??= now;
-  item.state.seen_at ??= now;
+  const viewerState = ensureViewerNotificationState(item, viewer);
+  viewerState.read_at ??= now;
+  viewerState.seen_at ??= now;
   await save(store);
-  return { item };
+  return { item: buildViewerNotification(item, viewer) };
 }
 
 export async function markAllRead(viewer, category = null) {
@@ -318,10 +374,11 @@ export async function markAllRead(viewer, category = null) {
   const now = new Date().toISOString();
   let updatedCount = 0;
   for (const item of store.notifications) {
-    if (belongs(item, viewer) && !item.state?.read_at && !item.state?.archived_at && (!category || item.category === category)) {
-      item.state = item.state ?? { read_at: null, seen_at: null, archived_at: null };
-      item.state.read_at = now;
-      item.state.seen_at ??= now;
+    const viewerState = getViewerNotificationState(item, viewer);
+    if (belongs(item, viewer) && !viewerState.read_at && !viewerState.archived_at && (!category || item.category === category)) {
+      const mutableViewerState = ensureViewerNotificationState(item, viewer);
+      mutableViewerState.read_at = now;
+      mutableViewerState.seen_at ??= now;
       updatedCount += 1;
     }
   }

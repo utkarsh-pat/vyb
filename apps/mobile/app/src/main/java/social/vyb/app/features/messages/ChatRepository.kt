@@ -1,45 +1,21 @@
 package social.vyb.app.features.messages
 
+import android.content.Context
 import com.google.firebase.auth.FirebaseAuth
-import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
-import kotlinx.serialization.json.Json
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.HttpException
-import retrofit2.Retrofit
-import social.vyb.app.BuildConfig
+import social.vyb.app.data.RemotePost
+import social.vyb.app.data.network.VybNetwork
+import social.vyb.app.data.network.requireBearerToken
 import social.vyb.app.features.realtime.ChatRealtimeClient
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.util.concurrent.TimeUnit
 
 class ChatRepository(
+    private val context: Context,
     private val auth: FirebaseAuth = FirebaseAuth.getInstance()
 ) {
-    private val api: ChatApi = Retrofit.Builder()
-        .baseUrl(normalizeBaseUrl(BuildConfig.API_BASE_URL))
-        .client(
-            OkHttpClient.Builder()
-                .connectTimeout(10, TimeUnit.SECONDS)
-                .readTimeout(20, TimeUnit.SECONDS)
-                .addInterceptor(
-                    HttpLoggingInterceptor().apply {
-                        level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC
-                        else HttpLoggingInterceptor.Level.NONE
-                    }
-                )
-                .build()
-        )
-        .addConverterFactory(
-            Json {
-                ignoreUnknownKeys = true
-                explicitNulls = false
-            }.asConverterFactory("application/json".toMediaType())
-        )
-        .build()
-        .create(ChatApi::class.java)
+    private val api: ChatApi = VybNetwork.create()
     private val realtimeClient = ChatRealtimeClient(
         socketUrlProvider = { conversationId ->
             api.socketToken(bearer(), conversationId).wsUrl
@@ -75,6 +51,81 @@ class ChatRepository(
                 isOnline = preview.peer.isOnline
             )
         }
+    }
+
+    suspend fun loadCommunityInbox(): List<CommunityInboxItem> = apiCall {
+        api.communities(bearer()).communities
+            .filter { it.isMember && it.membershipStatus != "left" && it.slug.isNotBlank() }
+            .sortedWith(
+                compareByDescending<social.vyb.app.features.hub.HubCommunity> { it.pinned }
+                    .thenByDescending { it.isOfficial }
+                    .thenBy { it.name.lowercase() }
+            )
+            .map {
+                CommunityInboxItem(
+                    id = it.id,
+                    slug = it.slug,
+                    name = it.name,
+                    type = it.type,
+                    memberCount = it.memberCount,
+                    membershipRole = it.membershipRole,
+                    isOfficial = it.isOfficial
+                )
+            }
+    }
+
+    suspend fun loadCommunityConversation(slug: String): CommunityConversationResult = apiCall {
+        val normalizedSlug = slug.trim()
+        require(normalizedSlug.isNotEmpty()) { "Choose a community first." }
+        val authorization = bearer()
+        val viewer = api.viewer(authorization)
+        check(viewer.membershipSummary.verificationStatus == "verified") {
+            "Your campus membership is not verified yet."
+        }
+        val detail = api.community(authorization, normalizedSlug)
+        check(
+            detail.viewer.isMember ||
+                detail.viewer.membershipStatus == "member" ||
+                detail.community.isMember
+        ) {
+            "Join this community before opening its conversation."
+        }
+        val context = CommunityConversationContext(
+            id = detail.community.id,
+            slug = detail.community.slug,
+            name = detail.community.name,
+            type = detail.community.type,
+            memberCount = detail.community.memberCount,
+            tenantId = viewer.membershipSummary.tenantId,
+            membershipId = viewer.membershipSummary.id,
+            viewerUserId = viewer.user.id
+        )
+        val messages = api.communityMessages(
+            authorization = authorization,
+            tenantId = context.tenantId,
+            communityId = context.id
+        ).items
+            .map { it.toCommunityMessage(context.viewerUserId) }
+            .sortedBy(CommunityMessageItem::createdAt)
+        CommunityConversationResult(context = context, messages = messages)
+    }
+
+    suspend fun sendCommunityText(
+        context: CommunityConversationContext,
+        plaintext: String
+    ): CommunityMessageItem = apiCall {
+        val text = plaintext.trim()
+        require(text.isNotEmpty()) { "Type a message first." }
+        require(text.length <= 4_000) { "Message is too long." }
+        api.sendCommunityMessage(
+            authorization = bearer(),
+            body = SendCommunityMessageRequestDto(
+                tenantId = context.tenantId,
+                membershipId = context.membershipId,
+                communityId = context.id,
+                body = text
+            )
+        ).item.toCommunityMessage(context.viewerUserId)
     }
 
     suspend fun loadConversation(conversationId: String): ConversationResult = apiCall {
@@ -148,14 +199,14 @@ class ChatRepository(
     }
 
     private suspend fun resolveOrProvisionIdentity(viewer: ChatViewerDto): ChatCrypto.LocalIdentity {
-        val local = ChatCrypto.findLocalIdentity(viewer.userId)
+        val local = ChatCrypto.findLocalIdentity(context, viewer.userId)
         if (viewer.activeIdentity != null) {
             check(local?.publicKey == viewer.activeIdentity.publicKey) {
                 "Secure chat is already linked to another device key. Restore or pair this device before sending."
             }
             return local
         }
-        val created = ChatCrypto.getOrCreateLocalIdentity(viewer.userId)
+        val created = ChatCrypto.getOrCreateLocalIdentity(context, viewer.userId)
         api.upsertIdentity(
             bearer(),
             UpsertChatIdentityRequestDto(publicKey = created.publicKey)
@@ -164,14 +215,11 @@ class ChatRepository(
     }
 
     private fun resolveLocalIdentity(viewer: ChatViewerDto): ChatCrypto.LocalIdentity? {
-        val local = ChatCrypto.findLocalIdentity(viewer.userId) ?: return null
+        val local = ChatCrypto.findLocalIdentity(context, viewer.userId) ?: return null
         return local.takeIf { it.publicKey == viewer.activeIdentity?.publicKey }
     }
 
-    private suspend fun bearer(): String {
-        val user = auth.currentUser ?: error("Your session expired. Please sign in again.")
-        return "Bearer ${user.chatIdToken()}"
-    }
+    private suspend fun bearer(): String = auth.requireBearerToken()
 
     private fun decryptOrPlaceholder(
         message: ChatMessageDto,
@@ -181,27 +229,19 @@ class ChatRepository(
         ChatCrypto.decrypt(message, identity, peerKey).replace(Regex("\\s+"), " ").take(90)
     }.getOrDefault("Encrypted message")
 
-    private fun formatTimestamp(value: String): String = runCatching {
-        val instant = Instant.parse(value)
-        val local = instant.atZone(ZoneId.systemDefault())
-        DateTimeFormatter.ofPattern("h:mm a").format(local)
-    }.getOrDefault(value)
-
     private suspend fun <T> apiCall(block: suspend () -> T): T = try {
         block()
     } catch (error: HttpException) {
         val message = when (error.code()) {
             401 -> "Your session expired. Please sign in again."
             403 -> "Complete your profile before opening campus chat."
-            404 -> "This conversation is no longer available."
+            404 -> "This conversation or community is no longer available."
             429 -> "Too many requests. Please wait and try again."
             else -> "Messages could not connect (${error.code()})."
         }
         throw IllegalStateException(message, error)
     }
 
-    private fun normalizeBaseUrl(value: String): String =
-        value.trim().let { if (it.endsWith("/")) it else "$it/" }
 }
 
 data class ConversationResult(
@@ -211,3 +251,33 @@ data class ConversationResult(
     val messages: List<ChatMessageItem>,
     val viewerUserId: String
 )
+
+internal fun RemotePost.toCommunityMessage(viewerUserId: String): CommunityMessageItem {
+    val anonymous = isAnonymous || author.isAnonymous
+    return CommunityMessageItem(
+        id = id,
+        body = body.ifBlank { title },
+        authorName = if (anonymous) "Anonymous" else author.displayName,
+        authorHandle = if (anonymous) "@anonymous" else "@${author.username}",
+        timestamp = formatTimestamp(createdAt),
+        createdAt = createdAt,
+        isMine = !anonymous && author.userId == viewerUserId,
+        isAnonymous = anonymous,
+        reactionCount = reactions,
+        replyCount = comments
+    )
+}
+
+internal fun mergeCommunityMessages(
+    current: List<CommunityMessageItem>,
+    incoming: List<CommunityMessageItem>
+): List<CommunityMessageItem> =
+    (current + incoming)
+        .distinctBy(CommunityMessageItem::id)
+        .sortedBy(CommunityMessageItem::createdAt)
+
+private fun formatTimestamp(value: String): String = runCatching {
+    val instant = Instant.parse(value)
+    val local = instant.atZone(ZoneId.systemDefault())
+    DateTimeFormatter.ofPattern("h:mm a").format(local)
+}.getOrDefault(value)
