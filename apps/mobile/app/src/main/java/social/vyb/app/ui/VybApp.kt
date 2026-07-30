@@ -354,7 +354,8 @@ private fun VybAppContent(
                         composable("profile") {
                             ProfileFeatureScreen(
                                 email = viewModel.state.email,
-                                onSignOut = { viewModel.signOut(context) }
+                                onSignOut = { viewModel.signOut(context) },
+                                onCreatePost = { navigateTo("home") }
                             )
                         }
                     }

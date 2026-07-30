@@ -81,6 +81,18 @@ class SearchRepository(
     suspend fun suggested(): List<CampusPerson> =
         api.search(bearer(), suggested = 1, limit = 12).items
 
+    suspend fun discover(): UniversalSearchResult {
+        val user = auth.currentUser ?: error("Your session expired. Please sign in again.")
+        val authorization = "Bearer ${user.requireIdToken()}"
+        val discovery = loadDiscovery(uid = user.uid, bearer = authorization)
+        return UniversalSearchResult(
+            posts = discovery.posts.take(30).map(RemotePost::toSearchContent),
+            vibes = discovery.vibes.take(30).map(RemotePost::toSearchContent),
+            marketplace = discovery.marketplace.take(30),
+            categoryErrors = discovery.errors
+        )
+    }
+
     suspend fun search(query: String): UniversalSearchResult = coroutineScope {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return@coroutineScope UniversalSearchResult()

@@ -103,48 +103,15 @@ fun MarketFeatureScreen(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
-            TopAppBar(
-                windowInsets = WindowInsets(0, 0, 0, 0),
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = VybPanel.copy(alpha = .92f),
-                    titleContentColor = VybText,
-                    actionIconContentColor = VybText
-                ),
-                title = {
-                    Column {
-                        Text("Campus Market")
-                        Text(
-                            text = state.dashboard?.let { "@${it.viewer.username}" } ?: "Buy, sell and borrow",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = VybMuted
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(
-                        onClick = marketViewModel::toggleSavedOnly,
-                        enabled = state.dashboard != null,
-                    ) {
-                        Icon(
-                            imageVector = if (state.showSavedOnly) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                            contentDescription = "Show saved listings",
-                        )
-                    }
-                    IconButton(onClick = marketViewModel::refresh) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Refresh market")
-                    }
-                },
-            )
+            Unit
         },
         floatingActionButton = {
             if (state.dashboard != null) {
-                ExtendedFloatingActionButton(
+                FloatingActionButton(
                     onClick = { marketViewModel.setComposer(true) },
-                    icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                    text = { Text("Post") },
                     containerColor = VybIndigo,
                     contentColor = VybText
-                )
+                ) { Icon(Icons.Default.Add, contentDescription = "Create marketplace post") }
             }
         },
     ) { padding ->
@@ -156,16 +123,14 @@ fun MarketFeatureScreen(
             modifier = Modifier.fillMaxSize(),
         ) {
             if (state.mutating) LinearProgressIndicator(Modifier.fillMaxWidth())
-            MarketTabs(selected = state.tab, onSelected = marketViewModel::selectTab)
-            state.dashboard?.let { dashboard ->
-                MarketDiscoveryControls(
-                    state = state,
-                    categories = dashboard.categoriesFor(state.tab),
-                    onQueryChanged = marketViewModel::setQuery,
-                    onCategorySelected = marketViewModel::selectCategory,
-                    onSortSelected = marketViewModel::selectSort,
-                )
-            }
+            PwaMarketControls(
+                state = state,
+                dashboard = state.dashboard,
+                onTab = marketViewModel::selectTab,
+                onQuery = marketViewModel::setQuery,
+                onCategory = marketViewModel::selectCategory,
+                onSort = marketViewModel::selectSort
+            )
             when {
                 state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     VybLoadingMark(width = 104.dp)
@@ -314,13 +279,12 @@ private fun MarketContent(
         MarketEmpty(
             title = when {
                 state.showSavedOnly -> "No saved listings"
-                hasFilters -> "No matching market posts"
-                else -> "Nothing here yet"
+                hasFilters -> "No listings match that search yet."
+                else -> "No listings match that search yet."
             },
             body = when {
                 state.showSavedOnly -> "Bookmark a listing and it will appear here."
-                hasFilters -> "Try another search, category or sort option."
-                else -> "Be the first person to publish in this section."
+                else -> "Try another category or clear the search to see more items from the campus marketplace."
             },
         )
         return

@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -44,6 +45,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -56,9 +59,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -76,9 +81,12 @@ import androidx.core.graphics.toColorInt
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.serialization.decodeFromString
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import social.vyb.app.ui.VybEmptyState
 import social.vyb.app.ui.VybLoadingMark
 import social.vyb.app.ui.VybRemoteImage
+import social.vyb.app.ui.resolveRemoteMediaUrl
 import social.vyb.app.features.media.StoryCompositionCodec
 import social.vyb.app.features.media.StoryCompositionJson
 import social.vyb.app.features.social.CommentThreadState
@@ -306,49 +314,12 @@ fun NativeVibesScreen(
                         onReport = { reason ->
                             socialViewModel.report("post", vibe.id, reason)
                         },
+                        onSearch = onSearch,
+                        onCreateVibe = onCreateVibe,
+                        onRefresh = viewModel::refreshVibes,
                         onShare = { shareVibe(context, vibe) },
                         onOpenProfile = { onOpenProfile(vibe.author.username) }
                     )
-                }
-
-                Row(
-                    Modifier.align(Alignment.TopCenter)
-                        .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(Color.Black.copy(alpha = .75f), Color.Transparent)
-                            )
-                        )
-                        .padding(horizontal = 18.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "VIBES",
-                        color = Color.White,
-                        fontWeight = FontWeight.Black,
-                        style = MaterialTheme.typography.titleLarge
-                    )
-                    Spacer(Modifier.weight(1f))
-                    IconButton(onClick = onSearch) {
-                        Icon(Icons.Default.Search, "Search campus", tint = Color.White)
-                    }
-                    IconButton(onClick = onCreateVibe) {
-                        Icon(Icons.Default.Add, "Upload vibe", tint = Color.White)
-                    }
-                    IconButton(
-                        enabled = !state.isRefreshing,
-                        onClick = viewModel::refreshVibes
-                    ) {
-                        if (state.isRefreshing) {
-                            CircularProgressIndicator(
-                                Modifier.size(20.dp),
-                                color = Color.White,
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Icon(Icons.Default.Refresh, "Refresh vibes", tint = Color.White)
-                        }
-                    }
                 }
 
                 state.error?.let {
@@ -555,11 +526,47 @@ private fun VibePage(
     onUpdate: (String, String) -> Unit,
     onDelete: () -> Unit,
     onReport: (String) -> Unit,
+    onSearch: () -> Unit,
+    onCreateVibe: () -> Unit,
+    onRefresh: () -> Unit,
     onShare: () -> Unit,
     onOpenProfile: () -> Unit
 ) {
     var repostOpen by remember(vibe.id) { mutableStateOf(false) }
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    var muted by remember(vibe.id) { mutableStateOf(false) }
+    var paused by remember(vibe.id) { mutableStateOf(false) }
+    var playbackRate by remember(vibe.id) { mutableStateOf(1f) }
+    var heartBurst by remember(vibe.id) { mutableStateOf(false) }
+    val gestureScope = rememberCoroutineScope()
+    LaunchedEffect(heartBurst) {
+        if (heartBurst) {
+            delay(520)
+            heartBurst = false
+        }
+    }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .pointerInput(vibe.id) {
+                detectTapGestures(
+                    onPress = {
+                        val speedJob = gestureScope.launch {
+                            delay(180)
+                            playbackRate = 2f
+                        }
+                        tryAwaitRelease()
+                        speedJob.cancel()
+                        playbackRate = 1f
+                    },
+                    onTap = { paused = !paused },
+                    onDoubleTap = {
+                        if (engagement.viewerReactionType == null) onToggleLike()
+                        heartBurst = true
+                    }
+                )
+            }
+    ) {
         val mediaUrl = vibe.playableMediaUrl
         when {
             mediaUrl == null -> {
@@ -570,7 +577,14 @@ private fun VibePage(
                 )
             }
             vibe.kind == "video" || vibe.media.any { it.kind == "video" } -> {
-                NativeVideo(mediaUrl, isActive, Modifier.fillMaxSize())
+                NativeVideo(
+                    mediaUrl,
+                    isActive = isActive && !paused,
+                    modifier = Modifier.fillMaxSize(),
+                    crop = true,
+                    muted = muted,
+                    playbackRate = playbackRate
+                )
             }
             else -> RemoteImage(mediaUrl, Modifier.fillMaxSize(), ContentScale.Fit)
         }
@@ -587,88 +601,90 @@ private fun VibePage(
             )
         )
 
+        IconButton(
+            onClick = { muted = !muted },
+            modifier = Modifier.align(Alignment.TopStart).padding(12.dp)
+                .background(Color.Black.copy(alpha = .42f), CircleShape)
+        ) {
+            Icon(
+                if (muted) Icons.AutoMirrored.Filled.VolumeOff
+                else Icons.AutoMirrored.Filled.VolumeUp,
+                if (muted) "Unmute vibe" else "Mute vibe",
+                tint = Color.White
+            )
+        }
+
+        if (heartBurst) {
+            Icon(
+                Icons.Default.Favorite,
+                null,
+                tint = Color.White,
+                modifier = Modifier.align(Alignment.Center).size(88.dp)
+            )
+        }
+
         Column(
-            Modifier.align(Alignment.CenterEnd).padding(end = 12.dp),
+            Modifier.align(Alignment.BottomEnd).padding(end = 10.dp, bottom = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            IconButton(
+            VibeRailAction(
+                label = engagement.reactionCount.toCompactMetric(),
                 enabled = !engagement.reactionLoading,
-                onClick = onToggleLike,
-                modifier = Modifier.background(Color.Black.copy(alpha = .38f), CircleShape)
-            ) {
-                if (engagement.reactionLoading) {
-                    CircularProgressIndicator(
-                        Modifier.size(22.dp),
-                        color = Color.White,
-                        strokeWidth = 2.dp
-                    )
+                icon = if (engagement.viewerReactionType != null) {
+                    Icons.Default.Favorite
                 } else {
-                    Icon(
-                        if (engagement.viewerReactionType != null) {
-                            Icons.Default.Favorite
-                        } else {
-                            Icons.Default.FavoriteBorder
-                        },
-                        "Like vibe",
-                        tint = if (engagement.viewerReactionType != null) Color(0xFFFF4D67) else Color.White
-                    )
-                }
-            }
-            Text(engagement.reactionCount.toCompactMetric(), color = Color.White)
-            Spacer(Modifier.height(14.dp))
-            IconButton(
-                onClick = onOpenComments,
-                modifier = Modifier.background(Color.Black.copy(alpha = .38f), CircleShape)
-            ) {
-                Icon(Icons.Default.ChatBubbleOutline, "Open comments", tint = Color.White)
-            }
-            Text(commentCount.toCompactMetric(), color = Color.White)
-            Spacer(Modifier.height(14.dp))
-            IconButton(
-                onClick = { repostOpen = true },
-                modifier = Modifier.background(Color.Black.copy(alpha = .38f), CircleShape)
-            ) {
-                Icon(Icons.Default.Repeat, "Repost vibe", tint = Color.White)
-            }
-            Spacer(Modifier.height(14.dp))
-            IconButton(
-                enabled = !engagement.saveLoading,
-                onClick = onToggleSave,
-                modifier = Modifier.background(Color.Black.copy(alpha = .38f), CircleShape)
-            ) {
-                Icon(
-                    if (engagement.isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                    "Save vibe",
-                    tint = Color.White
-                )
-            }
-            Spacer(Modifier.height(14.dp))
-            IconButton(
-                onClick = onShare,
-                modifier = Modifier.background(Color.Black.copy(alpha = .38f), CircleShape)
-            ) {
-                Icon(Icons.Default.Share, "Share vibe", tint = Color.White)
-            }
-            PostOverflowActions(
-                postId = vibe.id,
-                title = vibe.title,
-                body = vibe.body,
-                isOwner = isOwner,
-                busy = busy,
-                reactionMembers = reactionMembers,
-                onLoadReactionMembers = onLoadReactionMembers,
-                onRepost = onRepost,
-                onUpdate = onUpdate,
-                onDelete = onDelete,
-                onReport = onReport,
-                iconTint = Color.White
+                    Icons.Default.FavoriteBorder
+                },
+                tint = if (engagement.viewerReactionType != null) Color(0xFF00D4C1) else Color.White,
+                onClick = onToggleLike
             )
+            Spacer(Modifier.height(12.dp))
+            VibeRailAction(
+                label = commentCount.toCompactMetric(),
+                icon = Icons.Default.ChatBubbleOutline,
+                onClick = onOpenComments
+            )
+            Spacer(Modifier.height(12.dp))
+            VibeRailAction(
+                label = "Repost",
+                icon = Icons.Default.Repeat,
+                onClick = { repostOpen = true }
+            )
+            Spacer(Modifier.height(12.dp))
+            VibeRailAction(
+                label = "Share",
+                icon = Icons.Default.Share,
+                onClick = onShare
+            )
+            Spacer(Modifier.height(8.dp))
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                PostOverflowActions(
+                    postId = vibe.id,
+                    title = vibe.title,
+                    body = vibe.body,
+                    isOwner = isOwner,
+                    busy = busy,
+                    reactionMembers = reactionMembers,
+                    onLoadReactionMembers = onLoadReactionMembers,
+                    onToggleSave = onToggleSave,
+                    isSaved = engagement.isSaved,
+                    onSearch = onSearch,
+                    onCreateVibe = onCreateVibe,
+                    onRefresh = onRefresh,
+                    onRepost = onRepost,
+                    onUpdate = onUpdate,
+                    onDelete = onDelete,
+                    onReport = onReport,
+                    iconTint = Color.White
+                )
+                Text("More", color = Color.White, fontSize = 11.sp)
+            }
         }
 
         Column(
             Modifier.align(Alignment.BottomStart)
                 .fillMaxWidth()
-                .padding(start = 18.dp, end = 82.dp, bottom = 28.dp)
+                .padding(start = 18.dp, end = 82.dp, bottom = 24.dp)
         ) {
             Row(
                 Modifier.clickable(
@@ -717,6 +733,22 @@ private fun VibePage(
                 repostOpen = false
             }
         )
+    }
+}
+
+@Composable
+private fun VibeRailAction(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    enabled: Boolean = true,
+    tint: Color = Color.White,
+    onClick: () -> Unit
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        IconButton(onClick = onClick, enabled = enabled) {
+            Icon(icon, label, tint = tint, modifier = Modifier.size(29.dp))
+        }
+        Text(label, color = tint, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -849,10 +881,14 @@ private fun NativeVideo(
     url: String,
     isActive: Boolean,
     modifier: Modifier = Modifier,
-    crop: Boolean = false
+    crop: Boolean = false,
+    muted: Boolean = false,
+    playbackRate: Float = 1f
 ) {
-    var prepared by remember(url) { mutableStateOf(false) }
-    var failed by remember(url) { mutableStateOf(false) }
+    val resolvedUrl = remember(url) { resolveRemoteMediaUrl(url) }
+    var prepared by remember(resolvedUrl) { mutableStateOf(false) }
+    var failed by remember(resolvedUrl) { mutableStateOf(false) }
+    var activePlayer by remember(resolvedUrl) { mutableStateOf<MediaPlayer?>(null) }
     Box(modifier.background(Color.Black), contentAlignment = Alignment.Center) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
@@ -866,6 +902,7 @@ private fun NativeVideo(
             },
             update = { video ->
                 video.setOnPreparedListener { player ->
+                    activePlayer = player
                     prepared = true
                     failed = false
                     player.isLooping = true
@@ -873,6 +910,12 @@ private fun NativeVideo(
                         if (crop) MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
                         else MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT
                     )
+                    player.setVolume(if (muted) 0f else 1f, if (muted) 0f else 1f)
+                    if (android.os.Build.VERSION.SDK_INT >= 23) {
+                        runCatching {
+                            player.playbackParams = player.playbackParams.setSpeed(playbackRate)
+                        }
+                    }
                     if (isActive) video.start()
                 }
                 video.setOnErrorListener { _, _, _ ->
@@ -880,11 +923,23 @@ private fun NativeVideo(
                     failed = true
                     true
                 }
-                if (video.tag != url) {
+                if (video.tag != resolvedUrl) {
                     prepared = false
                     failed = false
-                    video.tag = url
-                    video.setVideoPath(url)
+                    video.tag = resolvedUrl
+                    video.setVideoPath(resolvedUrl)
+                }
+                if (prepared) {
+                    runCatching {
+                        activePlayer?.setVolume(
+                            if (muted) 0f else 1f,
+                            if (muted) 0f else 1f
+                        )
+                        if (activePlayer != null && android.os.Build.VERSION.SDK_INT >= 23) {
+                            activePlayer?.playbackParams =
+                                activePlayer!!.playbackParams.setSpeed(playbackRate)
+                        }
+                    }
                 }
                 if (isActive && prepared && !video.isPlaying) video.start()
                 if (!isActive && video.isPlaying) video.pause()

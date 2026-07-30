@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 
 data class SearchUiState(
     val query: String = "",
@@ -55,15 +57,11 @@ class SearchViewModel(
             _state.update {
                 it.copy(
                     results = emptyList(),
-                    posts = emptyList(),
-                    vibes = emptyList(),
-                    marketplace = emptyList(),
                     selectedCategory = SearchCategory.People,
-                    categoryErrors = emptyMap(),
                     loading = false
                 )
             }
-            if (_state.value.suggestions.isEmpty()) loadSuggestions()
+            loadSuggestions()
             return
         }
         searchJob = viewModelScope.launch {
@@ -132,9 +130,24 @@ class SearchViewModel(
     private fun loadSuggestions() {
         viewModelScope.launch {
             _state.update { it.copy(loading = true, error = null) }
-            runCatching { repository.suggested() }
-                .onSuccess { people ->
-                    _state.update { it.copy(suggestions = people, loading = false) }
+            runCatching {
+                coroutineScope {
+                    val people = async { repository.suggested() }
+                    val discovery = async { repository.discover() }
+                    people.await() to discovery.await()
+                }
+            }
+                .onSuccess { (people, discovery) ->
+                    _state.update {
+                        it.copy(
+                            suggestions = people,
+                            posts = discovery.posts,
+                            vibes = discovery.vibes,
+                            marketplace = discovery.marketplace,
+                            categoryErrors = discovery.categoryErrors,
+                            loading = false
+                        )
+                    }
                 }
                 .onFailure { fail(it, "Suggestions could not be loaded.") }
         }

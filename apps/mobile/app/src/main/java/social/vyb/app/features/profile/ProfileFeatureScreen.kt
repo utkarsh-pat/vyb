@@ -87,6 +87,7 @@ import social.vyb.app.ui.theme.ThemePreference
 fun ProfileFeatureScreen(
     email: String,
     onSignOut: () -> Unit,
+    onCreatePost: () -> Unit = {},
     profileViewModel: ProfileViewModel = viewModel()
 ) {
     val state by profileViewModel.state.collectAsStateWithLifecycle()
@@ -103,13 +104,14 @@ fun ProfileFeatureScreen(
             modifier = Modifier.padding(24.dp)
         )
         else -> when (state.panel) {
-            ProfilePanel.Overview -> ProfileParityOverview(
+            ProfilePanel.Overview -> PwaProfileSurface(
                 state = state,
                 onTab = profileViewModel::setTab,
                 onEdit = { profileViewModel.open(ProfilePanel.Edit) },
                 onSettings = { profileViewModel.open(ProfilePanel.Settings) },
+                onCreatePost = onCreatePost,
                 onConnections = profileViewModel::openConnections,
-                onDismissMessage = profileViewModel::clearMessage
+                onOpenLink = LocalUriHandler.current::openUri
             )
             ProfilePanel.Edit -> EditProfile(
                 state = state,

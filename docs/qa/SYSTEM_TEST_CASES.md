@@ -249,7 +249,7 @@ Fields: College read-only, College email read-only, User ID, First name, Last na
 | ID | Case | Steps/Data | Expected |
 |---|---|---|---|
 | VIBE-001 | Route render | Open `/vibes`; open `/reels`. | `/reels` redirects to `/vibes`; theater/mobile immersive layout. |
-| VIBE-002 | Playback | First video autoplay, tap pause/resume, hold 2x, swipe/scroll next. | Audio default behavior follows browser policy; UI state accurate. |
+| VIBE-002 | Playback | First video autoplay, single tap pause/resume, double tap like, press-hold 2x and release, mute/unmute, swipe/scroll next. | Web and Android use the same gesture contract; hold speed resets on release; only the active page plays. |
 | VIBE-003 | Engagement | Like, react, comment, repost, share, save, report. | Same behavior as feed; counts sync realtime. |
 | VIBE-004 | Empty/error | No vibes, failed fetch, media 404. | Empty/error states; no infinite blank. |
 | VIBE-005 | Performance | 20+ videos; slow network. | Only needed media plays/preloads; no memory spike or multiple audio streams. |
@@ -264,6 +264,7 @@ Fields: College read-only, College email read-only, User ID, First name, Last na
 | SEARCH-003 | No results | Search impossible query. | Helpful empty state. |
 | SEARCH-004 | Profile open | Click result avatar/name. | Navigates to `/u/[username]`, preserves back origin. |
 | SEARCH-005 | Follow from result | Follow/unfollow button. | State persists; no duplicate follow. |
+| SEARCH-006 | Discovery masonry | Open Search with an empty query on phone/tablet. | Trending profiles and mixed post/vibe cards render in the responsive discovery grid; card taps open the correct destination. |
 | PROF-001 | Own profile | Open `/dashboard`. | Posts/Vibes/Saved tabs, edit profile, settings, avatar controls. |
 | PROF-002 | Other profile | Open `/u/[username]`. | Follow button, public data, no private settings. |
 | PROF-003 | Profile tabs | Switch Posts/Vibes/Saved. | Correct content; empty states; phone tabs fit. |
@@ -274,6 +275,7 @@ Fields: College read-only, College email read-only, User ID, First name, Last na
 | PROF-008 | Export data | Click export. | JSON download contains only current user's data, no secrets/private keys unless intentionally exported. |
 | PROF-009 | Block/mute | Add/remove usernames, invalid values. | UI persists; blocked/muted behavior enforced where implemented. |
 | PROF-010 | Connections sheet | Open followers/following, action menu. | Same-tenant users only; close/back work. |
+| PROF-011 | Android/PWA parity | Compare own profile at the same compact/tablet viewport. | Logo/settings/Post header, inline identity/stats, edit action, underline tabs and media grid preserve the PWA information hierarchy without oversized type. |
 
 ## 12. Messages, Chat, E2EE, Device Security
 
@@ -346,6 +348,15 @@ Fields: College read-only, College email read-only, User ID, First name, Last na
 | MKT-014 | Tenant isolation | Access other tenant listing/request/media path. | 403/404; no cross-tenant media. |
 | MKT-015 | Safety and moderation | Publish prohibited categories; report/block listing or seller. | Prohibited post rejected/removed, report audited, block prevents contact. |
 | MKT-016 | Pagination/idempotency | Insert inventory while paging; repeat create/save/contact keys. | Stable cursor without duplicates/skips; repeated key has one side effect. |
+| MKT-017 | Android/PWA control shell | Compare Items/Requests/Lend, search, filter, sort, empty and composer states at the same compact/tablet viewport. | Controls keep the PWA order and state behavior; placeholder stays single-line; FAB never overlaps bottom navigation. |
+
+## 14.1 Native media compatibility
+
+| ID | Case | Steps/Data | Expected |
+|---|---|---|---|
+| MEDIA-ANDROID-001 | Relative R2 object key | Return `social/<tenant>/...` from an authenticated API. | Android resolves it through `https://www.vybnet.app/api/media/...`; image/video renders. |
+| MEDIA-ANDROID-002 | Legacy migration key | Return `firebase-migration/social/<tenant>/...`. | Android removes the retired prefix before requesting the canonical R2 object. |
+| MEDIA-ANDROID-003 | Absolute external media URL | Return an approved absolute HTTPS URL. | URL remains unchanged; no same-origin rewrite. |
 
 ## 15. Events And Event Host
 

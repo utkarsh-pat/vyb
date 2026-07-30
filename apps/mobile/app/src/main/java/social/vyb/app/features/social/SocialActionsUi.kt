@@ -931,6 +931,11 @@ fun PostOverflowActions(
     reactionMembers: ReactionMembersState,
     onLoadReactionMembers: () -> Unit,
     onViewPost: (() -> Unit)? = null,
+    onToggleSave: (() -> Unit)? = null,
+    isSaved: Boolean = false,
+    onSearch: (() -> Unit)? = null,
+    onCreateVibe: (() -> Unit)? = null,
+    onRefresh: (() -> Unit)? = null,
     onRepost: (quote: String, placement: String) -> Unit,
     onUpdate: (title: String, body: String) -> Unit,
     onDelete: () -> Unit,
@@ -982,6 +987,30 @@ fun PostOverflowActions(
                         dialog = "likes"
                         menuOpen = false
                     }) { Text("View likes") }
+                    onToggleSave?.let { toggleSave ->
+                        TextButton(onClick = {
+                            toggleSave()
+                            menuOpen = false
+                        }) { Text(if (isSaved) "Remove from saved" else "Save") }
+                    }
+                    onSearch?.let { search ->
+                        TextButton(onClick = {
+                            search()
+                            menuOpen = false
+                        }) { Text("Search campus") }
+                    }
+                    onCreateVibe?.let { create ->
+                        TextButton(onClick = {
+                            create()
+                            menuOpen = false
+                        }) { Text("Create vibe") }
+                    }
+                    onRefresh?.let { refresh ->
+                        TextButton(onClick = {
+                            refresh()
+                            menuOpen = false
+                        }) { Text("Refresh vibes") }
+                    }
                     TextButton(onClick = {
                         dialog = "repost"
                         menuOpen = false

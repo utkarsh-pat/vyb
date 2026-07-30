@@ -135,6 +135,25 @@ Hardware-emulator color-format warnings were non-fatal. A cold-boot Android
 system `Messages` process ANR appeared once before app QA, was dismissed, and
 did not involve the Vyb package.
 
+## Android parity and media follow-up
+
+The native client now uses the PWA component order and interaction contract for
+Profile, Marketplace, Search discovery and Vibes. The compact emulator pass
+verified the inline profile/stats layout, underline content tabs, marketplace
+segmented controls, mixed Search discovery grid, and the Vibes right action
+rail. Vibes single tap pauses/resumes, double tap likes, press-hold temporarily
+uses 2x playback, and release returns playback to 1x. Save remains available
+inside More so the visible rail matches the PWA.
+
+The Android media failure was not a Coil or Jetpack Compose rendering defect.
+The API returned historical object paths prefixed with
+`firebase-migration/`, while the canonical R2 object exists without that
+prefix. Production GET checks returned `404` for the historical path and `200`
+for its canonical equivalent. Native media resolution now canonicalizes that
+known prefix before using the same-origin R2 proxy. Authenticated emulator
+evidence subsequently rendered the affected feed image, and unit coverage
+locks the relative, legacy and absolute URL rules.
+
 ## Release decision
 
 The RC is suitable for continued staged rollout. Keep the backend revision at
