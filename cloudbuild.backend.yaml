@@ -73,6 +73,7 @@ steps:
       - --timeout
       - ${_TIMEOUT}
       - --cpu-throttling
+      - --no-traffic
       - --quiet
 
 images:

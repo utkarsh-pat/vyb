@@ -20,7 +20,8 @@ are excluded by `.gcloudignore` and `.dockerignore`.
 1. Run `pnpm install --frozen-lockfile`.
 2. Run `pnpm dc:compile`, backend syntax/tests and web type-check.
 3. Build an immutable image tagged with the Git SHA.
-4. Deploy a no-traffic revision.
+4. Deploy a no-traffic revision. `cloudbuild.backend.yaml` enforces
+   `--no-traffic`; never remove that guardrail from the automated build.
 5. Verify `/health`, authenticated identity, tenant isolation, marketplace and R2 upload/read.
 6. Shift 5%, 25%, 50%, then 100% traffic while watching error rate, p95 and DB connections.
 7. Retain the active and previous three images; cleanup untagged images older than 14 days.
