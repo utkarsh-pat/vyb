@@ -8,7 +8,7 @@ The PWA implementation is the product and interaction source of truth. The nativ
 | --- | --- | --- |
 | Home feed, stories and post actions | `apps/web/src/components/campus-home-shell.tsx` | `apps/mobile/app/src/main/java/social/vyb/app/ui/HomeScreen.kt` |
 | Post reactions, comments, share, repost and save | `apps/web/src/components/use-social-post-engagement.ts` | `apps/mobile/app/src/main/java/social/vyb/app/features/social/SocialActionsUi.kt` |
-| Profile, tabs and settings | `apps/web/src/components/campus-profile-shell.tsx` | `apps/mobile/app/src/main/java/social/vyb/app/features/profile/ProfileParityOverview.kt` and `ProfileSettingsHub.kt` |
+| Profile, tabs and settings | `apps/web/src/components/campus-profile-shell.tsx` | `apps/mobile/app/src/main/java/social/vyb/app/features/profile/PwaProfileSurface.kt` and `ProfileSettingsHub.kt` |
 | Search | `apps/web/src/components/campus-search-shell.tsx` | `apps/mobile/app/src/main/java/social/vyb/app/features/search/SearchScreen.kt` |
 | Vibes | `apps/web/src/components/campus-reels-shell.tsx` | `apps/mobile/app/src/main/java/social/vyb/app/features/stories/StoriesVibesScreens.kt` |
 | Games and events | PWA campus hub surfaces | `apps/mobile/app/src/main/java/social/vyb/app/features/fun/FunHubScreen.kt` and `features/hub/CampusHubScreen.kt` |
@@ -22,10 +22,11 @@ The PWA implementation is the product and interaction source of truth. The nativ
 
 ## Interaction parity
 
-- Home posts support reaction selection/removal, comments, Android share sheet, repost, save and full-post view.
-- Profile supports Posts, Vibes and Saved views, follower/following entry points, safe social links, edit and settings.
-- Vibes support like, comment, repost, share, profile navigation and creation.
-- Campus Hub supports Games/Events switching, search and filter state, saved/registered/hosting event views and event actions.
+- Home posts support card-tap full-post view, reaction selection/removal, comments, Android share sheet, circular repost and save. Nested actions consume their own tap and long-press still opens reaction choices.
+- Profile supports a mixed Posts grid (posts and vibes), dedicated Vibes and Saved views, oval reaction badges, follower/following entry points, safe social links, edit and settings.
+- Vibes support single-tap pause/resume, double-tap like, press-hold 2x playback, like-member discovery, expandable captions, comment, circular repost, share, profile navigation and creation.
+- Campus Hub uses the connected PWA Games/Events selector. Games expose leaderboard/streak plus Connect, Scribble and N-Queens; Events expose search, notification state, Upcoming/Saved/Ended scopes and event hosting.
+- Messages exposes chat/community switching and an official-campus community summary before the available circles.
 - Search uses a single-line responsive field and adaptive result layouts.
 
 ## Cost and performance guardrails
@@ -37,6 +38,6 @@ The PWA implementation is the product and interaction source of truth. The nativ
 
 ## Release
 
-- Android version: `0.1.5` (`versionCode 6`)
-- Artifact: `artifacts/Vyb-0.1.5-debug.apk`
-- Verification: `gradlew testDebugUnitTest assembleDebug`
+- Android version: `0.1.7` (`versionCode 8`)
+- Artifact: `artifacts/Vyb-0.1.7-debug.apk`
+- Verification: `gradlew testDebugUnitTest lintDebug assembleDebug` plus authenticated API 35 emulator interaction and media checks.

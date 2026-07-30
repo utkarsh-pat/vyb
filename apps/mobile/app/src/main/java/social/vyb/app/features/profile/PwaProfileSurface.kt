@@ -79,7 +79,7 @@ internal fun PwaProfileSurface(
     val content = when (state.activeTab) {
         "vibes" -> publicProfile.posts.filter { it.kind == "video" || it.placement == "vibe" }
         "saved" -> emptyList()
-        else -> publicProfile.posts.filterNot { it.kind == "video" || it.placement == "vibe" }
+        else -> publicProfile.posts
     }
 
     LazyVerticalGrid(
@@ -156,16 +156,17 @@ private fun PwaProfileHeader(onSettings: () -> Unit, onCreatePost: () -> Unit) {
         Image(
             painter = painterResource(R.drawable.vyb_logo),
             contentDescription = "Vyb",
-            modifier = Modifier.size(44.dp).clip(RoundedCornerShape(13.dp)),
-            contentScale = ContentScale.Crop
+            modifier = Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)),
+            contentScale = ContentScale.Fit
         )
         Spacer(Modifier.weight(1f))
         CircleAction(Icons.Default.Settings, "Settings", onSettings)
-        Surface(
-            onClick = onCreatePost,
-            modifier = Modifier.padding(start = 9.dp),
-            color = VybIndigo,
-            shape = RoundedCornerShape(24.dp)
+        Box(
+            modifier = Modifier
+                .padding(start = 9.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .background(Brush.horizontalGradient(listOf(VybIndigo, Color(0xFF08C7D4))))
+                .clickable(onClick = onCreatePost)
         ) {
             Text(
                 "Post",
@@ -380,7 +381,7 @@ private fun ProfileGridTile(post: SocialPost) {
         Surface(
             modifier = Modifier.align(Alignment.BottomStart).padding(6.dp),
             color = Color(0xCC071426),
-            shape = CircleShape
+            shape = RoundedCornerShape(999.dp)
         ) {
             Text(
                 "♡ ${post.reactions}",

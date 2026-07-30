@@ -26,6 +26,8 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
@@ -86,32 +88,27 @@ fun FunHubScreen(
         val tablet = maxWidth >= 700.dp
         VybResponsiveFrame(Modifier.fillMaxSize(), maxContentWidth = 1040.dp) {
             Column(Modifier.fillMaxSize()) {
-        Row(
-            Modifier.fillMaxWidth().padding(start = 18.dp, end = 8.dp, top = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (tab != null) {
+        if (tab != null) {
+            Row(
+                Modifier.fillMaxWidth().padding(start = 18.dp, end = 8.dp, top = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 IconButton(onClick = { tab = null }) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back to games")
                 }
-            }
-            Column(Modifier.weight(1f)) {
-                Text(
-                    if (tab == null) "Vyb Playground" else listOf("Connect", "Queens", "Scribble")[tab!!],
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Black,
-                    color = VybText
-                )
-                Text(
-                    if (tab == null) "Daily puzzles and multiplayer campus games"
-                    else "Campus Games",
-                    color = VybMuted,
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-            IconButton(enabled = !state.isRefreshing, onClick = viewModel::refresh) {
-                if (state.isRefreshing) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                else Icon(Icons.Default.Refresh, "Refresh")
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        listOf("Connect", "Queens", "Scribble")[tab!!],
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Black,
+                        color = VybText
+                    )
+                    Text("Campus Games", color = VybMuted, style = MaterialTheme.typography.bodySmall)
+                }
+                IconButton(enabled = !state.isRefreshing, onClick = viewModel::refresh) {
+                    if (state.isRefreshing) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                    else Icon(Icons.Default.Refresh, "Refresh")
+                }
             }
         }
 
@@ -119,8 +116,7 @@ fun FunHubScreen(
             tab == null -> GamesOverview(
                 state = state,
                 tablet = tablet,
-                onOpen = { tab = it },
-                onRetry = viewModel::refresh
+                onOpen = { tab = it }
             )
             tab == 2 -> ScribbleScreen(Modifier.fillMaxSize())
             state.isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -155,8 +151,7 @@ private data class GameHubCard(
 private fun GamesOverview(
     state: FunUiState,
     tablet: Boolean,
-    onOpen: (Int) -> Unit,
-    onRetry: () -> Unit
+    onOpen: (Int) -> Unit
 ) {
     val games = listOf(
         GameHubCard(
@@ -169,7 +164,7 @@ private fun GamesOverview(
             0
         ),
         GameHubCard(
-            "Queens",
+            "N-Queens",
             state.queens?.let { "Daily #${it.dailyIndex} · ${it.level.difficulty}" }
                 ?: "One queen in every row and region",
             if (state.queens?.sessionCompletedAt != null) "Completed" else "Daily",
@@ -179,7 +174,7 @@ private fun GamesOverview(
         ),
         GameHubCard(
             "Scribble",
-            "Draw, guess and play live with your campus",
+            "Draw - Guess - Repeat",
             "Live",
             Icons.Default.Edit,
             Color(0xFFFF8A65),
@@ -190,71 +185,78 @@ private fun GamesOverview(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .padding(horizontal = if (tablet) 24.dp else 16.dp, vertical = 10.dp)
     ) {
-        Surface(
-            color = VybPanel,
-            border = BorderStroke(1.dp, VybBorder),
-            shape = RoundedCornerShape(20.dp),
-            modifier = Modifier.fillMaxWidth()
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Icons.Default.CheckCircle, null, tint = VybTeal, modifier = Modifier.size(30.dp))
-                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                    Text("Daily challenge", color = VybText, fontWeight = FontWeight.Bold)
-                    Text(
-                        state.connect?.dailyKey ?: state.queens?.dailyKey ?: "New puzzles every day",
-                        color = VybMuted
-                    )
-                }
+            Icon(
+                Icons.Default.EmojiEvents,
+                null,
+                tint = Color(0xFFFFC342),
+                modifier = Modifier.size(28.dp)
+            )
+            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                Text("LEADERBOARD", color = VybText, fontWeight = FontWeight.Black)
                 Text(
-                    "${listOfNotNull(state.connect, state.queens).count { game ->
-                        when (game) {
-                            is ConnectDaily -> game.sessionCompletedAt != null
-                            is QueensDaily -> game.sessionCompletedAt != null
-                            else -> false
-                        }
-                    }}/2 done",
-                    color = VybTeal,
-                    fontWeight = FontWeight.Bold
+                    if (state.connect?.sessionCompletedAt != null) "Valid solve recorded today"
+                    else "No valid solve yet today",
+                    color = VybMuted,
+                    style = MaterialTheme.typography.bodySmall
                 )
             }
+            Column(horizontalAlignment = Alignment.End) {
+                Text("STREAK", color = VybIndigo, fontWeight = FontWeight.Black)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.LocalFireDepartment, null, tint = Color(0xFFFF8A36))
+                    Text(
+                        if (
+                            state.connect?.sessionCompletedAt != null ||
+                            state.queens?.sessionCompletedAt != null
+                        ) "1 day" else "0 days",
+                        color = VybText,
+                        fontWeight = FontWeight.Black
+                    )
+                }
+            }
         }
-
         if (state.isLoading && state.connect == null && state.queens == null) {
             Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) {
                 VybLoadingMark(width = 92.dp)
             }
         }
-        state.error?.let {
-            StatusBanner(it, true, Modifier.padding(top = 12.dp))
-            OutlinedButton(onClick = onRetry, modifier = Modifier.padding(top = 8.dp)) {
-                Text("Try again")
-            }
-        }
-
         if (tablet) {
             Row(
                 Modifier.fillMaxWidth().padding(top = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                games.forEach { game ->
+                games.sortedBy {
+                    when (it.title) {
+                        "Connect" -> 0
+                        "Scribble" -> 1
+                        else -> 2
+                    }
+                }.forEach { game ->
                     GameOverviewCard(game, Modifier.weight(1f)) { onOpen(game.tab) }
                 }
             }
         } else {
-            games.forEach { game ->
+            games.sortedBy {
+                when (it.title) {
+                    "Connect" -> 0
+                    "Scribble" -> 1
+                    else -> 2
+                }
+            }.forEach { game ->
                 GameOverviewCard(game, Modifier.fillMaxWidth().padding(top = 14.dp)) {
                     onOpen(game.tab)
                 }
             }
         }
         Text(
-            "Daily puzzles reset on the server. Multiplayer rooms use live campus sessions.",
+            "Vyb Playground",
             color = VybMuted,
             style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(vertical = 20.dp, horizontal = 4.dp)
+            modifier = Modifier.align(Alignment.CenterHorizontally).padding(vertical = 20.dp)
         )
     }
 }
@@ -267,7 +269,7 @@ private fun GameOverviewCard(
 ) {
     Surface(
         onClick = onClick,
-        modifier = modifier.height(170.dp),
+        modifier = modifier.height(164.dp),
         color = VybPanel,
         border = BorderStroke(1.dp, VybBorder),
         shape = RoundedCornerShape(22.dp)

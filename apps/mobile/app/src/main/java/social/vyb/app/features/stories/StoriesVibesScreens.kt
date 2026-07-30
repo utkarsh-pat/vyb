@@ -44,7 +44,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.Button
@@ -94,6 +94,7 @@ import social.vyb.app.features.social.CommentsBottomSheet
 import social.vyb.app.features.social.PostEngagementState
 import social.vyb.app.features.social.PostOverflowActions
 import social.vyb.app.features.social.PostRepostDialog
+import social.vyb.app.features.social.PostReactionMembersDialog
 import social.vyb.app.features.social.ReactionMembersState
 import social.vyb.app.features.social.SocialActionsViewModel
 import social.vyb.app.features.social.SocialOperationFeedback
@@ -537,6 +538,8 @@ private fun VibePage(
     var paused by remember(vibe.id) { mutableStateOf(false) }
     var playbackRate by remember(vibe.id) { mutableStateOf(1f) }
     var heartBurst by remember(vibe.id) { mutableStateOf(false) }
+    var likesOpen by remember(vibe.id) { mutableStateOf(false) }
+    var descriptionExpanded by remember(vibe.id) { mutableStateOf(false) }
     val gestureScope = rememberCoroutineScope()
     LaunchedEffect(heartBurst) {
         if (heartBurst) {
@@ -647,7 +650,7 @@ private fun VibePage(
             Spacer(Modifier.height(12.dp))
             VibeRailAction(
                 label = "Repost",
-                icon = Icons.Default.Repeat,
+                icon = Icons.Default.Sync,
                 onClick = { repostOpen = true }
             )
             Spacer(Modifier.height(12.dp))
@@ -710,10 +713,21 @@ private fun VibePage(
                 Text(
                     description,
                     color = Color.White,
-                    maxLines = 3,
+                    maxLines = if (descriptionExpanded) Int.MAX_VALUE else 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 6.dp)
+                    modifier = Modifier
+                        .padding(top = 6.dp)
+                        .clickable { descriptionExpanded = !descriptionExpanded }
                 )
+                if (description.length > 90) {
+                    Text(
+                        if (descriptionExpanded) "See less" else "See more",
+                        color = Color.White,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 12.sp,
+                        modifier = Modifier.clickable { descriptionExpanded = !descriptionExpanded }
+                    )
+                }
             }
             vibe.location?.let {
                 Text(
@@ -721,6 +735,27 @@ private fun VibePage(
                     color = Color.White.copy(alpha = .72f),
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 5.dp)
+                )
+            }
+            Row(
+                Modifier.padding(top = 5.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "${engagement.reactionCount.toCompactMetric()} likes",
+                    color = Color.White.copy(alpha = .72f),
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    "See likes",
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.clickable {
+                        onLoadReactionMembers()
+                        likesOpen = true
+                    }
                 )
             }
         }
@@ -732,6 +767,12 @@ private fun VibePage(
                 onRepost(quote, placement)
                 repostOpen = false
             }
+        )
+    }
+    if (likesOpen) {
+        PostReactionMembersDialog(
+            state = reactionMembers,
+            onDismiss = { likesOpen = false }
         )
     }
 }

@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -39,6 +40,7 @@ import androidx.compose.material.icons.filled.HowToReg
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -153,8 +155,9 @@ private fun HubRoot(
     modifier: Modifier
 ) {
     BoxWithConstraints(modifier.fillMaxSize()) {
-        val compact = maxWidth < 360.dp || maxHeight < 700.dp
+        val compact = maxWidth < 600.dp
         Column(Modifier.fillMaxSize()) {
+            if (!compact) {
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -206,6 +209,7 @@ private fun HubRoot(
                     )
                 }
             }
+            }
             when {
                 state.isLoading -> CenterMessage { VybLoadingMark(width = 96.dp) }
                 state.error != null &&
@@ -233,7 +237,8 @@ private fun HubRoot(
                             events = state.events,
                             busyId = state.busyId,
                             onOpen = onEvent,
-                            onSave = onSaveEvent
+                            onSave = onSaveEvent,
+                            onHostEvent = onHostEvent
                         )
                         CampusHubTab.Resources -> ResourceList(state.resources)
                         CampusHubTab.Communities -> CommunityList(
@@ -253,11 +258,13 @@ private fun EventDashboard(
     events: List<HubEvent>,
     busyId: String?,
     onOpen: (HubEvent) -> Unit,
-    onSave: (String) -> Unit
+    onSave: (String) -> Unit,
+    onHostEvent: () -> Unit
 ) {
     var query by remember { mutableStateOf("") }
     var scope by remember { mutableStateOf("Upcoming") }
     var category by remember { mutableStateOf("All") }
+    var notificationsOpen by remember { mutableStateOf(false) }
     val categories = remember(events) {
         listOf("All") + events.map(HubEvent::category).filter(String::isNotBlank).distinct()
     }
@@ -273,31 +280,52 @@ private fun EventDashboard(
                 onValueChange = { query = it.take(80) },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
                 leadingIcon = { Icon(Icons.Default.Search, null) },
-                label = { Text("Search events, clubs or places") },
+                placeholder = { Text("Search clubs, nights, workshops") },
+                trailingIcon = {
+                    IconButton(onClick = { notificationsOpen = !notificationsOpen }) {
+                        Icon(Icons.Default.NotificationsNone, "Event notifications")
+                    }
+                },
                 singleLine = true,
                 shape = RoundedCornerShape(16.dp)
             )
+            if (notificationsOpen) {
+                Surface(
+                    color = VybPanel,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, VybBorder),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                ) {
+                    Text(
+                        "Saved and registered event reminders will appear here.",
+                        color = VybMuted,
+                        modifier = Modifier.padding(14.dp)
+                    )
+                }
+            }
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                listOf("Upcoming", "Saved", "Registered", "Hosting").forEach { option ->
-                    FilterChip(
-                        selected = scope == option,
-                        onClick = { scope = option },
-                        label = {
-                            val count = events.count {
-                                when (option) {
-                                    "Saved" -> it.isSaved
-                                    "Registered" -> it.viewerRegistration != null || it.isInterested
-                                    "Hosting" -> it.isHostedByViewer
-                                    else -> it.status == "published"
-                                }
-                            }
-                            Text("$option $count")
-                        }
-                    )
+                listOf("Upcoming", "Saved", "Ended").forEach { option ->
+                    val selected = scope == option
+                    Column(
+                        Modifier.width(100.dp).clickable { scope = option },
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            option.uppercase(),
+                            color = if (selected) VybText else VybMuted,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.padding(vertical = 10.dp)
+                        )
+                        Box(
+                            Modifier.fillMaxWidth().height(2.dp)
+                                .background(if (selected) VybText else VybBorder)
+                        )
+                    }
                 }
             }
             Row(
@@ -317,7 +345,7 @@ private fun EventDashboard(
                 HubEmptyState(
                     icon = { Icon(Icons.Default.CalendarMonth, null, tint = VybTeal) },
                     title = "No events match this lane",
-                    body = "Try another scope, category, or search."
+                    body = "Try another category, switch scopes, or clear the search to see more campus activity."
                 )
             } else {
                 LazyVerticalGrid(
@@ -338,6 +366,14 @@ private fun EventDashboard(
                     item { Spacer(Modifier.height(16.dp)) }
                 }
             }
+        }
+        Button(
+            onClick = onHostEvent,
+            modifier = Modifier.align(Alignment.BottomStart).padding(20.dp),
+            shape = RoundedCornerShape(24.dp)
+        ) {
+            Icon(Icons.Default.Add, null)
+            Text("Host event", modifier = Modifier.padding(start = 7.dp))
         }
     }
 }

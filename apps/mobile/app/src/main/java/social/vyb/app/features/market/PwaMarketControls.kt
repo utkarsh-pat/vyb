@@ -1,6 +1,7 @@
 package social.vyb.app.features.market
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -85,11 +86,27 @@ internal fun PwaMarketControls(
                     Surface(
                         onClick = { onTab(id) },
                         modifier = Modifier.weight(1f),
-                        color = if (selected) VybIndigo.copy(alpha = .28f) else Color.Transparent,
+                        color = Color.Transparent,
                         shape = RoundedCornerShape(22.dp)
                     ) {
                         Row(
-                            Modifier.fillMaxWidth().height(40.dp),
+                            Modifier
+                                .fillMaxWidth()
+                                .height(40.dp)
+                                .background(
+                                    if (selected) {
+                                        Brush.horizontalGradient(
+                                            listOf(
+                                                Color(0xFF0B706F),
+                                                Color(0xFF293D82)
+                                            )
+                                        )
+                                    } else {
+                                        Brush.horizontalGradient(
+                                            listOf(Color.Transparent, Color.Transparent)
+                                        )
+                                    }
+                                ),
                             horizontalArrangement = Arrangement.Center,
                             verticalAlignment = Alignment.CenterVertically
                         ) {

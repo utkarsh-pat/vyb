@@ -34,7 +34,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreHoriz
-import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.BookmarkBorder
@@ -1259,7 +1259,8 @@ fun PostActionsBar(
                 style = MaterialTheme.typography.bodySmall
             )
         }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .5f))
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .34f))
+        val actionTint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .82f)
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -1286,7 +1287,7 @@ fun PostActionsBar(
                         if (choice != null) {
                             Text(choice.symbol, fontSize = 21.sp)
                         } else {
-                            Icon(Icons.Outlined.FavoriteBorder, "React to post")
+                            Icon(Icons.Outlined.FavoriteBorder, "React to post", tint = actionTint)
                         }
                     }
                 }
@@ -1306,18 +1307,18 @@ fun PostActionsBar(
                 }
             }
             IconButton(onClick = onOpenComments) {
-                Icon(Icons.Outlined.ChatBubbleOutline, "Open comments")
+                Icon(Icons.Outlined.ChatBubbleOutline, "Open comments", tint = actionTint)
             }
             IconButton(
                 onClick = onShare ?: {
                     sharePost(context, postShareText(postId, title, body))
                 }
             ) {
-                Icon(Icons.Default.Share, "Share post")
+                Icon(Icons.Default.Share, "Share post", tint = actionTint)
             }
             Spacer(Modifier.weight(1f))
             IconButton(onClick = onRepost) {
-                Icon(Icons.Default.Repeat, "Repost")
+                Icon(Icons.Default.Sync, "Repost", tint = actionTint)
             }
             IconButton(onClick = onToggleSave, enabled = !engagement.saveLoading) {
                 if (engagement.saveLoading) {
@@ -1325,7 +1326,8 @@ fun PostActionsBar(
                 } else {
                     Icon(
                         if (engagement.isSaved) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
-                        contentDescription = if (engagement.isSaved) "Remove saved post" else "Save post"
+                        contentDescription = if (engagement.isSaved) "Remove saved post" else "Save post",
+                        tint = if (engagement.isSaved) MaterialTheme.colorScheme.primary else actionTint
                     )
                 }
             }

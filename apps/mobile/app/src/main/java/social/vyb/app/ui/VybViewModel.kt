@@ -18,6 +18,8 @@ import social.vyb.app.data.VybApiRepository
 import social.vyb.app.data.VybUiState
 import social.vyb.app.data.VerificationEmailSentException
 import social.vyb.app.data.UpsertProfileRequest
+import java.time.Duration
+import java.time.Instant
 
 class VybViewModel : ViewModel() {
     private val authRepository = FirebaseAuthRepository()
@@ -258,7 +260,7 @@ internal fun toFeedPost(post: RemotePost) = FeedPost(
     author = if (post.isAnonymous || post.author.isAnonymous) "Anonymous" else post.author.displayName,
     handle = if (post.isAnonymous || post.author.isAnonymous) "@anonymous" else "@${post.author.username}",
     avatarUrl = post.author.avatarUrl,
-    time = post.createdAt.take(10),
+    time = formatSocialAge(post.createdAt),
     title = post.title,
     body = post.body.ifBlank { post.title },
     kind = post.kind,
@@ -285,3 +287,16 @@ internal fun toFeedPost(post: RemotePost) = FeedPost(
         it.uppercase()
     }
 )
+
+internal fun formatSocialAge(value: String, now: Instant = Instant.now()): String {
+    val instant = runCatching { Instant.parse(value) }.getOrNull() ?: return ""
+    val elapsed = Duration.between(instant, now).coerceAtLeast(Duration.ZERO)
+    return when {
+        elapsed.toMinutes() < 1 -> "now"
+        elapsed.toHours() < 1 -> "${elapsed.toMinutes()}m"
+        elapsed.toDays() < 1 -> "${elapsed.toHours()}h"
+        elapsed.toDays() < 7 -> "${elapsed.toDays()}d"
+        elapsed.toDays() < 365 -> "${elapsed.toDays() / 7}w"
+        else -> "${elapsed.toDays() / 365}y"
+    }
+}

@@ -16,13 +16,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Explore
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Explore
+import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.Storefront
+import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.HorizontalDivider
@@ -75,11 +76,11 @@ private data class Destination(
 )
 
 private val destinations = listOf(
-    Destination("home", "Home", Icons.Default.Home),
-    Destination("hub", "Hub", Icons.Default.Explore),
-    Destination("vibes", "Vibes", Icons.Default.AutoAwesome),
-    Destination("market", "Market", Icons.Default.Storefront),
-    Destination("profile", "Profile", Icons.Default.Person)
+    Destination("home", "Home", Icons.Outlined.Home),
+    Destination("hub", "Hub", Icons.Outlined.Explore),
+    Destination("vibes", "Vibes", Icons.Outlined.AutoAwesome),
+    Destination("market", "Market", Icons.Outlined.Storefront),
+    Destination("profile", "Profile", Icons.Outlined.PersonOutline)
 )
 
 @Composable
@@ -228,15 +229,21 @@ private fun VybAppContent(
                                 NavigationBarItem(
                                     selected = currentRoute == destination.route,
                                     onClick = { navigateTo(destination.route) },
-                                    icon = { Icon(destination.icon, destination.label) },
+                                    icon = {
+                                        Icon(
+                                            destination.icon,
+                                            destination.label,
+                                            modifier = Modifier.size(21.dp)
+                                        )
+                                    },
                                     label = if (iconOnly) null else ({
                                         Text(destination.label, style = MaterialTheme.typography.labelSmall)
                                     }),
                                     alwaysShowLabel = !iconOnly,
                                     colors = NavigationBarItemDefaults.colors(
-                                        selectedIconColor = VybText,
+                                        selectedIconColor = VybIndigo,
                                         selectedTextColor = VybText,
-                                        indicatorColor = VybIndigo.copy(alpha = .24f),
+                                        indicatorColor = Color.Transparent,
                                         unselectedIconColor = VybMuted,
                                         unselectedTextColor = VybMuted
                                     )
@@ -421,26 +428,30 @@ private fun UnifiedHubScreen() {
     var selectedTab by remember { mutableIntStateOf(1) }
     Column {
         Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            color = VybPanel.copy(alpha = .92f),
-            shape = RoundedCornerShape(18.dp)
+            modifier = Modifier.fillMaxWidth(),
+            color = Color.Transparent,
+            shape = RoundedCornerShape(0.dp)
         ) {
             BoxWithConstraints {
                 val compactTabs = maxWidth < 360.dp
-                Row(Modifier.padding(4.dp)) {
+                Row {
                     listOf("Games Hub", "Events Hub").forEachIndexed { index, label ->
                         Surface(
                             onClick = { selectedTab = index },
                             modifier = Modifier.weight(1f),
-                            color = if (selectedTab == index) VybIndigo.copy(alpha = .28f) else Color.Transparent,
-                            shape = RoundedCornerShape(14.dp)
+                            color = if (selectedTab == index) Color.Transparent else VybBackgroundDeep,
+                            shape = if (selectedTab == index) {
+                                RoundedCornerShape(0.dp)
+                            } else if (index == 0) {
+                                RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp)
+                            } else {
+                                RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp)
+                            }
                         ) {
                             Box(
                                 Modifier.padding(
                                     horizontal = if (compactTabs) 6.dp else 10.dp,
-                                    vertical = 11.dp
+                                    vertical = 15.dp
                                 ),
                                 contentAlignment = androidx.compose.ui.Alignment.Center
                             ) {

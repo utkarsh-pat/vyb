@@ -6,8 +6,17 @@ import org.junit.Test
 import social.vyb.app.data.RemoteAuthor
 import social.vyb.app.data.RemoteMediaAsset
 import social.vyb.app.data.RemotePost
+import java.time.Instant
 
 class FeedMappingTest {
+    @Test
+    fun socialAgeUsesCompactPwaStyleLabels() {
+        val now = Instant.parse("2026-07-30T12:00:00Z")
+        assertEquals("now", formatSocialAge("2026-07-30T11:59:40Z", now))
+        assertEquals("9w", formatSocialAge("2026-05-26T12:00:00Z", now))
+        assertEquals("", formatSocialAge("not-a-date", now))
+    }
+
     @Test
     fun feedMappingPreservesMediaAndViewerState() {
         val mapped = toFeedPost(

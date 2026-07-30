@@ -10,6 +10,7 @@ internal fun filterHubEvents(
     return events.filter { event ->
         val inScope = when (scope) {
             "Saved" -> event.isSaved
+            "Ended" -> event.status == "ended" || event.status == "completed"
             "Hosting" -> event.isHostedByViewer
             "Registered" -> event.viewerRegistration != null || event.isInterested
             else -> event.status == "published"

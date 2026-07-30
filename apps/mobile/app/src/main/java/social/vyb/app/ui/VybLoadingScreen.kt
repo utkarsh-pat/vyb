@@ -63,14 +63,7 @@ fun VybLoadingScreen(modifier: Modifier = Modifier) {
             )
         }
 
-        VybLoadingMark(
-            modifier = Modifier.graphicsLayer {
-                shadowElevation = 22.dp.toPx()
-                ambientShadowColor = WebLoaderTeal.copy(alpha = .16f)
-                spotShadowColor = WebLoaderTeal.copy(alpha = .16f)
-            },
-            width = if (maxWidth <= 520.dp) 148.dp else 168.dp
-        )
+        VybLoadingMark(width = if (maxWidth <= 520.dp) 148.dp else 168.dp)
     }
 }
 

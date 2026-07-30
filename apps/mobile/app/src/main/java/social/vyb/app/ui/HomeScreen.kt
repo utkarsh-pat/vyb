@@ -44,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -134,10 +135,15 @@ fun HomeScreen(
                     )
                 }
                 Spacer(Modifier.size(6.dp))
-                Surface(
-                    onClick = { composerOpen = !composerOpen },
-                    color = VybIndigo,
-                    shape = RoundedCornerShape(24.dp)
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(VybIndigo, Color(0xFF08C7D4))
+                            )
+                        )
+                        .clickable { composerOpen = !composerOpen }
                 ) {
                     Row(
                         Modifier.height(38.dp).padding(horizontal = 10.dp),
@@ -469,7 +475,8 @@ private fun PostCard(
         Modifier
             .fillMaxWidth()
             .widthIn(max = if (expanded) 900.dp else 720.dp)
-            .padding(horizontal = if (compact) 0.dp else 14.dp, vertical = 6.dp),
+            .padding(horizontal = if (compact) 0.dp else 14.dp, vertical = 6.dp)
+            .clickable(onClick = onViewPost),
         shape = RoundedCornerShape(if (compact) 0.dp else 20.dp),
         colors = CardDefaults.cardColors(containerColor = VybPanel),
         border = androidx.compose.foundation.BorderStroke(1.dp, VybBorder),

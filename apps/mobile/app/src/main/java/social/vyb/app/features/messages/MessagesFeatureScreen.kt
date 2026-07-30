@@ -225,6 +225,35 @@ private fun InboxContent(
                 )
             }
             communityMode -> LazyColumn(Modifier.padding(top = 8.dp)) {
+                item {
+                    Surface(
+                        color = VybPanelLifted,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, VybBorder),
+                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp)
+                    ) {
+                        Column(Modifier.padding(14.dp)) {
+                            Text(
+                                "YOUR CAMPUS",
+                                color = VybMuted,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Black
+                            )
+                            Text(
+                                "Your verified campus",
+                                color = VybText,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(top = 3.dp)
+                            )
+                            Text(
+                                "${state.filteredCommunities.size} official circles",
+                                color = VybMuted,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+                    }
+                }
                 items(state.filteredCommunities, key = CommunityInboxItem::id) { item ->
                     CommunityInboxRow(item = item, onClick = { onOpenCommunity(item.slug) })
                 }

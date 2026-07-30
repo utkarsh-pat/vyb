@@ -21,6 +21,12 @@ class CampusHubFiltersTest {
             category = "Culture",
             status = "draft",
             isHostedByViewer = true
+        ),
+        HubEvent(
+            id = "ended-sports",
+            title = "Campus football final",
+            category = "Sports",
+            status = "ended"
         )
     )
 
@@ -41,6 +47,14 @@ class CampusHubFiltersTest {
         assertEquals(
             listOf("hosted-culture"),
             filterHubEvents(events, "", "Hosting", "All").map(HubEvent::id)
+        )
+    }
+
+    @Test
+    fun endedScopeOnlyShowsCompletedEvents() {
+        assertEquals(
+            listOf("ended-sports"),
+            filterHubEvents(events, "", "Ended", "All").map(HubEvent::id)
         )
     }
 }
