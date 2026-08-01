@@ -3,7 +3,7 @@
 Owner: Product Engineering
 Date: 2026-08-02
 Release: Android `0.1.21 (22)` and current PWA main release
-Status: Ready for main after automated validation
+Status: Released to main; local and remote release gates passed
 
 ## Outcome
 
@@ -81,6 +81,10 @@ The first remote Android lint run identified an API-33-only `URLDecoder`
 overload in notification deep-link parsing. It was replaced with the
 API-26-compatible charset-name overload and the exact CI Gradle command then
 passed locally before the follow-up push.
+
+Remote verification completed successfully on `main`: Backend CI run
+`30722982760` and Android CI run `30723469347` are green. The final Android
+run also uploaded its debug APK and verification reports.
 
 ## Next Work, in Priority Order
 
