@@ -630,7 +630,12 @@ private fun notificationTarget(href: String): NotificationTarget {
 }
 
 private fun decodeQueryValue(value: String): String =
-    runCatching { java.net.URLDecoder.decode(value, java.nio.charset.StandardCharsets.UTF_8) }
+    runCatching {
+        java.net.URLDecoder.decode(
+            value,
+            java.nio.charset.StandardCharsets.UTF_8.name()
+        )
+    }
         .getOrDefault("")
 
 private fun encodeRouteSegment(value: String): String =

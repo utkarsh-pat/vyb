@@ -196,6 +196,10 @@ Task Set 2 feature/optimization hunt was intentionally excluded.
   explicit draft load/discard, synchronized Story intent, the Post schedule
   menu and native calendar picker, profile-tile detail navigation, and Vibe
   fill rendering without an AndroidRuntime crash.
+- Release CI follow-up: Android lint found notification deep-link decoding was
+  calling an API-33 `URLDecoder` overload despite minSdk 26. The equivalent
+  charset-name overload now preserves UTF-8 behavior on API 26+, and the exact
+  unit-test + lint + APK command passes.
 
 ## Recommendation status
 

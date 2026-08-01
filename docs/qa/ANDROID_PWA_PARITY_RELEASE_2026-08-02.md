@@ -69,13 +69,18 @@ the final working-tree fixes completed before main integration.
 - `pnpm --filter @vyb/web build`
 - `pnpm dc:compile`
 - backend Node syntax and automated test suites
-- `gradlew :app:compileDebugKotlin :app:testDebugUnitTest :app:assembleDebug`
+- `gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug`
 - `git diff --check`
 - repository secret-pattern scan before staging
 - Android emulator QA for Vibes fill, explicit draft load/discard, exact date
   picker, profile tile navigation, carousel behavior, and publish lifecycle
 - Local PWA boot/login boundary QA; authenticated localhost interaction is
   intentionally blocked by the production Firebase HTTP-referrer policy
+
+The first remote Android lint run identified an API-33-only `URLDecoder`
+overload in notification deep-link parsing. It was replaced with the
+API-26-compatible charset-name overload and the exact CI Gradle command then
+passed locally before the follow-up push.
 
 ## Next Work, in Priority Order
 
