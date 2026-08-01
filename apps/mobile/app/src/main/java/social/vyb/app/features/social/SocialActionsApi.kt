@@ -20,6 +20,12 @@ internal interface SocialActionsApi {
         @Body body: CreatePostBody
     ): CreatePostEnvelope
 
+    @GET("v1/posts/{postId}")
+    suspend fun post(
+        @Header("Authorization") bearer: String,
+        @Path("postId") postId: String
+    ): CreatePostEnvelope
+
     @PUT("v1/posts/{postId}/reactions")
     suspend fun toggleReaction(
         @Header("Authorization") bearer: String,

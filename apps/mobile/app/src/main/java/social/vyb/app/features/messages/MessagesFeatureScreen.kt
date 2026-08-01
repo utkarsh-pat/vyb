@@ -2,6 +2,9 @@ package social.vyb.app.features.messages
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,6 +38,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,13 +47,22 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import social.vyb.app.ui.VybBorder
 import social.vyb.app.ui.VybIndigo
 import social.vyb.app.ui.VybMuted
@@ -58,19 +71,31 @@ import social.vyb.app.ui.VybText
 import social.vyb.app.ui.VybEmptyState
 import social.vyb.app.ui.VybLoadingMark
 import social.vyb.app.ui.VybResponsiveFrame
+import social.vyb.app.ui.VybConnectedTab
+import social.vyb.app.ui.VybConnectedTabSelector
+import social.vyb.app.features.social.SocialAvatar
 
 @Composable
 fun MessagesFeatureScreen(
     modifier: Modifier = Modifier,
+    initialConversationId: String? = null,
+    onInitialConversationConsumed: (() -> Unit)? = null,
     communitySlug: String? = null,
     onOpenCommunity: ((String) -> Unit)? = null,
     onCloseCommunity: (() -> Unit)? = null
 ) {
     val context = LocalContext.current.applicationContext
     val repository = remember(context) { ChatRepository(context) }
-    var selectedConversationId by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedConversationId by rememberSaveable { mutableStateOf(initialConversationId) }
     var selectedCommunitySlug by rememberSaveable { mutableStateOf<String?>(null) }
     var communityMode by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(initialConversationId) {
+        val requested = initialConversationId?.trim()?.takeIf(String::isNotEmpty) ?: return@LaunchedEffect
+        selectedConversationId = requested
+        communityMode = false
+        onInitialConversationConsumed?.invoke()
+    }
 
     val activeCommunitySlug = communitySlug ?: selectedCommunitySlug
     if (activeCommunitySlug != null) {
@@ -82,13 +107,22 @@ fun MessagesFeatureScreen(
             )
         )
         val state by communityViewModel.state.collectAsStateWithLifecycle()
+        val lifecycleOwner = LocalLifecycleOwner.current
+        LaunchedEffect(communityViewModel, lifecycleOwner) {
+            lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                while (isActive) {
+                    delay(15_000)
+                    communityViewModel.refresh(silent = true)
+                }
+            }
+        }
         CommunityConversationContent(
             state = state,
             onBack = {
                 if (communitySlug != null) onCloseCommunity?.invoke()
                 else selectedCommunitySlug = null
             },
-            onRetry = communityViewModel::refresh,
+            onRetry = { communityViewModel.refresh() },
             onDraftChange = communityViewModel::updateDraft,
             onSend = communityViewModel::send,
             modifier = modifier
@@ -102,10 +136,18 @@ fun MessagesFeatureScreen(
             factory = MessagesViewModelFactory(repository)
         )
         val state by inboxViewModel.state.collectAsStateWithLifecycle()
+        val lifecycleOwner = LocalLifecycleOwner.current
+        DisposableEffect(inboxViewModel, lifecycleOwner) {
+            val observer = LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) inboxViewModel.refresh(silent = true)
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        }
         InboxContent(
             state = state,
             onQueryChange = inboxViewModel::updateQuery,
-            onRetry = inboxViewModel::refresh,
+            onRetry = { inboxViewModel.refresh() },
             onOpen = { selectedConversationId = it },
             communityMode = communityMode,
             onCommunityModeChange = { communityMode = it },
@@ -143,14 +185,37 @@ private fun InboxContent(
     onOpenCommunity: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val focusManager = LocalFocusManager.current
     VybResponsiveFrame(modifier.fillMaxSize()) {
-    Column(Modifier.fillMaxSize()) {
-        Text(
-            text = if (communityMode) "Communities" else "Messages",
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Black,
-            color = VybText
+    Column(
+        Modifier.fillMaxSize().pointerInput(communityMode) {
+            var drag = 0f
+            detectHorizontalDragGestures(
+                onDragStart = { drag = 0f },
+                onDragCancel = { drag = 0f },
+                onDragEnd = {
+                    if (drag < -90f && !communityMode) onCommunityModeChange(true)
+                    if (drag > 90f && communityMode) onCommunityModeChange(false)
+                    drag = 0f
+                },
+                onHorizontalDrag = { change, amount ->
+                    drag += amount
+                    if (kotlin.math.abs(drag) > 12f) change.consume()
+                }
+            )
+        }
+    ) {
+        VybConnectedTabSelector(
+            tabs = listOf(
+                VybConnectedTab(
+                    label = "Chats",
+                    badgeCount = state.items.sumOf(ChatInboxItem::unreadCount)
+                ),
+                VybConnectedTab("Community")
+            ),
+            selectedIndex = if (communityMode) 1 else 0,
+            onSelected = { onCommunityModeChange(it == 1) },
+            modifier = Modifier.padding(bottom = 18.dp)
         )
         OutlinedTextField(
             value = state.query,
@@ -161,6 +226,10 @@ private fun InboxContent(
             },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
             singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(
+                onSearch = { focusManager.clearFocus() }
+            ),
             shape = RoundedCornerShape(16.dp),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = VybPanelLifted,
@@ -173,26 +242,6 @@ private fun InboxContent(
                 unfocusedPlaceholderColor = VybMuted
             )
         )
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            listOf(false to "Chats", true to "Community").forEach { (isCommunity, label) ->
-                Surface(
-                    onClick = { onCommunityModeChange(isCommunity) },
-                    modifier = Modifier.weight(1f),
-                    color = if (communityMode == isCommunity) VybIndigo else VybPanelLifted,
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Box(
-                        Modifier.padding(vertical = 10.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(label, color = VybText, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-        }
         val visibleError = if (communityMode) state.communityError else state.error
         val visibleEmpty = if (communityMode) {
             state.filteredCommunities.isEmpty()
@@ -307,13 +356,11 @@ private fun InboxRow(item: ChatInboxItem, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box {
-            Box(
-                Modifier.size(52.dp).clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.secondaryContainer),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(item.peerName.take(1).uppercase(), fontWeight = FontWeight.Bold)
-            }
+            SocialAvatar(
+                avatarUrl = item.avatarUrl,
+                displayName = item.peerName,
+                size = 52.dp
+            )
             if (item.isOnline) {
                 Box(
                     Modifier.align(Alignment.BottomEnd).size(13.dp).clip(CircleShape)

@@ -3,6 +3,8 @@ package social.vyb.app.features.search
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,35 +45,43 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import social.vyb.app.ui.VybBorder
+import social.vyb.app.ui.VybBackground
+import social.vyb.app.ui.VybBackgroundDeep
 import social.vyb.app.ui.VybEmptyState
 import social.vyb.app.ui.VybIndigo
 import social.vyb.app.ui.VybMuted
 import social.vyb.app.ui.VybPanel
 import social.vyb.app.ui.VybPanelLifted
 import social.vyb.app.ui.VybRemoteImage
+import social.vyb.app.ui.VybTeal
 import social.vyb.app.ui.VybText
+import social.vyb.app.features.social.SocialAvatar
 
 @Composable
 internal fun PwaSearchSurface(
     state: SearchUiState,
     onBack: () -> Unit,
     onQueryChange: (String) -> Unit,
+    onSelectCategory: (SearchCategory) -> Unit,
     onOpenProfile: (String) -> Unit,
     onToggleFollow: (CampusPerson) -> Unit,
     onOpenPost: (String) -> Unit,
-    onOpenVibe: (String) -> Unit
+    onOpenVibe: (String) -> Unit,
+    onOpenMarket: (MarketSearchItem) -> Unit
 ) {
     Column(
         Modifier
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    listOf(Color(0xFF062C2D), Color(0xFF071426), Color(0xFF0A1325))
+                    listOf(VybBackgroundDeep, VybBackground, VybBackground)
                 )
             )
     ) {
@@ -88,23 +98,98 @@ internal fun PwaSearchSurface(
                 onOpenPost = onOpenPost,
                 onOpenVibe = onOpenVibe
             )
-            state.visiblePeople.isEmpty() -> VybEmptyState(
-                icon = Icons.Default.PersonSearch,
-                title = "No students found",
-                body = "Try a student name, username or roll number.",
-                modifier = Modifier.padding(24.dp)
-            )
-            else -> LazyColumn(
-                contentPadding = PaddingValues(bottom = 24.dp)
-            ) {
-                items(state.visiblePeople, key = CampusPerson::userId) { person ->
-                    PersonResultCard(
-                        person = person,
-                        busy = person.username in state.mutatingUsers,
-                        onOpen = { onOpenProfile(person.username) },
-                        onToggleFollow = { onToggleFollow(person) }
-                    )
+            else -> Column(Modifier.fillMaxSize()) {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(SearchCategory.entries) { category ->
+                        Surface(
+                            onClick = { onSelectCategory(category) },
+                            color = if (state.selectedCategory == category) VybIndigo else VybPanelLifted,
+                            shape = RoundedCornerShape(18.dp)
+                        ) {
+                            Text(
+                                "${category.label} ${state.resultCount(category)}",
+                                modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
+                                color = VybText,
+                                fontWeight = if (state.selectedCategory == category) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    }
                 }
+                SearchCategoryResults(
+                    state = state,
+                    onOpenProfile = onOpenProfile,
+                    onToggleFollow = onToggleFollow,
+                    onOpenPost = onOpenPost,
+                    onOpenVibe = onOpenVibe,
+                    onOpenMarket = onOpenMarket
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchCategoryResults(
+    state: SearchUiState,
+    onOpenProfile: (String) -> Unit,
+    onToggleFollow: (CampusPerson) -> Unit,
+    onOpenPost: (String) -> Unit,
+    onOpenVibe: (String) -> Unit,
+    onOpenMarket: (MarketSearchItem) -> Unit
+) {
+    val empty = state.resultCount(state.selectedCategory) == 0
+    if (empty) {
+        VybEmptyState(
+            icon = Icons.Default.PersonSearch,
+            title = "No ${state.selectedCategory.label.lowercase()} found",
+            body = state.categoryErrors[state.selectedCategory] ?: "Try a different campus search.",
+            modifier = Modifier.padding(24.dp)
+        )
+        return
+    }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+        when (state.selectedCategory) {
+            SearchCategory.People -> items(state.visiblePeople, key = CampusPerson::userId) { person ->
+                PersonResultCard(person, person.username in state.mutatingUsers, { onOpenProfile(person.username) }) { onToggleFollow(person) }
+            }
+            SearchCategory.Posts -> items(state.posts, key = SearchContentItem::id) { item -> SearchContentResultCard(item) { onOpenPost(item.id) } }
+            SearchCategory.Vibes -> items(state.vibes, key = SearchContentItem::id) { item -> SearchContentResultCard(item, vibe = true) { onOpenVibe(item.id) } }
+            SearchCategory.Marketplace -> items(state.marketplace, key = MarketSearchItem::id) { item ->
+                Surface(
+                    onClick = { onOpenMarket(item) },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp),
+                    color = VybPanel,
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, VybBorder)
+                ) {
+                    Column(Modifier.padding(14.dp)) {
+                        Text(item.title, color = VybText, fontWeight = FontWeight.Bold)
+                        Text(item.description, color = VybMuted, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(item.priceLabel, color = VybIndigo, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchContentResultCard(item: SearchContentItem, vibe: Boolean = false, onOpen: () -> Unit) {
+    Surface(
+        onClick = onOpen,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp),
+        color = VybPanel,
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, VybBorder)
+    ) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            item.mediaUrl?.let { VybRemoteImage(it, item.title, Modifier.size(72.dp).clip(RoundedCornerShape(12.dp)), ContentScale.Crop) }
+            Column(Modifier.weight(1f).padding(start = if (item.mediaUrl == null) 0.dp else 12.dp)) {
+                Text(item.title.ifBlank { item.body }, color = VybText, fontWeight = FontWeight.Bold, maxLines = 2)
+                Text("@${item.authorUsername}${if (vibe) " · Vibe" else ""}", color = VybMuted)
             }
         }
     }
@@ -116,6 +201,7 @@ private fun SearchHeroBar(
     onQueryChange: (String) -> Unit,
     onBack: () -> Unit
 ) {
+    val focusManager = LocalFocusManager.current
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -137,6 +223,10 @@ private fun SearchHeroBar(
             onValueChange = onQueryChange,
             modifier = Modifier.weight(1f),
             singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(
+                onSearch = { focusManager.clearFocus() }
+            ),
             leadingIcon = { Icon(Icons.Default.Search, null) },
             placeholder = {
                 Text(
@@ -149,7 +239,7 @@ private fun SearchHeroBar(
             colors = OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = VybPanel.copy(alpha = .96f),
                 unfocusedContainerColor = VybPanel.copy(alpha = .96f),
-                focusedBorderColor = Color(0xFF00BFAE),
+                focusedBorderColor = VybTeal,
                 unfocusedBorderColor = VybBorder,
                 focusedTextColor = VybText,
                 unfocusedTextColor = VybText,
@@ -224,26 +314,18 @@ private fun TrendingPeople(people: List<CampusPerson>, onOpen: (String) -> Unit)
             ) {
                 Box(
                     Modifier.size(78.dp).clip(CircleShape)
-                        .background(Brush.linearGradient(listOf(VybIndigo, Color(0xFF00BFAE))))
+                        .background(Brush.linearGradient(listOf(VybIndigo, VybTeal)))
                         .padding(5.dp)
                         .clip(CircleShape)
                         .background(VybPanelLifted),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (person.avatarUrl.isNullOrBlank()) {
-                        Text(
-                            person.displayName.take(1).uppercase(),
-                            color = VybText,
-                            fontSize = 28.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    } else {
-                        VybRemoteImage(
-                            person.avatarUrl,
-                            "${person.displayName} profile photo",
-                            Modifier.fillMaxSize()
-                        )
-                    }
+                    SocialAvatar(
+                        avatarUrl = person.avatarUrl,
+                        displayName = person.displayName,
+                        size = 68.dp,
+                        contentDescription = "${person.displayName} profile photo"
+                    )
                 }
                 Text(
                     person.displayName,
@@ -366,20 +448,11 @@ private fun PersonResultCard(
         shape = RoundedCornerShape(18.dp)
     ) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(52.dp).clip(CircleShape).background(VybIndigo.copy(alpha = .25f)),
-                contentAlignment = Alignment.Center
-            ) {
-                if (person.avatarUrl.isNullOrBlank()) {
-                    Text(person.displayName.take(1).uppercase(), color = VybText)
-                } else {
-                    VybRemoteImage(
-                        person.avatarUrl,
-                        person.displayName,
-                        Modifier.fillMaxSize()
-                    )
-                }
-            }
+            SocialAvatar(
+                avatarUrl = person.avatarUrl,
+                displayName = person.displayName,
+                size = 52.dp
+            )
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 Text(person.displayName, color = VybText, fontWeight = FontWeight.Bold)
                 Text("@${person.username}", color = VybMuted)

@@ -42,6 +42,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -50,6 +51,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,6 +71,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import social.vyb.app.features.social.SocialPost
+import social.vyb.app.features.social.SocialAvatar
 import social.vyb.app.ui.VybBorder
 import social.vyb.app.ui.VybEmptyState
 import social.vyb.app.ui.VybIndigo
@@ -76,6 +79,7 @@ import social.vyb.app.ui.VybMuted
 import social.vyb.app.ui.VybPanel
 import social.vyb.app.ui.VybPanelLifted
 import social.vyb.app.ui.VybResponsiveFrame
+import social.vyb.app.ui.VybTeal
 import social.vyb.app.ui.VybText
 import social.vyb.app.ui.VybRemoteImage
 import social.vyb.app.ui.VybRemoteVideo
@@ -88,9 +92,15 @@ fun ProfileFeatureScreen(
     email: String,
     onSignOut: () -> Unit,
     onCreatePost: () -> Unit = {},
+    onOpenPost: (String) -> Unit = {},
+    onOpenVibe: (String) -> Unit = {},
+    refreshSignal: Int = 0,
     profileViewModel: ProfileViewModel = viewModel()
 ) {
     val state by profileViewModel.state.collectAsStateWithLifecycle()
+    LaunchedEffect(refreshSignal) {
+        if (refreshSignal > 0) profileViewModel.refresh()
+    }
     when {
         state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator(color = VybIndigo)
@@ -111,7 +121,14 @@ fun ProfileFeatureScreen(
                 onSettings = { profileViewModel.open(ProfilePanel.Settings) },
                 onCreatePost = onCreatePost,
                 onConnections = profileViewModel::openConnections,
-                onOpenLink = LocalUriHandler.current::openUri
+                onOpenLink = LocalUriHandler.current::openUri,
+                onOpenContent = { post ->
+                    if (post.kind == "video" || post.placement == "vibe") {
+                        onOpenVibe(post.id)
+                    } else {
+                        onOpenPost(post.id)
+                    }
+                }
             )
             ProfilePanel.Edit -> EditProfile(
                 state = state,
@@ -731,31 +748,33 @@ private fun ProfilePost(post: SocialPost) {
 
 @Composable
 private fun InitialAvatar(name: String, size: Int, avatarUrl: String? = null) {
-    Box(
-        Modifier.size(size.dp).background(VybIndigo.copy(alpha = .24f), CircleShape),
-        contentAlignment = Alignment.Center
-    ) {
-        if (avatarUrl.isNullOrBlank()) {
-            Text(name.take(1).uppercase(), color = VybText, fontWeight = FontWeight.Black, fontSize = (size / 3).sp)
-        } else {
-            VybRemoteImage(
-                url = avatarUrl,
-                contentDescription = "$name profile photo",
-                modifier = Modifier.fillMaxSize()
-            )
-        }
-    }
+    SocialAvatar(
+        avatarUrl = avatarUrl,
+        displayName = name,
+        size = size.dp
+    )
 }
 
 @Composable
 private fun MessageBanner(state: ProfileUiState, onDismiss: (() -> Unit)? = null) {
     val message = state.error ?: state.notice ?: return
+    val isError = state.error != null
     Surface(
         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-        color = if (state.error != null) Color(0xFF5B2031) else Color(0xFF123F3B),
+        color = if (isError) MaterialTheme.colorScheme.errorContainer
+        else VybTeal.copy(alpha = .14f),
+        border = BorderStroke(
+            1.dp,
+            if (isError) MaterialTheme.colorScheme.error.copy(alpha = .32f)
+            else VybTeal.copy(alpha = .34f)
+        ),
         shape = RoundedCornerShape(12.dp),
         onClick = { onDismiss?.invoke() }
     ) {
-        Text(message, color = VybText, modifier = Modifier.padding(12.dp))
+        Text(
+            message,
+            color = if (isError) MaterialTheme.colorScheme.onErrorContainer else VybText,
+            modifier = Modifier.padding(12.dp)
+        )
     }
 }

@@ -12,6 +12,13 @@ data class SocialAuthor(
 )
 
 @Serializable
+data class SocialMediaAsset(
+    val url: String,
+    val kind: String = "image",
+    val mimeType: String? = null
+)
+
+@Serializable
 data class SocialPost(
     val id: String,
     val tenantId: String = "",
@@ -22,6 +29,7 @@ data class SocialPost(
     val title: String = "",
     val body: String = "",
     val mediaUrl: String? = null,
+    val media: List<SocialMediaAsset> = emptyList(),
     val location: String? = null,
     val reactions: Int = 0,
     val comments: Int = 0,
@@ -69,7 +77,7 @@ internal data class CreatePostBody(
     val membershipId: String,
     val kind: String = "text",
     val placement: String = "feed",
-    val title: String = "Campus update",
+    val title: String = "",
     val body: String,
     val communityId: String? = null,
     val isAnonymous: Boolean = false,
@@ -150,7 +158,9 @@ internal data class CreateCommentBody(
     val membershipId: String,
     val body: String,
     val parentCommentId: String? = null,
-    val isAnonymous: Boolean = false
+    val isAnonymous: Boolean = false,
+    val mediaUrl: String? = null,
+    val mediaType: String? = null
 )
 
 @Serializable
@@ -164,7 +174,9 @@ data class ReactionMember(
     val displayName: String = "Vyb Student",
     val avatarUrl: String? = null,
     val reactionType: String = "like",
-    val reactedAt: String = ""
+    val reactedAt: String = "",
+    val isViewer: Boolean = false,
+    val viewerIsFollowing: Boolean = false,
 )
 
 @Serializable

@@ -507,6 +507,7 @@ mutation CreatePostMedia(
   $mediaType: String!
   $mimeType: String!
   $sizeBytes: Int64!
+  $position: Int! = 0
   $width: Int
   $height: Int
   $durationMs: Int
@@ -520,6 +521,7 @@ mutation CreatePostMedia(
       mediaType: $mediaType
       mimeType: $mimeType
       sizeBytes: $sizeBytes
+      position: $position
       width: $width
       height: $height
       durationMs: $durationMs

@@ -308,7 +308,7 @@
     min-height: var(--vyb-visual-viewport-height, 100dvh);
     overflow-y: visible;
     overscroll-behavior-y: auto;
-    padding-bottom: calc(4.6rem + var(--vyb-keyboard-inset, 0px));
+    padding-bottom: calc(4.6rem + env(safe-area-inset-bottom, 0px) + var(--vyb-keyboard-inset, 0px));
   }
 
   .vyb-reels-feed {
@@ -1059,6 +1059,12 @@
   position: relative !important;
   width: 100% !important;
   height: 100% !important;
+  touch-action: pan-y pinch-zoom;
+  overscroll-behavior: contain;
+}
+
+.vyb-post-lightbox-media-shell.is-zoomed {
+  touch-action: none;
 }
 
 .vyb-post-lightbox-media {
@@ -1344,28 +1350,6 @@
 
 .vyb-post-lightbox-nav-btn:hover {
   background: rgba(255, 255, 255, 0.15) !important;
-}
-
-.vyb-post-lightbox-dots {
-  position: absolute !important;
-  bottom: 1.25rem !important;
-  left: 50% !important;
-  transform: translateX(-50%) !important;
-  display: flex !important;
-  gap: 0.4rem !important;
-}
-
-.vyb-post-lightbox-dot {
-  width: 0.4rem !important;
-  height: 0.4rem !important;
-  border-radius: 50% !important;
-  background: rgba(255, 255, 255, 0.3) !important;
-  transition: all 0.2s ease !important;
-}
-
-.vyb-post-lightbox-dot.is-active {
-  background: #fff !important;
-  transform: scale(1.2) !important;
 }
 
 .vyb-post-likers-list,
@@ -3874,6 +3858,115 @@
   box-shadow: 0 0 18px rgba(34, 211, 238, 0.38);
 }
 
+.vyb-vibes-playback-feedback {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 3;
+  width: 4rem;
+  height: 4rem;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(2, 6, 23, 0.46);
+  color: #fff;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  backdrop-filter: blur(12px);
+  animation: vyb-playback-feedback-fade 700ms ease-out forwards;
+}
+
+@keyframes vyb-playback-feedback-fade {
+  0%, 45% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.vyb-vibes-playback-feedback .vyb-campus-icon {
+  width: 2rem;
+  height: 2rem;
+}
+
+.vyb-vibes-scrubber {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  height: 1rem;
+  display: flex;
+  align-items: flex-end;
+}
+
+.vyb-vibes-scrubber input[type="range"] {
+  width: 100%;
+  height: 1rem;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.vyb-vibes-scrubber input[type="range"]::-webkit-slider-runnable-track {
+  height: 2px;
+  background: linear-gradient(90deg, #60a5fa 0, #22d3ee var(--vyb-vibe-progress), rgba(148, 163, 184, 0.24) var(--vyb-vibe-progress), rgba(148, 163, 184, 0.24) 100%);
+}
+
+.vyb-vibes-scrubber input[type="range"]::-moz-range-track {
+  height: 2px;
+  background: rgba(148, 163, 184, 0.24);
+}
+
+.vyb-vibes-scrubber input[type="range"]::-moz-range-progress {
+  height: 2px;
+  background: linear-gradient(90deg, #60a5fa, #22d3ee);
+}
+
+.vyb-vibes-scrubber input[type="range"]::-webkit-slider-thumb {
+  width: 0;
+  height: 0;
+  margin-top: 1px;
+  appearance: none;
+  border-radius: 999px;
+  background: #e0f2fe;
+  box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.2);
+  transition: width 120ms ease, height 120ms ease, margin 120ms ease;
+}
+
+.vyb-vibes-scrubber.is-scrubbing input[type="range"]::-webkit-slider-thumb {
+  width: 0.82rem;
+  height: 0.82rem;
+  margin-top: -0.34rem;
+}
+
+.vyb-vibes-scrubber input[type="range"]::-moz-range-thumb {
+  width: 0;
+  height: 0;
+  border: 0;
+  border-radius: 999px;
+  background: #e0f2fe;
+}
+
+.vyb-vibes-scrubber.is-scrubbing input[type="range"]::-moz-range-thumb {
+  width: 0.82rem;
+  height: 0.82rem;
+}
+
+.vyb-vibes-scrubber-time {
+  position: absolute;
+  left: 50%;
+  bottom: 1.25rem;
+  transform: translateX(-50%);
+  padding: 0.35rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(2, 6, 23, 0.82);
+  color: #f8fafc;
+  font-size: 0.72rem;
+  font-weight: 750;
+  white-space: nowrap;
+  backdrop-filter: blur(12px);
+}
+
 .vyb-vibes-double-heart {
   position: absolute;
   top: 50%;
@@ -4214,7 +4307,9 @@
   position: relative;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  background: #0d0f15 !important;
+  background: rgba(0, 0, 0, 0.78) !important;
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
   border: 0;
   border-radius: 0;
   box-shadow: none;

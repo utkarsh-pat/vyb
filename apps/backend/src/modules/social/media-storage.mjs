@@ -112,9 +112,7 @@ function sanitizeFileName(value, fallback) {
   return cleaned || fallback;
 }
 
-export async function persistSocialMediaAsset(input) {
-  const r2 = getR2Config();
-
+function planSocialMediaAsset(input) {
   const mimeType = normalizeMimeType(input.mimeType);
   const mediaType = getSocialMediaKind(mimeType);
 
@@ -122,17 +120,13 @@ export async function persistSocialMediaAsset(input) {
     throw new Error("Only image and video uploads are supported right now.");
   }
 
-  if (typeof input.base64Data !== "string" || !input.base64Data.trim()) {
-    throw new Error("Upload payload is missing media bytes.");
-  }
-
-  const buffer = Buffer.from(input.base64Data, "base64");
-  if (buffer.byteLength <= 0) {
-    throw new Error("Upload payload is empty.");
+  const sizeBytes = Number(input.sizeBytes);
+  if (!Number.isSafeInteger(sizeBytes) || sizeBytes <= 0) {
+    throw new Error("Upload payload is empty or has an invalid size.");
   }
 
   const maxBytes = mediaType === "video" ? MAX_SOCIAL_VIDEO_BYTES : MAX_SOCIAL_IMAGE_BYTES;
-  if (buffer.byteLength > maxBytes) {
+  if (sizeBytes > maxBytes) {
     throw new Error(
       mediaType === "video"
         ? "Video is still too large after optimization. Keep it under 40 MB."
@@ -145,22 +139,53 @@ export async function persistSocialMediaAsset(input) {
   const extension = extensionFromMimeType(mimeType, mediaType === "video" ? "mp4" : "jpg");
   const originalFileName = sanitizeFileName(input.fileName, `${assetType}.${extension}`);
   const storagePath = `social/${input.tenantId}/${assetType}/${placement}/${input.userId}/${assetId}.${extension}`;
+
+  return { mediaType, mimeType, sizeBytes, originalFileName, storagePath };
+}
+
+async function putPlannedSocialMediaAsset(r2, plan, body) {
   await getR2Client(r2).send(
     new PutObjectCommand({
       Bucket: r2.bucket,
-      Key: storagePath,
-      Body: buffer,
-      ContentType: mimeType,
+      Key: plan.storagePath,
+      Body: body,
+      ContentLength: plan.sizeBytes,
+      ContentType: plan.mimeType,
       CacheControl: "public, max-age=31536000, immutable",
-      Metadata: { originalFileName }
+      Metadata: { originalFileName: plan.originalFileName }
     })
   );
 
   return {
-    mediaType,
-    mimeType,
-    sizeBytes: buffer.byteLength,
-    storagePath,
-    url: `${r2.publicBaseUrl}/${storagePath.split("/").map(encodeURIComponent).join("/")}`
+    mediaType: plan.mediaType,
+    mimeType: plan.mimeType,
+    sizeBytes: plan.sizeBytes,
+    storagePath: plan.storagePath,
+    url: `${r2.publicBaseUrl}/${plan.storagePath.split("/").map(encodeURIComponent).join("/")}`
   };
+}
+
+export async function persistSocialMediaStream(input) {
+  if (!input.stream || typeof input.stream.pipe !== "function") {
+    throw new Error("Upload payload is missing its media stream.");
+  }
+
+  const r2 = getR2Config();
+  const plan = planSocialMediaAsset(input);
+  return putPlannedSocialMediaAsset(r2, plan, input.stream);
+}
+
+export async function persistSocialMediaAsset(input) {
+  const r2 = getR2Config();
+
+  if (typeof input.base64Data !== "string" || !input.base64Data.trim()) {
+    throw new Error("Upload payload is missing media bytes.");
+  }
+
+  const buffer = Buffer.from(input.base64Data, "base64");
+  if (buffer.byteLength <= 0) {
+    throw new Error("Upload payload is empty.");
+  }
+  const plan = planSocialMediaAsset({ ...input, sizeBytes: buffer.byteLength });
+  return putPlannedSocialMediaAsset(r2, plan, buffer);
 }

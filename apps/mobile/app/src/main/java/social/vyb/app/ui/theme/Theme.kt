@@ -33,10 +33,10 @@ val LocalThemePreference = staticCompositionLocalOf { ThemePreference.System }
 val LocalThemePreferenceSetter =
     staticCompositionLocalOf<(ThemePreference) -> Unit> { {} }
 
-val Ink = Color(0xFF0F172A)
-val Midnight = Color(0xFF0F172A)
-val Surface = Color(0xFF0F1424)
-val SurfaceLifted = Color(0xFF272E40)
+val Ink = Color(0xFF050B18)
+val Midnight = Color(0xFF071426)
+val Surface = Color(0xFF0B1728)
+val SurfaceLifted = Color(0xFF142238)
 val Lime = Color(0xFF6366F1)
 val Cyan = Color(0xFF14B8A6)
 val Coral = Color(0xFFFF49A2)

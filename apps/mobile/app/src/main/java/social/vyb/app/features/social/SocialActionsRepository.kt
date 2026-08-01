@@ -39,6 +39,9 @@ class SocialActionsRepository(
     suspend fun toggleReaction(postId: String, reactionType: String = "like"): ReactionResult =
         apiCall { api.toggleReaction(bearerToken(), postId, ReactionBody(reactionType)) }
 
+    suspend fun loadPost(postId: String): SocialPost =
+        apiCall { api.post(bearerToken(), postId).item }
+
     suspend fun toggleSave(postId: String): SaveResult =
         apiCall { api.toggleSave(bearerToken(), postId) }
 
@@ -49,10 +52,13 @@ class SocialActionsRepository(
         postId: String,
         text: String,
         parentCommentId: String? = null,
-        isAnonymous: Boolean = false
+        isAnonymous: Boolean = false,
+        mediaUrl: String? = null,
+        mediaType: String? = null
     ): SocialComment = apiCall {
         val trimmed = text.trim()
-        require(trimmed.length >= 2) { "Comment must be at least 2 characters." }
+        require(trimmed.isEmpty() || trimmed.length >= 2) { "Comment must be at least 2 characters." }
+        require(trimmed.isNotEmpty() || !mediaUrl.isNullOrBlank()) { "Add text or media before commenting." }
         val bearer = bearerToken()
         val viewer = verifiedViewer(bearer)
         api.addComment(
@@ -62,7 +68,9 @@ class SocialActionsRepository(
                 membershipId = viewer.id,
                 body = trimmed,
                 parentCommentId = parentCommentId,
-                isAnonymous = isAnonymous
+                isAnonymous = isAnonymous,
+                mediaUrl = mediaUrl,
+                mediaType = mediaType
             )
         ).item
     }

@@ -52,6 +52,57 @@ class FeedMappingTest {
     }
 
     @Test
+    fun feedMappingPreservesEveryCarouselItemInBackendOrder() {
+        val urls = listOf("first.webp", "clip.mp4", "third.webp")
+        val mapped = toFeedPost(
+            RemotePost(
+                id = "post-carousel",
+                body = "Three campus moments",
+                kind = "image",
+                media = listOf(
+                    RemoteMediaAsset("https://cdn.vybnet.app/${urls[0]}", "image", "image/webp"),
+                    RemoteMediaAsset("https://cdn.vybnet.app/${urls[1]}", "video", "video/mp4"),
+                    RemoteMediaAsset("https://cdn.vybnet.app/${urls[2]}", "image", "image/webp")
+                ),
+                createdAt = "2026-08-01T12:00:00.000Z",
+                author = RemoteAuthor(username = "host", displayName = "Campus Host")
+            )
+        )
+
+        assertEquals(urls, mapped.media.map { it.url.substringAfterLast('/') })
+        assertEquals(listOf("image", "video", "image"), mapped.media.map { it.kind })
+    }
+
+    @Test
+    fun feedMappingSuppressesLegacyGeneratedTitlesWithoutRemovingUserCopy() {
+        val mediaOnly = toFeedPost(
+            RemotePost(
+                id = "legacy-media",
+                title = "Campus update",
+                body = "",
+                kind = "image",
+                mediaUrl = "https://cdn.vybnet.app/media.webp",
+                createdAt = "2026-08-01T12:00:00.000Z",
+                author = RemoteAuthor(username = "host", displayName = "Campus Host")
+            )
+        )
+        val captioned = toFeedPost(
+            RemotePost(
+                id = "captioned-media",
+                title = "Campus update",
+                body = "User-written caption",
+                createdAt = "2026-08-01T12:00:00.000Z",
+                author = RemoteAuthor(username = "host", displayName = "Campus Host")
+            )
+        )
+
+        assertEquals("", mediaOnly.title)
+        assertEquals("", mediaOnly.body)
+        assertEquals("", captioned.title)
+        assertEquals("User-written caption", captioned.body)
+    }
+
+    @Test
     fun anonymousFeedNeverLeaksAuthorIdentity() {
         val mapped = toFeedPost(
             RemotePost(

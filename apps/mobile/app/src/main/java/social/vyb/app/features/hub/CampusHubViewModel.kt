@@ -70,6 +70,33 @@ class CampusHubViewModel(
         }
     }
 
+    fun openEventById(eventId: String, onResolved: () -> Unit = {}) {
+        val normalizedId = eventId.trim()
+        if (normalizedId.isEmpty()) return
+        _state.value.events.firstOrNull { it.id == normalizedId }?.let {
+            openEvent(it)
+            onResolved()
+            return
+        }
+        viewModelScope.launch {
+            _state.update { it.copy(isLoading = it.events.isEmpty(), error = null) }
+            runCatching { repository.loadEvent(normalizedId) }
+                .onSuccess { loaded ->
+                    _state.update {
+                        it.copy(
+                            isLoading = false,
+                            selectedEvent = loaded,
+                            events = (it.events.filterNot { item -> item.id == loaded.id } + loaded)
+                        )
+                    }
+                    onResolved()
+                }
+                .onFailure { error ->
+                    _state.update { it.copy(isLoading = false, error = error.displayMessage()) }
+                }
+        }
+    }
+
     fun closeEvent() {
         _state.update { it.copy(selectedEvent = null, busyId = null, error = null) }
     }

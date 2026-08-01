@@ -72,7 +72,11 @@ class AppUpdateInstaller(
             .setAllowedOverMetered(true)
             .setAllowedOverRoaming(true)
 
-        val downloadId = downloadManager.enqueue(request)
+        val downloadId = runCatching { downloadManager.enqueue(request) }
+            .getOrElse { error ->
+                onFailed(error.message ?: "Update download could not start.")
+                return
+            }
         onStarted()
 
         val receiver = object : BroadcastReceiver() {
@@ -126,11 +130,24 @@ class AppUpdateInstaller(
             }
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            appContext.registerReceiver(receiver, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE), Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            @Suppress("UnspecifiedRegisterReceiverFlag")
-            appContext.registerReceiver(receiver, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE))
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                appContext.registerReceiver(
+                    receiver,
+                    IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
+                    Context.RECEIVER_NOT_EXPORTED
+                )
+            } else {
+                @Suppress("UnspecifiedRegisterReceiverFlag")
+                appContext.registerReceiver(
+                    receiver,
+                    IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
+                )
+            }
+        }.onFailure { error ->
+            downloadManager.remove(downloadId)
+            apkFile.delete()
+            onFailed(error.message ?: "Update download could not be monitored.")
         }
     }
 

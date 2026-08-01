@@ -559,6 +559,8 @@ export interface PostLikerItem {
   avatarUrl?: string | null;
   reactionType: ReactionKind;
   reactedAt: string;
+  isViewer: boolean;
+  viewerIsFollowing: boolean;
 }
 
 export interface PostLikerListResponse {

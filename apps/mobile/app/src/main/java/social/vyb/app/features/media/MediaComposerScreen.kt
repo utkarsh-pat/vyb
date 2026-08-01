@@ -3,11 +3,17 @@ package social.vyb.app.features.media
 import android.widget.ImageView
 import android.widget.VideoView
 import android.net.Uri
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,14 +29,26 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
@@ -42,26 +60,43 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import social.vyb.app.ui.VybMuted
+import social.vyb.app.ui.VybBorder
+import social.vyb.app.ui.VybPanel
+import social.vyb.app.ui.VybPanelLifted
 import social.vyb.app.ui.VybResponsiveFrame
 import social.vyb.app.ui.VybText
+import social.vyb.app.features.social.SocialAvatar
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
+import java.text.DateFormat
+import java.util.Calendar
+import java.util.Date
 
 @Composable
 fun MediaComposerScreen(
@@ -76,27 +111,120 @@ fun MediaComposerScreen(
     allowAnonymousComments: Boolean = true,
     visibility: String = "public",
     communityId: String? = null,
+    onCaptionChanged: (String) -> Unit = {},
+    onIntentChanged: (MediaPublishIntent) -> Unit = {},
+    onPublishWithoutMedia: (() -> Unit)? = null,
+    onScheduleWithoutMedia: ((publishAtMillis: Long, draftId: String?) -> Unit)? = null,
     onCancelCreation: () -> Unit = {},
     onExternalPickerChanged: (Boolean) -> Unit = {},
+    onDraftSaved: () -> Unit = {},
+    onPublishingStarted: () -> Unit = {},
     onPublished: (CreatedMediaItem) -> Unit = {},
     viewModel: MediaComposerViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     var storyBuilderMedia by remember { mutableStateOf<SelectedMedia?>(null) }
+    var editingOriginalUri by remember { mutableStateOf<Uri?>(null) }
+    var draftsOpen by remember { mutableStateOf(false) }
     var editedStoryUri by remember { mutableStateOf<Uri?>(null) }
     var autoLaunchConsumed by remember { mutableStateOf(false) }
     val effectiveAnonymous = isAnonymous && state.intent != MediaPublishIntent.Story
+    val hasUnsavedContent = state.caption.isNotBlank() || state.selected.isNotEmpty()
+
+    fun saveCurrentDraft(): Boolean {
+        val saved = viewModel.saveDraft(
+            isAnonymous = effectiveAnonymous,
+            allowAnonymousComments = allowAnonymousComments,
+            visibility = visibility,
+            communityId = communityId,
+            announce = false
+        ) != null
+        if (saved) onDraftSaved()
+        return saved
+    }
+
+    fun openSchedulePicker() {
+        val initial = Calendar.getInstance().apply { add(Calendar.HOUR_OF_DAY, 1) }
+        DatePickerDialog(
+            context,
+            { _, year, month, day ->
+                TimePickerDialog(
+                    context,
+                    { _, hour, minute ->
+                        val target = Calendar.getInstance().apply {
+                            set(year, month, day, hour, minute, 0)
+                            set(Calendar.MILLISECOND, 0)
+                        }.timeInMillis
+                        val delayMillis = target - System.currentTimeMillis()
+                        if (delayMillis <= 0L) {
+                            android.widget.Toast.makeText(
+                                context,
+                                "Choose a future time",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        } else {
+                            if (state.selected.isEmpty() && onScheduleWithoutMedia != null) {
+                                val draftId = viewModel.saveDraft(
+                                    isAnonymous = effectiveAnonymous,
+                                    allowAnonymousComments = allowAnonymousComments,
+                                    visibility = visibility,
+                                    communityId = communityId,
+                                    scheduledForMillis = target
+                                )
+                                onScheduleWithoutMedia(target, draftId)
+                                viewModel.resetComposer(state.intent)
+                                onCancelCreation()
+                            } else {
+                                viewModel.schedulePublish(
+                                    delayMillis = delayMillis,
+                                    isAnonymous = effectiveAnonymous,
+                                    allowAnonymousComments = allowAnonymousComments,
+                                    visibility = visibility,
+                                    communityId = communityId
+                                )
+                            }
+                        }
+                    },
+                    initial.get(Calendar.HOUR_OF_DAY),
+                    initial.get(Calendar.MINUTE),
+                    false
+                ).show()
+            },
+            initial.get(Calendar.YEAR),
+            initial.get(Calendar.MONTH),
+            initial.get(Calendar.DAY_OF_MONTH)
+        ).apply { datePicker.minDate = System.currentTimeMillis() - 1_000L }.show()
+    }
     val multiplePicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickMultipleVisualMedia(maxItems = 4)
+        ActivityResultContracts.PickMultipleVisualMedia(maxItems = MAX_POST_MEDIA_ITEMS)
     ) { uris ->
         onExternalPickerChanged(false)
-        if (uris.isNotEmpty()) viewModel.addSelection(uris)
+        if (uris.isNotEmpty()) {
+            uris.forEach { uri ->
+                runCatching {
+                    context.contentResolver.takePersistableUriPermission(
+                        uri,
+                        android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                }
+            }
+            viewModel.addSelection(uris)
+        }
     }
     val singlePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         onExternalPickerChanged(false)
-        uri?.let { viewModel.addSelection(listOf(it)) }
+        uri?.let {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    it,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+            viewModel.addSelection(listOf(it))
+        }
     }
     val launchPicker = {
         val request = PickVisualMediaRequest(
@@ -136,6 +264,11 @@ fun MediaComposerScreen(
     LaunchedEffect(state.publishedItem) {
         state.publishedItem?.let(onPublished)
     }
+    BackHandler(enabled = hasUnsavedContent && !state.isPublishing && storyBuilderMedia == null) {
+        saveCurrentDraft()
+        viewModel.resetComposer(state.intent)
+        onCancelCreation()
+    }
     LaunchedEffect(state.intent, state.selected) {
         val storyMedia = state.selected.singleOrNull()
         if (
@@ -158,7 +291,7 @@ fun MediaComposerScreen(
                     .weight(1f)
                     .fillMaxWidth()
                     .padding(horizontal = layout.horizontalPadding),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 if (showIntentPicker) {
                     item {
@@ -187,12 +320,15 @@ fun MediaComposerScreen(
                     )
                 }
                 item {
-                    HorizontalDivider(color = Color.White.copy(alpha = .07f))
+                    HorizontalDivider(color = VybBorder)
                 }
                 item {
                     OutlinedTextField(
                         value = state.caption,
-                        onValueChange = viewModel::setCaption,
+                        onValueChange = {
+                            viewModel.setCaption(it)
+                            onCaptionChanged(it.take(2_000))
+                        },
                         placeholder = {
                             Text(
                                 if (state.intent == MediaPublishIntent.Story) {
@@ -204,23 +340,35 @@ fun MediaComposerScreen(
                             )
                         },
                         enabled = !state.isPublishing,
-                        minLines = 5,
-                        maxLines = 10,
+                        minLines = 3,
+                        maxLines = 8,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 148.dp)
+                            .heightIn(min = 104.dp),
+                        shape = RoundedCornerShape(20.dp)
                     )
                 }
                 item {
-                    HorizontalDivider(color = Color.White.copy(alpha = .07f))
-                }
-                item {
-                    Text(
-                        if (state.intent == MediaPublishIntent.Vibe) "Video" else "Media",
-                        color = VybText,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            if (state.intent == MediaPublishIntent.Vibe) "Video" else "Media",
+                            color = VybText,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                        Spacer(Modifier.weight(1f))
+                        if (state.intent == MediaPublishIntent.Post) {
+                            Text(
+                                "${state.selected.size}/$MAX_POST_MEDIA_ITEMS",
+                                color = if (state.selected.isEmpty()) VybMuted else MediaTeal,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
                 }
                 if (state.selected.isEmpty()) {
                     item {
@@ -231,27 +379,71 @@ fun MediaComposerScreen(
                         )
                     }
                 } else {
-                    items(state.selected, key = { it.uri.toString() }) { media ->
-                        MediaPreview(media, !state.isPublishing) {
-                            viewModel.removeSelection(media.uri)
+                    if (state.intent == MediaPublishIntent.Post) {
+                        item {
+                            PostMediaCarouselEditor(
+                                mediaItems = state.selected,
+                                enabled = !state.isPublishing,
+                                onEdit = { media ->
+                                    editingOriginalUri = media.uri
+                                    storyBuilderMedia = media
+                                },
+                                onRemove = { media -> viewModel.removeSelection(media.uri) },
+                                onMove = viewModel::moveSelection
+                            )
+                        }
+                    } else {
+                        itemsIndexed(state.selected, key = { _, media -> media.uri.toString() }) { index, media ->
+                            MediaPreview(
+                                media = media,
+                                index = index,
+                                itemCount = state.selected.size,
+                                removable = !state.isPublishing,
+                                onEdit = {
+                                    editingOriginalUri = media.uri
+                                    storyBuilderMedia = media
+                                },
+                                onRemove = { viewModel.removeSelection(media.uri) },
+                                onMove = { target -> viewModel.moveSelection(index, target) }
+                            )
                         }
                     }
-                    item {
-                        Button(
+                    if (state.intent != MediaPublishIntent.Post || state.selected.size < MAX_POST_MEDIA_ITEMS) item {
+                        Surface(
                             onClick = launchPicker,
                             enabled = !state.isPublishing,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(
-                                if (state.intent == MediaPublishIntent.Vibe) {
-                                    Icons.Default.Movie
-                                } else {
-                                    Icons.Default.AddPhotoAlternate
-                                },
-                                contentDescription = null
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(18.dp),
+                            color = MediaIndigo.copy(alpha = .14f),
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                MediaTeal.copy(alpha = .26f)
                             )
-                            Spacer(Modifier.width(8.dp))
-                            Text("Change media")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 13.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    if (state.intent == MediaPublishIntent.Vibe) Icons.Default.Movie
+                                    else Icons.Default.AddPhotoAlternate,
+                                    contentDescription = null,
+                                    tint = MediaTeal
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        if (state.intent == MediaPublishIntent.Post) "Add more media" else "Replace media",
+                                        color = VybText,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        if (state.intent == MediaPublishIntent.Post) "Swipe to preview, hold thumbnails to reorder" else "Choose a new file",
+                                        color = VybMuted,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
                         }
                     }
                     if (state.intent == MediaPublishIntent.Story) {
@@ -298,6 +490,9 @@ fun MediaComposerScreen(
                         Text(message, color = MaterialTheme.colorScheme.error)
                     }
                 }
+                state.notice?.let { message ->
+                    item { Text(message, color = MediaTeal) }
+                }
                 item { Spacer(Modifier.height(8.dp)) }
             }
 
@@ -306,14 +501,37 @@ fun MediaComposerScreen(
                 publishing = state.isPublishing,
                 progress = state.progress,
                 progressLabel = state.progressLabel,
-                canPublish = state.canPublish,
-                onPublish = {
-                    viewModel.publish(
-                        isAnonymous = effectiveAnonymous,
-                        allowAnonymousComments = allowAnonymousComments,
-                        visibility = visibility,
-                        communityId = communityId
+                canPublish = state.canPublish || (
+                    onPublishWithoutMedia != null && state.intent == MediaPublishIntent.Post &&
+                        state.caption.trim().length >= 2
+                ),
+                drafts = state.drafts,
+                onSaveDraft = {
+                    if (saveCurrentDraft()) {
+                        viewModel.resetComposer(state.intent)
+                        onCancelCreation()
+                    }
+                },
+                onOpenDrafts = { draftsOpen = true },
+                onSchedule = if (
+                    state.canPublish || (
+                        onScheduleWithoutMedia != null && state.intent == MediaPublishIntent.Post &&
+                            state.caption.trim().length >= 2
                     )
+                ) (::openSchedulePicker) else null,
+                onPublish = {
+                    if (state.selected.isEmpty() && onPublishWithoutMedia != null) {
+                        onPublishWithoutMedia()
+                        onPublishingStarted()
+                    } else {
+                        viewModel.publish(
+                            isAnonymous = effectiveAnonymous,
+                            allowAnonymousComments = allowAnonymousComments,
+                            visibility = visibility,
+                            communityId = communityId
+                        )
+                        onPublishingStarted()
+                    }
                 }
             )
         }
@@ -322,15 +540,89 @@ fun MediaComposerScreen(
     storyBuilderMedia?.let { selected ->
         StoryBuilderScreen(
             media = selected,
+            intent = state.intent,
             onApply = { edited ->
                 editedStoryUri = edited.uri
-                viewModel.replaceSelection(edited)
+                val original = editingOriginalUri
+                if (original != null && state.intent == MediaPublishIntent.Post) {
+                    viewModel.updateSelection(original, edited)
+                } else {
+                    viewModel.replaceSelection(edited)
+                }
+                editingOriginalUri = null
                 storyBuilderMedia = null
             },
             onDismiss = {
                 editedStoryUri = selected.uri
+                editingOriginalUri = null
                 storyBuilderMedia = null
             }
+        )
+    }
+    if (draftsOpen) {
+        AlertDialog(
+            onDismissRequest = { draftsOpen = false },
+            title = { Text("Drafts (${state.drafts.size})") },
+            text = {
+                if (state.drafts.isEmpty()) {
+                    Text("No drafts saved on this device.", color = VybMuted)
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 420.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(state.drafts, key = MediaDraftSummary::id) { draft ->
+                            Surface(
+                                onClick = {
+                                                viewModel.loadDraft(draft.id)
+                                                onIntentChanged(draft.intent)
+                                                onCaptionChanged(draft.caption)
+                                                draftsOpen = false
+                                },
+                                color = VybPanelLifted,
+                                shape = RoundedCornerShape(14.dp)
+                            ) {
+                                Row(
+                                    Modifier.fillMaxWidth().padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(
+                                            draft.caption.ifBlank {
+                                                "${draft.intent.name} with ${draft.mediaCount} media"
+                                            },
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Text(
+                                            buildString {
+                                                append(DateFormat.getDateTimeInstance(
+                                                    DateFormat.SHORT,
+                                                    DateFormat.SHORT
+                                                ).format(Date(draft.savedAtMillis)))
+                                                draft.scheduledForMillis?.let {
+                                                    append(" · scheduled ")
+                                                    append(DateFormat.getDateTimeInstance(
+                                                        DateFormat.SHORT,
+                                                        DateFormat.SHORT
+                                                    ).format(Date(it)))
+                                                }
+                                            },
+                                            color = VybMuted,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                    IconButton(onClick = { viewModel.discardDraft(draft.id) }) {
+                                        Icon(Icons.Default.DeleteOutline, "Discard draft", tint = VybMuted)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { draftsOpen = false }) { Text("Done") } }
         )
     }
 }
@@ -345,32 +637,16 @@ private fun MediaPublisherRow(
     val authorName = displayName.ifBlank { "Vyb member" }
     val shownName = if (anonymous) "Anonymous Vyber" else authorName
     val shownUsername = if (anonymous) "@anonymous" else "@${username.ifBlank { "member" }}"
-    val initials = authorName
-        .split(" ")
-        .filter(String::isNotBlank)
-        .take(2)
-        .joinToString("") { it.take(1).uppercase() }
-        .ifBlank { "V" }
     Row(
         modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .background(
-                    Brush.linearGradient(listOf(MediaIndigo, MediaViolet)),
-                    CircleShape
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                if (anonymous) "A" else initials,
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                fontSize = 14.sp
-            )
-        }
+        SocialAvatar(
+            avatarUrl = null,
+            displayName = shownName,
+            size = 44.dp,
+            contentDescription = "$shownName avatar"
+        )
         Column(Modifier.padding(start = 12.dp).weight(1f)) {
             Text(
                 shownName,
@@ -400,13 +676,10 @@ private fun MediaPickerTile(
     Surface(
         onClick = onClick,
         enabled = enabled,
-        modifier = Modifier.size(width = 132.dp, height = 112.dp),
-        color = Color.White.copy(alpha = .04f),
-        shape = RoundedCornerShape(14.dp),
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            Color.White.copy(alpha = .16f)
-        )
+        modifier = Modifier.fillMaxWidth().height(154.dp),
+        color = VybPanelLifted.copy(alpha = .72f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MediaTeal.copy(alpha = .22f)),
+        shape = RoundedCornerShape(22.dp)
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -424,10 +697,16 @@ private fun MediaPickerTile(
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                if (intent == MediaPublishIntent.Vibe) "Add video" else "Add media",
+                if (intent == MediaPublishIntent.Vibe) "Choose a video" else "Add photos or videos",
+                color = VybText,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                if (intent == MediaPublishIntent.Post) "Select up to $MAX_POST_MEDIA_ITEMS items" else "Tap to browse your device",
                 color = VybMuted,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold
+                fontSize = 11.sp
             )
         }
     }
@@ -440,14 +719,19 @@ private fun MediaComposerFooter(
     progress: Float,
     progressLabel: String?,
     canPublish: Boolean,
+    drafts: List<MediaDraftSummary>,
+    onSaveDraft: () -> Unit,
+    onOpenDrafts: () -> Unit,
+    onSchedule: (() -> Unit)?,
     onPublish: () -> Unit
 ) {
     val enabled = canPublish && !publishing
+    var menuOpen by remember { mutableStateOf(false) }
     HorizontalDivider(color = MediaViolet.copy(alpha = .22f))
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xFF0A0E1A).copy(alpha = .96f))
+            .background(VybPanel.copy(alpha = .96f))
             .padding(horizontal = 18.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
@@ -471,7 +755,7 @@ private fun MediaComposerFooter(
             when (intent) {
                 MediaPublishIntent.Story -> "Choose one photo or video for your story"
                 MediaPublishIntent.Vibe -> "Choose one video for your Vibe"
-                MediaPublishIntent.Post -> "Choose up to 4 photos or videos"
+                MediaPublishIntent.Post -> "Choose up to $MAX_POST_MEDIA_ITEMS photos or videos"
             },
             color = VybMuted.copy(alpha = .75f),
             fontSize = 11.sp
@@ -481,10 +765,52 @@ private fun MediaComposerFooter(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Box {
+                IconButton(onClick = { menuOpen = true }, enabled = !publishing) {
+                    Box {
+                        Icon(Icons.Default.Menu, "Draft and schedule options", tint = VybText)
+                        if (drafts.isNotEmpty()) {
+                            Surface(
+                                modifier = Modifier.align(Alignment.TopEnd).size(16.dp),
+                                color = MediaTeal,
+                                shape = CircleShape
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(
+                                        drafts.size.coerceAtMost(9).toString(),
+                                        color = Color.Black,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Save as draft") },
+                        leadingIcon = { Icon(Icons.Default.Edit, null) },
+                        onClick = { menuOpen = false; onSaveDraft() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Drafts (${drafts.size})") },
+                        leadingIcon = { Icon(Icons.Default.DragHandle, null) },
+                        onClick = { menuOpen = false; onOpenDrafts() }
+                    )
+                    onSchedule?.let { schedule ->
+                        DropdownMenuItem(
+                            text = { Text("Schedule date & time") },
+                            leadingIcon = { Icon(Icons.Default.Schedule, null) },
+                            onClick = { menuOpen = false; schedule() }
+                        )
+                    }
+                }
+            }
             Button(
                 onClick = onPublish,
                 enabled = enabled,
-                modifier = Modifier.fillMaxWidth().height(50.dp),
+                modifier = Modifier.weight(1f).height(50.dp),
                 shape = RoundedCornerShape(99.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MediaIndigo,
@@ -502,7 +828,8 @@ private fun MediaComposerFooter(
                 }
                 Text(
                     if (publishing) "Publishing…"
-                    else "Publish ${intent.name} ✦",
+                    else if (intent == MediaPublishIntent.Post) "Share post"
+                    else "Share ${intent.name.lowercase()}",
                     fontWeight = FontWeight.Bold,
                     maxLines = 1
                 )
@@ -512,10 +839,174 @@ private fun MediaComposerFooter(
 }
 
 @Composable
+private fun PostMediaCarouselEditor(
+    mediaItems: List<SelectedMedia>,
+    enabled: Boolean,
+    onEdit: (SelectedMedia) -> Unit,
+    onRemove: (SelectedMedia) -> Unit,
+    onMove: (Int, Int) -> Unit
+) {
+    val pagerState = rememberPagerState(pageCount = { mediaItems.size })
+    val scope = rememberCoroutineScope()
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(4f / 3f)
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize(),
+                    key = { page -> mediaItems[page].uri.toString() }
+                ) { page ->
+                    MediaPreviewContent(mediaItems[page], Modifier.fillMaxSize())
+                }
+                mediaItems.getOrNull(pagerState.currentPage)?.let { active ->
+                    IconButton(
+                        onClick = { onEdit(active) },
+                        enabled = enabled,
+                        modifier = Modifier.align(Alignment.TopStart).padding(6.dp)
+                            .background(Color.Black.copy(alpha = .58f), CircleShape)
+                    ) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit ${active.fileName}", tint = Color.White)
+                    }
+                    IconButton(
+                        onClick = { onRemove(active) },
+                        enabled = enabled,
+                        modifier = Modifier.align(Alignment.TopEnd).padding(6.dp)
+                            .background(Color.Black.copy(alpha = .58f), CircleShape)
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Remove ${active.fileName}", tint = Color.White)
+                    }
+                }
+                Surface(
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp),
+                    color = Color.Black.copy(alpha = .64f),
+                    shape = RoundedCornerShape(999.dp)
+                ) {
+                    Text(
+                        "${pagerState.currentPage + 1}/${mediaItems.size}",
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+            }
+            Text(
+                "Swipe the preview • drag a thumbnail to reorder",
+                modifier = Modifier.padding(horizontal = 10.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = VybMuted
+            )
+            LazyRow(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                itemsIndexed(mediaItems, key = { _, media -> media.uri.toString() }) { index, media ->
+                    var horizontalDrag by remember(media.uri) { mutableStateOf(0f) }
+                    Box(
+                        modifier = Modifier
+                            .size(76.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .border(
+                                if (index == pagerState.currentPage) 2.dp else 1.dp,
+                                if (index == pagerState.currentPage) MediaIndigo else VybBorder,
+                                RoundedCornerShape(12.dp)
+                            )
+                            .clickable(enabled = enabled) {
+                                scope.launch { pagerState.animateScrollToPage(index) }
+                            }
+                            .pointerInput(media.uri, index, mediaItems.size, enabled) {
+                                if (!enabled) return@pointerInput
+                                detectHorizontalDragGestures(
+                                    onDragStart = { horizontalDrag = 0f },
+                                    onDragCancel = { horizontalDrag = 0f },
+                                    onDragEnd = {
+                                        val slots = (horizontalDrag / 68.dp.toPx()).roundToInt()
+                                        val target = (index + slots).coerceIn(0, mediaItems.lastIndex)
+                                        if (target != index) onMove(index, target)
+                                        horizontalDrag = 0f
+                                    }
+                                ) { change, dragAmount ->
+                                    change.consume()
+                                    horizontalDrag += dragAmount
+                                }
+                            }
+                    ) {
+                        MediaPreviewContent(media, Modifier.fillMaxSize())
+                        Surface(
+                            modifier = Modifier.align(Alignment.BottomCenter).padding(4.dp),
+                            color = Color.Black.copy(alpha = .62f),
+                            shape = CircleShape
+                        ) {
+                            Icon(
+                                Icons.Default.DragHandle,
+                                contentDescription = "Drag ${media.fileName} to reorder",
+                                tint = Color.White,
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp).size(18.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MediaPreviewContent(media: SelectedMedia, modifier: Modifier = Modifier) {
+    if (media.mediaType == "video") {
+        AndroidView(
+            factory = { context ->
+                VideoView(context).apply {
+                    tag = media.uri
+                    setVideoURI(media.uri)
+                    setOnPreparedListener { player ->
+                        player.isLooping = true
+                        player.setVolume(0f, 0f)
+                        start()
+                    }
+                }
+            },
+            update = {
+                if (it.tag != media.uri) {
+                    it.tag = media.uri
+                    it.setVideoURI(media.uri)
+                }
+            },
+            modifier = modifier
+        )
+    } else {
+        AndroidView(
+            factory = { context ->
+                ImageView(context).apply {
+                    tag = media.uri
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    setImageURI(media.uri)
+                }
+            },
+            update = {
+                if (it.tag != media.uri) {
+                    it.tag = media.uri
+                    it.setImageURI(media.uri)
+                }
+            },
+            modifier = modifier
+        )
+    }
+}
+
+@Composable
 private fun MediaPreview(
     media: SelectedMedia,
+    index: Int,
+    itemCount: Int,
     removable: Boolean,
-    onRemove: () -> Unit
+    onEdit: () -> Unit,
+    onRemove: () -> Unit,
+    onMove: (Int) -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column {
@@ -565,18 +1056,66 @@ private fun MediaPreview(
                     )
                 }
                 IconButton(
+                    onClick = onEdit,
+                    enabled = removable,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(6.dp)
+                        .background(Color.Black.copy(alpha = .55f), CircleShape)
+                ) {
+                    Icon(Icons.Default.Edit, contentDescription = "Edit ${media.fileName}", tint = Color.White)
+                }
+                IconButton(
                     onClick = onRemove,
                     enabled = removable,
-                    modifier = Modifier.align(Alignment.TopEnd)
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(6.dp)
+                        .background(Color.Black.copy(alpha = .55f), CircleShape)
                 ) {
-                    Icon(Icons.Default.Close, contentDescription = "Remove ${media.fileName}")
+                    Icon(Icons.Default.Close, contentDescription = "Remove ${media.fileName}", tint = Color.White)
                 }
             }
-            Text(
-                "${media.fileName} • ${formatMediaBytes(media.sizeBytes)}",
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(12.dp)
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.DragHandle,
+                    contentDescription = "Hold and drag to reorder ${media.fileName}",
+                    modifier = Modifier
+                        .size(40.dp)
+                        .padding(8.dp)
+                        .pointerInput(media.uri, index, itemCount) {
+                            var verticalDrag = 0f
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = { verticalDrag = 0f },
+                                onDragCancel = { verticalDrag = 0f },
+                                onDragEnd = {
+                                    when {
+                                        verticalDrag < -36f && index > 0 -> onMove(index - 1)
+                                        verticalDrag > 36f && index < itemCount - 1 -> onMove(index + 1)
+                                    }
+                                    verticalDrag = 0f
+                                }
+                            ) { change, drag ->
+                                change.consume()
+                                verticalDrag += drag.y
+                            }
+                        }
+                )
+                Text(
+                    "${index + 1}. ${media.fileName} • ${formatMediaBytes(media.sizeBytes)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f).padding(horizontal = 4.dp)
+                )
+                IconButton(onClick = { onMove(index - 1) }, enabled = removable && index > 0) {
+                    Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Move media up")
+                }
+                IconButton(onClick = { onMove(index + 1) }, enabled = removable && index < itemCount - 1) {
+                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Move media down")
+                }
+            }
         }
     }
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import type { CommentItem, FeedCard, ReactionKind } from "@vyb/contracts";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CampusAvatarContent } from "./campus-avatar";
 
 const POST_REACTION_OPTIONS: Array<{
@@ -101,15 +101,21 @@ export function SocialPostLightbox({
   onClose,
   onLike,
   onOpenComments,
+  onOpenLikes,
   onOpenActions
 }: SocialPostLightboxProps) {
   const [isZoomed, setIsZoomed] = useState(false);
   const [mediaIndex, setMediaIndex] = useState(0);
-  const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [initialPinchDistance, setInitialPinchDistance] = useState<number | null>(null);
+  const [showUI, setShowUI] = useState(true);
+  const [speedBoost, setSpeedBoost] = useState(false);
+  const videoHoldTimer = useRef<number | null>(null);
+  const swipeStartX = useRef<number | null>(null);
+  const suppressNextClick = useRef(false);
 
   useEffect(() => {
     setIsZoomed(false);
+    setShowUI(true);
     setMediaIndex(0);
   }, [post?.id]);
 
@@ -140,28 +146,66 @@ export function SocialPostLightbox({
 
   return (
     <div className="vyb-post-lightbox-backdrop is-immersive" role="presentation" onClick={onClose}>
-      <button 
-        type="button" 
-        className="vyb-post-lightbox-close-btn" 
-        onClick={onClose} 
+      <button
+        type="button"
+        className="vyb-post-lightbox-close-btn"
+        onClick={onClose}
         aria-label="Close"
-        style={{ opacity: isZoomed ? 0 : 1, pointerEvents: isZoomed ? "none" : "auto", transition: "opacity 0.2s" }}
+        style={{ opacity: isZoomed || !showUI ? 0 : 1, pointerEvents: isZoomed || !showUI ? "none" : "auto", transition: "opacity 0.2s" }}
       >
         ✕
       </button>
 
       <div className="vyb-post-lightbox is-full-view" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
-        <div 
-          className={`vyb-post-lightbox-media-shell${isZoomed ? " is-zoomed" : ""}`} 
+        <div
+          className={`vyb-post-lightbox-media-shell${isZoomed ? " is-zoomed" : ""}`}
+          onClick={() => {
+            if (suppressNextClick.current) {
+              suppressNextClick.current = false;
+              return;
+            }
+            setShowUI((prev) => !prev);
+          }}
           onDoubleClick={onLike}
+          onPointerDown={(event) => {
+            if (isZoomed || event.pointerType === "mouse" && event.button !== 0) return;
+            swipeStartX.current = event.clientX;
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={(event) => {
+            if (swipeStartX.current === null || isZoomed) return;
+            if (Math.abs(event.clientX - swipeStartX.current) > 8) {
+              suppressNextClick.current = true;
+            }
+          }}
+          onPointerUp={(event) => {
+            const startX = swipeStartX.current;
+            swipeStartX.current = null;
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+              event.currentTarget.releasePointerCapture(event.pointerId);
+            }
+            if (startX === null || isZoomed || mediaItems.length < 2) return;
+            const distance = startX - event.clientX;
+            if (distance > 48) {
+              setMediaIndex((current) => Math.min(mediaItems.length - 1, current + 1));
+              setIsZoomed(false);
+            } else if (distance < -48) {
+              setMediaIndex((current) => Math.max(0, current - 1));
+              setIsZoomed(false);
+            }
+          }}
+          onPointerCancel={(event) => {
+            swipeStartX.current = null;
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+              event.currentTarget.releasePointerCapture(event.pointerId);
+            }
+          }}
           onTouchStart={(e) => {
             if (e.touches.length === 2 && canZoomImage) {
               const touch1 = e.touches[0];
               const touch2 = e.touches[1];
               const distance = Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
               setInitialPinchDistance(distance);
-            } else if (e.touches.length === 1) {
-              setTouchStartX(e.targetTouches[0].clientX);
             }
           }}
           onTouchMove={(e) => {
@@ -171,8 +215,10 @@ export function SocialPostLightbox({
               const distance = Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
               if (distance > initialPinchDistance + 20) {
                 setIsZoomed(true);
+                setShowUI(false);
               } else if (distance < initialPinchDistance - 20) {
                 setIsZoomed(false);
+                setShowUI(true);
               }
             }
           }}
@@ -180,29 +226,68 @@ export function SocialPostLightbox({
             if (initialPinchDistance !== null && e.touches.length < 2) {
               setInitialPinchDistance(null);
             }
-            if (touchStartX !== null && mediaItems.length > 1 && e.changedTouches.length > 0) {
-              const touchEndX = e.changedTouches[0].clientX;
-              const distance = touchStartX - touchEndX;
-              if (distance > 50 && mediaIndex < mediaItems.length - 1) {
-                setMediaIndex((prev) => prev + 1);
-              } else if (distance < -50 && mediaIndex > 0) {
-                setMediaIndex((prev) => prev - 1);
-              }
-            }
-            setTouchStartX(null);
           }}
         >
           {currentMedia ? (
             currentMedia.kind === "video" ? (
-              <video src={currentMedia.url} className="vyb-post-lightbox-media" controls autoPlay muted playsInline loop />
+              <video
+                src={currentMedia.url}
+                className="vyb-post-lightbox-media"
+                controls={false}
+                autoPlay
+                muted
+                playsInline
+                loop
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (suppressNextClick.current) {
+                    suppressNextClick.current = false;
+                    return;
+                  }
+                  if (e.currentTarget.paused) e.currentTarget.play(); else e.currentTarget.pause();
+                  setShowUI((current) => !current);
+                }}
+                onPointerDown={(e) => {
+                  const video = e.currentTarget;
+                  videoHoldTimer.current = window.setTimeout(() => {
+                    video.playbackRate = 2.0;
+                    setSpeedBoost(true);
+                  }, 300);
+                }}
+                onPointerUp={(e) => {
+                  if (videoHoldTimer.current) clearTimeout(videoHoldTimer.current);
+                  e.currentTarget.playbackRate = 1.0;
+                  setSpeedBoost(false);
+                }}
+                onPointerLeave={(e) => {
+                  if (videoHoldTimer.current) clearTimeout(videoHoldTimer.current);
+                  e.currentTarget.playbackRate = 1.0;
+                  setSpeedBoost(false);
+                }}
+              />
             ) : (
               <img
                 src={currentMedia.url}
                 alt={post.body || post.title}
                 className={`vyb-post-lightbox-media${canZoomImage ? " is-zoomable" : ""}`}
-                onClick={() => {
+                style={{ transform: `scale(${isZoomed ? 2.5 : 1})`, cursor: isZoomed ? "zoom-out" : "zoom-in" }}
+                onWheel={(event) => {
+                  if (!canZoomImage) return;
+                  event.preventDefault();
+                  setIsZoomed(event.deltaY < 0);
+                  setShowUI(event.deltaY >= 0);
+                }}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  if (suppressNextClick.current) {
+                    suppressNextClick.current = false;
+                    return;
+                  }
                   if (canZoomImage) {
-                    setIsZoomed((current) => !current);
+                    setIsZoomed((current) => {
+                      setShowUI(current); // show UI when unzooming, hide when zooming
+                      return !current;
+                    });
                   }
                 }}
               />
@@ -232,11 +317,6 @@ export function SocialPostLightbox({
               >
                 ›
               </button>
-              <div className="vyb-post-lightbox-dots">
-                {mediaItems.map((_, i) => (
-                  <span key={i} className={`vyb-post-lightbox-dot${i === mediaIndex ? " is-active" : ""}`} />
-                ))}
-              </div>
             </div>
           )}
 
@@ -252,7 +332,7 @@ export function SocialPostLightbox({
           ) : null}
         </div>
 
-        <div className="vyb-post-lightbox-overlay-bottom" style={{ opacity: isZoomed ? 0 : 1, pointerEvents: isZoomed ? 'none' : 'auto', transition: 'opacity 0.2s' }}>
+        <div className="vyb-post-lightbox-overlay-bottom" style={{ opacity: isZoomed || !showUI ? 0 : 1, pointerEvents: isZoomed || !showUI ? 'none' : 'auto', transition: 'opacity 0.2s' }}>
           <div className="vyb-post-lightbox-user-info">
             <div className="vyb-post-lightbox-user-avatar">
               <CampusAvatarContent
@@ -271,11 +351,15 @@ export function SocialPostLightbox({
           </div>
           <div className="fc-metrics-bar">
             <div className="fc-metrics-left">
-              {hideReactionCount ? null : <span>{formatMetric(post.reactions)} reactions</span>}
+              {hideReactionCount ? null : (
+                <button type="button" className="fc-metrics-button" onClick={onOpenLikes}>
+                  {formatMetric(post.reactions)} reactions
+                </button>
+              )}
               {hideCommentCount ? null : <span>{formatMetric(post.comments)} comments</span>}
             </div>
             <div className="fc-metrics-right">
-              <span>{formatMetric(post.savedCount || 0)} shares</span>
+              <span>{formatMetric(post.savedCount || 0)} saves</span>
             </div>
           </div>
 

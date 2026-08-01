@@ -22,6 +22,8 @@ import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -46,10 +48,10 @@ data class VybPalette(
 )
 
 val VybDarkPalette = VybPalette(
-    background = Color(0xFF0F172A),
-    backgroundDeep = Color(0xFF020617),
-    panel = Color(0xFF0F1424),
-    panelLifted = Color(0xFF272E40),
+    background = Color(0xFF071426),
+    backgroundDeep = Color(0xFF050B18),
+    panel = Color(0xFF0B1728),
+    panelLifted = Color(0xFF142238),
     border = Color(0x1FFFFFFF),
     text = Color(0xFFE6EEFC),
     muted = Color(0xFF94A3B8),
@@ -95,31 +97,49 @@ fun VybPageBackground(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
+    val indigo = VybIndigo
+    val teal = VybTeal
+
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    listOf(VybBackground, VybBackgroundDeep)
+            .background(VybBackground)
+            .drawBehind {
+                val w = size.width
+                val h = size.height
+                val maxDim = kotlin.math.max(w, h)
+
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(indigo.copy(alpha = 0.22f), Color.Transparent),
+                        center = Offset(w * 0.16f, h * 0.22f),
+                        radius = maxDim * 0.26f
+                    ),
+                    center = Offset(w * 0.16f, h * 0.22f),
+                    radius = maxDim * 0.26f
                 )
-            )
+
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(teal.copy(alpha = 0.14f), Color.Transparent),
+                        center = Offset(w * 0.88f, h * 0.12f),
+                        radius = maxDim * 0.22f
+                    ),
+                    center = Offset(w * 0.88f, h * 0.12f),
+                    radius = maxDim * 0.22f
+                )
+
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(indigo.copy(alpha = 0.10f), Color.Transparent),
+                        center = Offset(w * 0.52f, h * 1.00f),
+                        radius = maxDim * 0.28f
+                    ),
+                    center = Offset(w * 0.52f, h * 1.00f),
+                    radius = maxDim * 0.28f
+                )
+            }
     ) {
-        Box(
-            Modifier
-                .align(Alignment.TopStart)
-                .offset(x = (-110).dp, y = (-80).dp)
-                .size(300.dp)
-                .blur(92.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded)
-                .background(VybIndigo.copy(alpha = .14f), RoundedCornerShape(150.dp))
-        )
-        Box(
-            Modifier
-                .align(Alignment.TopEnd)
-                .offset(x = 90.dp, y = 50.dp)
-                .size(220.dp)
-                .blur(84.dp, edgeTreatment = BlurredEdgeTreatment.Unbounded)
-                .background(VybTeal.copy(alpha = .10f), RoundedCornerShape(110.dp))
-        )
         content()
     }
 }

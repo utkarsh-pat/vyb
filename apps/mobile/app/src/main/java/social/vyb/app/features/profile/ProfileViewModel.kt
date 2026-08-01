@@ -7,11 +7,14 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import social.vyb.app.data.ProfileRecord
 import social.vyb.app.data.UpsertProfileRequest
 import social.vyb.app.features.search.PublicProfileResponse
+import social.vyb.app.features.social.SocialPost
+import social.vyb.app.features.social.SavedPostsSync
 
 enum class ProfilePanel {
     Overview,
@@ -105,6 +108,10 @@ data class ProfileUiState(
     val devices: List<TrustedDevice> = emptyList(),
     val panel: ProfilePanel = ProfilePanel.Overview,
     val activeTab: String = "posts",
+    val savedPosts: List<SocialPost> = emptyList(),
+    val savedLoading: Boolean = false,
+    val savedLoaded: Boolean = false,
+    val savedError: String? = null,
     val connectionScope: String = "followers",
     val connections: List<ProfileConnection> = emptyList(),
     val editDraft: ProfileEditDraft = ProfileEditDraft(),
@@ -120,6 +127,27 @@ class ProfileViewModel(
 
     init {
         refresh()
+        val initialSavedRevision = SavedPostsSync.changes.value.revision
+        viewModelScope.launch {
+            SavedPostsSync.changes
+                .filter { it.revision > initialSavedRevision }
+                .collect { change ->
+                    _state.update { current ->
+                        current.copy(
+                            savedPosts = if (!change.isSaved) {
+                                current.savedPosts.filterNot { it.id == change.postId }
+                            } else {
+                                current.savedPosts
+                            },
+                            savedLoaded = false,
+                            savedError = null,
+                        )
+                    }
+                    if (_state.value.activeTab == "saved") {
+                        loadSavedPosts(force = true)
+                    }
+                }
+        }
     }
 
     fun refresh() {
@@ -159,6 +187,38 @@ class ProfileViewModel(
     fun setTab(tab: String) {
         if (tab in setOf("posts", "vibes", "saved")) {
             _state.update { it.copy(activeTab = tab) }
+            // A bookmark can change while Profile is retained in the navigation
+            // back stack, so entering Saved always reconciles with the server.
+            if (tab == "saved") loadSavedPosts(force = true)
+        }
+    }
+
+    private fun loadSavedPosts(force: Boolean = false) {
+        val current = _state.value
+        if (current.savedLoading || (current.savedLoaded && !force)) return
+        viewModelScope.launch {
+            _state.update { it.copy(savedLoading = true, savedError = null) }
+            runCatching { repository.loadSavedPosts() }
+                .onSuccess { posts ->
+                    _state.update {
+                        it.copy(
+                            savedPosts = posts,
+                            savedLoading = false,
+                            savedLoaded = true,
+                            savedError = null
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _state.update {
+                        it.copy(
+                            savedLoading = false,
+                            savedLoaded = true,
+                            savedError = error.message?.takeIf(String::isNotBlank)
+                                ?: "Saved posts could not be loaded."
+                        )
+                    }
+                }
         }
     }
 

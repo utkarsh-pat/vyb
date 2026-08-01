@@ -12,7 +12,9 @@ data class AndroidUpdateManifest(
     val minimumSupportedVersionCode: Int = 1,
     val forceUpdate: Boolean = false,
     val apkUrl: String,
-    val apkSha256: String,
+    // Older manifests omit the checksum when no update is available. Validation still requires
+    // a real SHA-256 before any APK is offered or installed.
+    val apkSha256: String = "",
     val releaseNotes: List<String> = emptyList(),
     val updateAvailable: Boolean = false,
     val updatedAt: String? = null

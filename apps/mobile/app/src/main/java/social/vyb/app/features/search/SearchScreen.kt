@@ -12,7 +12,6 @@ fun SearchScreen(
     initialUsername: String? = null,
     onOpenPost: (String) -> Unit = {},
     onOpenVibe: (String) -> Unit = {},
-    @Suppress("UNUSED_PARAMETER")
     onOpenMarket: (MarketSearchItem) -> Unit = {},
     searchViewModel: SearchViewModel = viewModel()
 ) {
@@ -33,7 +32,9 @@ fun SearchScreen(
                         stats = selectedProfile.stats
                     )
                 )
-            }
+            },
+            onOpenPost = onOpenPost,
+            onOpenVibe = onOpenVibe
         )
         return
     }
@@ -42,9 +43,11 @@ fun SearchScreen(
         state = state,
         onBack = onBack,
         onQueryChange = searchViewModel::updateQuery,
+        onSelectCategory = searchViewModel::selectCategory,
         onOpenProfile = searchViewModel::openProfile,
         onToggleFollow = searchViewModel::toggleFollow,
         onOpenPost = onOpenPost,
-        onOpenVibe = onOpenVibe
+        onOpenVibe = onOpenVibe,
+        onOpenMarket = onOpenMarket
     )
 }

@@ -138,6 +138,7 @@ export interface CreatePostMediaVariables {
   mediaType: string;
   mimeType: string;
   sizeBytes: Int64String;
+  position?: number;
   width?: number | null;
   height?: number | null;
   durationMs?: number | null;

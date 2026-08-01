@@ -158,12 +158,11 @@ function getCommentRenderKey(comment: CommentItem, fallback: string) {
 }
 
 function getInitials(value: string) {
-  return value
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((item) => item[0]?.toUpperCase() ?? "")
-    .join("");
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" style={{ width: "100%", height: "100%", opacity: 0.55 }}>
+      <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+    </svg>
+  );
 }
 
 function GifIcon() {
@@ -463,12 +462,22 @@ export function SocialThreadSheet({
         animate={{ opacity: 1, y: 0 }}
         transition={{ type: "spring", stiffness: 240, damping: 26 }}
       >
-        <article
+        <motion.article
           className={`vyb-thread-comment${depth > 0 ? " is-reply" : ""}${comment.isAnonymous ? " is-anonymous" : ""}${commentActionMenuId === comment.id ? " has-action-menu" : ""}`}
-          onPointerDown={(event) => handleCommentPointerDown(comment, event)}
+          drag="x"
+          dragConstraints={{ left: 0, right: 0 }}
+          dragElastic={{ left: 0, right: 0.5 }}
+          onDragEnd={(_, info) => {
+            if (info.offset.x > 60) {
+              if (window.navigator.vibrate) window.navigator.vibrate(10);
+              onReply(comment);
+              focusComposer(100);
+            }
+          }}
+          onPointerDown={(event: any) => handleCommentPointerDown(comment, event)}
           onPointerMove={handleCommentPointerCancel}
           onPointerCancel={handleCommentPointerCancel}
-          onPointerUp={(event) => handleCommentPointerUp(comment, event)}
+          onPointerUp={(event: any) => handleCommentPointerUp(comment, event)}
         >
           <div className="vyb-thread-comment-avatar" aria-hidden="true">
              <CampusAvatarContent
@@ -611,7 +620,7 @@ export function SocialThreadSheet({
               </div>
             </div>
           </div>
-        </article>
+        </motion.article>
 
         {replies.length > 0 ? (
           <div className="vyb-thread-reply-branch">

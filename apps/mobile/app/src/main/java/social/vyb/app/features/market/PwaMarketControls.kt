@@ -3,6 +3,8 @@ package social.vyb.app.features.market
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,7 +38,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import social.vyb.app.ui.VybBorder
@@ -44,6 +48,7 @@ import social.vyb.app.ui.VybIndigo
 import social.vyb.app.ui.VybMuted
 import social.vyb.app.ui.VybPanel
 import social.vyb.app.ui.VybPanelLifted
+import social.vyb.app.ui.VybTeal
 import social.vyb.app.ui.VybText
 
 @Composable
@@ -55,11 +60,12 @@ internal fun PwaMarketControls(
     onCategory: (String?) -> Unit,
     onSort: (MarketSort) -> Unit
 ) {
+    val focusManager = LocalFocusManager.current
     var filtersOpen by remember { mutableStateOf(false) }
     var sortOpen by remember { mutableStateOf(false) }
     Surface(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
-        color = Color(0xEE0A0B11),
+        color = VybPanel.copy(alpha = .94f),
         border = BorderStroke(1.dp, VybBorder),
         shape = RoundedCornerShape(22.dp)
     ) {
@@ -97,8 +103,8 @@ internal fun PwaMarketControls(
                                     if (selected) {
                                         Brush.horizontalGradient(
                                             listOf(
-                                                Color(0xFF0B706F),
-                                                Color(0xFF293D82)
+                                                VybTeal.copy(alpha = .26f),
+                                                VybIndigo.copy(alpha = .26f)
                                             )
                                         )
                                     } else {
@@ -141,6 +147,10 @@ internal fun PwaMarketControls(
                     onValueChange = onQuery,
                     modifier = Modifier.weight(1f).height(54.dp),
                     singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(
+                        onSearch = { focusManager.clearFocus() }
+                    ),
                     leadingIcon = { Icon(Icons.Default.Search, null) },
                     trailingIcon = {
                         if (state.query.isNotEmpty()) {

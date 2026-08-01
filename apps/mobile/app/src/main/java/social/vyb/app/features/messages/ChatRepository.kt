@@ -2,6 +2,8 @@ package social.vyb.app.features.messages
 
 import android.content.Context
 import com.google.firebase.auth.FirebaseAuth
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import retrofit2.HttpException
 import social.vyb.app.data.RemotePost
 import social.vyb.app.data.network.VybNetwork
@@ -186,6 +188,52 @@ class ChatRepository(
         ChatMessageItem(
             id = sent.id,
             body = text,
+            timestamp = formatTimestamp(sent.createdAt),
+            isMine = true,
+            isReadable = true
+        )
+    }
+
+    suspend fun sendVibeCard(
+        conversationId: String,
+        postId: String,
+        title: String,
+        body: String,
+        mediaUrl: String?,
+        authorUsername: String,
+        authorDisplayName: String
+    ): ChatMessageItem = apiCall {
+        val payload = buildJsonObject {
+            put("version", 1)
+            put("type", "vibe_card")
+            put("postId", postId)
+            put("title", title.take(80))
+            put("body", body.take(140))
+            mediaUrl?.takeIf(String::isNotBlank)?.let {
+                put("mediaUrl", it)
+                put("thumbnailUrl", it)
+            }
+            put("authorUsername", authorUsername)
+            put("authorDisplayName", authorDisplayName)
+        }.toString()
+        val conversation = api.conversation(bearer(), conversationId)
+        val identity = resolveOrProvisionIdentity(conversation.viewer)
+        val peerKey = conversation.conversation.peer.publicKey?.publicKey
+            ?: error("This member has not set up secure chat yet.")
+        val encrypted = ChatCrypto.encrypt(payload, identity, peerKey)
+        val sent = api.sendMessage(
+            bearer(),
+            conversationId,
+            SendChatMessageRequestDto(
+                messageKind = "vibe_card",
+                cipherText = encrypted.cipherText,
+                cipherIv = encrypted.cipherIv,
+                cipherAlgorithm = ChatCrypto.MESSAGE_ALGORITHM
+            )
+        ).item
+        ChatMessageItem(
+            id = sent.id,
+            body = payload,
             timestamp = formatTimestamp(sent.createdAt),
             isMine = true,
             isReadable = true

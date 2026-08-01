@@ -179,6 +179,14 @@ function isMissingPostSaveOperationError(error) {
   return message.includes("unrecognized operation query.postsaves");
 }
 
+function normalizePostTitle(value) {
+  if (typeof value !== "string") return "";
+  const title = value.trim();
+  if (!title || title.toLowerCase() === "campus update") return "";
+  if (/^(?:quote\s+)?repost\s*[•·-]/iu.test(title)) return "";
+  return title;
+}
+
 function normalizeFallbackPostRecord(item) {
   return {
     id: item.id,
@@ -196,7 +204,7 @@ function normalizeFallbackPostRecord(item) {
     kind: item.kind ?? (item.mediaUrl ? "image" : "text"),
     mediaUrl: item.mediaUrl ?? null,
     location: item.location ?? null,
-    title: item.title ?? "Campus update",
+    title: normalizePostTitle(item.title),
     body: item.body ?? "",
     status: item.status ?? "published",
     reactions: item.reactions ?? 0,
@@ -582,7 +590,7 @@ const LIST_POST_MEDIA_BY_TENANT_PRIVATE_QUERY = `
         tenantId: { eq: $tenantId }
         deletedAt: { isNull: true }
       }
-      orderBy: [{ createdAt: ASC }]
+      orderBy: [{ position: ASC }, { createdAt: ASC }]
       limit: $limit
     ) {
       id
@@ -593,6 +601,7 @@ const LIST_POST_MEDIA_BY_TENANT_PRIVATE_QUERY = `
       mediaType
       mimeType
       sizeBytes
+      position
       width
       height
       durationMs
@@ -609,7 +618,7 @@ const LIST_POST_MEDIA_BY_POST_PRIVATE_QUERY = `
         postId: { eq: $postId }
         deletedAt: { isNull: true }
       }
-      orderBy: [{ createdAt: ASC }]
+      orderBy: [{ position: ASC }, { createdAt: ASC }]
       limit: $limit
     ) {
       id
@@ -620,6 +629,7 @@ const LIST_POST_MEDIA_BY_POST_PRIVATE_QUERY = `
       mediaType
       mimeType
       sizeBytes
+      position
       width
       height
       durationMs
@@ -637,7 +647,7 @@ const LIST_POST_MEDIA_BY_POST_IDS_PRIVATE_QUERY = `
         postId: { in: $postIds }
         deletedAt: { isNull: true }
       }
-      orderBy: [{ createdAt: ASC }]
+      orderBy: [{ position: ASC }, { createdAt: ASC }]
       limit: $limit
     ) {
       id
@@ -648,6 +658,7 @@ const LIST_POST_MEDIA_BY_POST_IDS_PRIVATE_QUERY = `
       mediaType
       mimeType
       sizeBytes
+      position
       width
       height
       durationMs
@@ -723,6 +734,7 @@ const CREATE_POST_MEDIA_PRIVATE_MUTATION = `
     $mediaType: String!
     $mimeType: String!
     $sizeBytes: Int64!
+    $position: Int!
     $width: Int
     $height: Int
     $durationMs: Int
@@ -736,6 +748,7 @@ const CREATE_POST_MEDIA_PRIVATE_MUTATION = `
         mediaType: $mediaType
         mimeType: $mimeType
         sizeBytes: $sizeBytes
+        position: $position
         width: $width
         height: $height
         durationMs: $durationMs
@@ -1205,6 +1218,19 @@ function buildPostMediaFromRecords(post, records = []) {
 
   if (hydrated.length === 0) {
     return Array.isArray(post.media) && post.media.length > 0 ? post.media : null;
+  }
+
+  // A feed post stores each selected upload as its own postMedia record. Keep those records
+  // independent so clients can render the post carousel. Vibes are the exception: their rows
+  // represent adaptive encodes of one video and therefore remain one asset with variants.
+  if (normalizePlacement(post.placement) !== "vibe") {
+    const seen = new Set();
+    return hydrated.filter((asset) => {
+      const key = asset.storagePath ?? asset.url;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }
 
   const primaryIndex = hydrated.findIndex(
@@ -2013,7 +2039,7 @@ function mapPostRecord(item, counts = null, profileMap = null, viewerIdentity = 
             ]
           : [],
     location: item.location ?? null,
-    title: item.title ?? "Campus update",
+    title: normalizePostTitle(item.title),
     body: item.body ?? "",
     status: item.status ?? "published",
     reactions: Number(counts?.reactions?.get(item.id) ?? item.reactions ?? 0),
@@ -2458,6 +2484,69 @@ async function listPostsByTenantForStats({ tenantId, placement }) {
   }
 }
 
+export async function listSavedPosts({
+  tenantId,
+  viewerUserId,
+  viewerMembershipId = null,
+  viewerCommunityIds = [],
+  limit = 50
+}) {
+  if (!tenantId || !viewerUserId) {
+    return [];
+  }
+
+  let saveRecords;
+  try {
+    const response = await listActivePostSavesByTenantQuery(getSocialDc(), {
+      tenantId,
+      limit: TENANT_SCAN_LIMIT
+    });
+    saveRecords = response.data.postSaves;
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) {
+      throw error;
+    }
+    const store = await ensureFallbackStore();
+    saveRecords = store.postSaves.filter((item) => item.tenantId === tenantId && !item.deletedAt);
+  }
+
+  const savedPostIds = saveRecords
+    .filter((item) => item.userId === viewerUserId)
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .slice(0, Math.max(1, Math.min(Number(limit) || 50, 50)))
+    .map((item) => item.postId);
+  if (savedPostIds.length === 0) {
+    return [];
+  }
+
+  const savedIdSet = new Set(savedPostIds);
+  const [feedPosts, vibePosts, adminStore] = await Promise.all([
+    listPostsByTenantForStats({ tenantId, placement: "feed" }),
+    listPostsByTenantForStats({ tenantId, placement: "vibe" }),
+    readSuperAdminStore()
+  ]);
+  const candidates = [...feedPosts, ...vibePosts]
+    .filter((item) => savedIdSet.has(item.id))
+    .filter((item) => item.status === "published")
+    .filter((item) => !isBlockedByAdminControls(item, adminStore, viewerUserId));
+  const visible = await filterPostsByVisibility(candidates, {
+    tenantId,
+    viewerUserId,
+    viewerCommunityIds
+  });
+  const profileMap = await buildProfileByUserIdMap(
+    tenantId,
+    visible.filter((item) => !item.isAnonymous).map((item) => item.authorUserId)
+  );
+  const mapped = await mapPostList(
+    visible,
+    { viewerUserId, viewerMembershipId },
+    profileMap
+  );
+  const byId = new Map(mapped.map((item) => [item.id, item]));
+  return savedPostIds.map((postId) => byId.get(postId)).filter(Boolean);
+}
+
 export async function getUserSocialStatsMap({ tenantId, userIds, viewerUserId = null }) {
   const normalizedUserIds = normalizeUserIdList(userIds);
   const statsMap = new Map(
@@ -2507,6 +2596,44 @@ export async function getUserSocialStatsMap({ tenantId, userIds, viewerUserId = 
   }
 
   return statsMap;
+}
+
+export async function getViewerFollowingUserIds({ tenantId, viewerUserId, userIds }) {
+  const targetUserIds = new Set(normalizeUserIdList(userIds));
+  if (!tenantId || !viewerUserId || targetUserIds.size === 0) {
+    return new Set();
+  }
+
+  try {
+    const response = await listFollowingByUserQuery(getSocialDc(), {
+      tenantId,
+      followerUserId: viewerUserId,
+      limit: TENANT_SCAN_LIMIT
+    });
+    return new Set(
+      (response.data.follows ?? [])
+        .map((item) => item.followingUserId)
+        .filter((userId) => targetUserIds.has(userId))
+    );
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) {
+      throw error;
+    }
+
+    const store = await ensureFallbackStore();
+    return new Set(
+      store.follows
+        .map(normalizeFallbackFollowRecord)
+        .filter(
+          (item) =>
+            item.tenantId === tenantId &&
+            item.followerUserId === viewerUserId &&
+            targetUserIds.has(item.followingUserId) &&
+            !item.deletedAt
+        )
+        .map((item) => item.followingUserId)
+    );
+  }
 }
 
 export async function findPostRecordById(postId, { tenantId = null } = {}) {
@@ -2594,13 +2721,14 @@ function buildPostMediaRows({ payload, media, mediaAssets }) {
       seen.add(key);
       return true;
     })
-    .map((asset) => ({
+    .map((asset, position) => ({
       tenantId: payload.tenantId,
       mediaUrl: asset.url || null,
       storagePath: asset.storagePath,
       mediaType: asset.kind,
       mimeType: asset.mimeType,
       sizeBytes: String(asset.sizeBytes),
+      position,
       width: asset.width,
       height: asset.height,
       durationMs: asset.durationMs
@@ -2693,7 +2821,7 @@ export async function createPost(payload) {
     mediaMimeType: media.mediaMimeType,
     mediaSizeBytes: media.mediaSizeBytes,
     location: payload.location ?? null,
-    title: payload.title ?? "Campus update",
+    title: typeof payload.title === "string" && payload.title.trim() ? payload.title.trim() : null,
     body: payload.body,
     status: "published",
     reactions: 0,
@@ -2722,7 +2850,7 @@ export async function createPost(payload) {
         visibility: payload.visibility ?? "public",
         placement,
         kind: payload.kind,
-        title: payload.title ?? "Campus update",
+        title: typeof payload.title === "string" && payload.title.trim() ? payload.title.trim() : null,
         body: payload.body,
         mediaUrl: media.mediaUrl,
         storagePath: media.storagePath,

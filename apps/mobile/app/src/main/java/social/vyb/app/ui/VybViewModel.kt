@@ -254,15 +254,26 @@ class VybViewModel : ViewModel() {
     }
 }
 
-internal fun toFeedPost(post: RemotePost) = FeedPost(
+internal fun normalizeFeedPostTitle(value: String): String {
+    val title = value.trim()
+    return title.takeUnless {
+        it.isBlank() || it.equals("Campus update", ignoreCase = true) ||
+            it.startsWith("Repost ", ignoreCase = true) ||
+            it.startsWith("Quote repost ", ignoreCase = true)
+    }.orEmpty()
+}
+
+internal fun toFeedPost(post: RemotePost): FeedPost {
+    val resolvedTitle = normalizeFeedPostTitle(post.title)
+    return FeedPost(
     id = post.id,
     authorUserId = post.author.userId,
     author = if (post.isAnonymous || post.author.isAnonymous) "Anonymous" else post.author.displayName,
     handle = if (post.isAnonymous || post.author.isAnonymous) "@anonymous" else "@${post.author.username}",
     avatarUrl = post.author.avatarUrl,
     time = formatSocialAge(post.createdAt),
-    title = post.title,
-    body = post.body.ifBlank { post.title },
+    title = resolvedTitle,
+    body = post.body.ifBlank { resolvedTitle },
     kind = post.kind,
     media = (post.media.ifEmpty {
         post.mediaUrl?.let {
@@ -286,7 +297,8 @@ internal fun toFeedPost(post: RemotePost) = FeedPost(
     category = post.location?.takeIf { it.isNotBlank() } ?: post.kind.replaceFirstChar {
         it.uppercase()
     }
-)
+    )
+}
 
 internal fun formatSocialAge(value: String, now: Instant = Instant.now()): String {
     val instant = runCatching { Instant.parse(value) }.getOrNull() ?: return ""

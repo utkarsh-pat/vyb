@@ -1,0 +1,23 @@
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+steps:
+  - name: node:22-bookworm
+    id: validate-and-deploy-social-schema
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        npm install --global firebase-tools@15.16.0
+        firebase dataconnect:compile --project "$PROJECT_ID" --non-interactive
+        firebase dataconnect:sql:migrate \
+          --project "$PROJECT_ID" \
+          --service vyb \
+          --location asia-south1 \
+          --force \
+          --non-interactive
+        firebase deploy \
+          --project "$PROJECT_ID" \
+          --only dataconnect:vyb:schema,dataconnect:vyb:social \
+          --force \
+          --non-interactive

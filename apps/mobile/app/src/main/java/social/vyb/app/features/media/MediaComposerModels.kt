@@ -3,6 +3,8 @@ package social.vyb.app.features.media
 import android.net.Uri
 import kotlinx.serialization.Serializable
 
+internal const val MAX_POST_MEDIA_ITEMS = 8
+
 enum class MediaPublishIntent(val wireValue: String) {
     Post("post"),
     Story("story"),
@@ -19,11 +21,42 @@ data class SelectedMedia(
 )
 
 @Serializable
-internal data class UploadSocialMediaRequest(
+internal data class PersistedMediaDraft(
+    val id: String = "",
+    val savedAtMillis: Long = 0L,
+    val scheduledForMillis: Long? = null,
     val intent: String,
+    val caption: String,
+    val location: String,
+    val selected: List<PersistedSelectedMedia>,
+    val isAnonymous: Boolean = false,
+    val allowAnonymousComments: Boolean = true,
+    val visibility: String = "public",
+    val communityId: String? = null
+)
+
+@Serializable
+internal data class PersistedMediaDraftCollection(
+    val drafts: List<PersistedMediaDraft> = emptyList()
+)
+
+data class MediaDraftSummary(
+    val id: String,
+    val intent: MediaPublishIntent,
+    val caption: String,
+    val mediaCount: Int,
+    val savedAtMillis: Long,
+    val scheduledForMillis: Long? = null
+)
+
+@Serializable
+internal data class PersistedSelectedMedia(
+    val uri: String,
     val fileName: String,
     val mimeType: String,
-    val base64Data: String
+    val sizeBytes: Long,
+    val mediaType: String,
+    val compositionJson: String? = null
 )
 
 @Serializable
@@ -37,6 +70,14 @@ data class UploadedSocialMediaAsset(
 
 @Serializable
 internal data class UploadSocialMediaEnvelope(val asset: UploadedSocialMediaAsset)
+
+@Serializable
+internal data class LegacySocialMediaUploadRequest(
+    val intent: String,
+    val fileName: String,
+    val mimeType: String,
+    val base64Data: String
+)
 
 @Serializable
 internal data class MediaAssetRequest(
@@ -53,7 +94,7 @@ internal data class CreateMediaPostRequest(
     val membershipId: String,
     val kind: String,
     val placement: String,
-    val title: String = "Campus update",
+    val title: String = "",
     val body: String,
     val mediaUrl: String,
     val mediaStoragePath: String,
@@ -113,6 +154,10 @@ data class MediaComposerUiState(
     val progress: Float = 0f,
     val progressLabel: String? = null,
     val error: String? = null,
+    val notice: String? = null,
+    val scheduledForMillis: Long? = null,
+    val drafts: List<MediaDraftSummary> = emptyList(),
+    val activeDraftId: String? = null,
     val publishedItem: CreatedMediaItem? = null
 ) {
     val canPublish: Boolean

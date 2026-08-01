@@ -263,6 +263,7 @@
   transition: color 0.2s, background-color 0.2s;
   border-top-left-radius: 16px;
   border-top-right-radius: 16px;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .spm-tab-item:first-child {
@@ -4654,6 +4655,46 @@
   -webkit-overflow-scrolling: touch;
 }
 
+.cs-moment-carousel-preview {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-radius: 1rem;
+  border: 1px solid rgba(129, 140, 248, 0.3);
+  background: rgba(5, 8, 23, 0.72);
+}
+
+.cs-moment-carousel-preview img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.cs-moment-carousel-preview > span {
+  position: absolute;
+  right: 0.65rem;
+  bottom: 0.65rem;
+  padding: 0.3rem 0.58rem;
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.64);
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+.cs-moment-carousel-preview > button {
+  position: absolute;
+  top: 50%;
+  translate: 0 -50%;
+  width: 2.35rem;
+  height: 2.35rem;
+  border: 1px solid rgba(255,255,255,.22);
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(5,8,23,.62);
+  backdrop-filter: blur(10px);
+  font-size: 1.7rem;
+  cursor: pointer;
+}
+.cs-moment-carousel-preview > button:disabled { opacity: 0.28; cursor: default; }
+.cs-moment-carousel-preview > .is-prev { left: 0.65rem; }
+.cs-moment-carousel-preview > .is-next { right: 0.65rem; }
+
 .cs-moment-img-thumb {
   position: relative;
   flex-shrink: 0;
@@ -4671,6 +4712,28 @@
 }
 
 .cs-moment-img-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.cs-moment-img-drag {
+  position: absolute;
+  left: 0.35rem;
+  bottom: 0.35rem;
+  min-width: 1.8rem;
+  min-height: 1.6rem;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  font-weight: 900;
+  letter-spacing: -0.2rem;
+  cursor: grab;
+  backdrop-filter: blur(6px);
+  border: 0;
+  touch-action: none;
+  user-select: none;
+}
+
+.cs-moment-img-thumb:active .cs-moment-img-drag { cursor: grabbing; }
 
 .cs-moment-img-remove {
   position: absolute;
@@ -4844,6 +4907,23 @@
   height: 18px;
 }
 
+.cs-moment-img-edit {
+  position: absolute;
+  top: 0.3rem;
+  left: 0.3rem;
+  width: 1.75rem;
+  height: 1.75rem;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+
 .cs-story-builder-trigger {
   position: absolute;
   top: 4.4rem;
@@ -4968,6 +5048,13 @@
   box-shadow: 0 18px 50px rgba(0,0,0,0.55);
   touch-action: none;
   cursor: grab;
+}
+
+.cs-story-builder-canvas.is-post {
+  width: 100%;
+  height: auto;
+  max-height: 100%;
+  aspect-ratio: 4 / 3;
 }
 
 .cs-story-builder-controls {
@@ -5565,6 +5652,24 @@
   height: 1.25rem;
 }
 
+.cs-draft-count {
+  position: absolute;
+  top: -0.32rem;
+  right: -0.32rem;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 0.22rem;
+  border: 2px solid var(--surface-base);
+  border-radius: 999px;
+  background: linear-gradient(135deg, #6d5dfc, #11cfc4);
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
 .cs-utility-menu {
   position: absolute;
   right: 0;
@@ -5574,9 +5679,9 @@
   display: grid;
   gap: 0.5rem;
   padding: 0.65rem;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid color-mix(in srgb, var(--text-muted) 22%, transparent);
   border-radius: 1rem;
-  background: rgba(11, 17, 32, 0.98);
+  background: color-mix(in srgb, var(--surface-raised) 97%, transparent);
   box-shadow: 0 18px 50px rgba(2, 6, 23, 0.62);
   backdrop-filter: blur(24px);
 }
@@ -5587,10 +5692,10 @@
   align-items: center;
   gap: 0.7rem;
   padding: 0.7rem;
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid color-mix(in srgb, var(--text-muted) 16%, transparent);
   border-radius: 0.8rem;
-  background: rgba(255, 255, 255, 0.035);
-  color: #f8fafc;
+  background: color-mix(in srgb, var(--surface-raised) 84%, transparent);
+  color: var(--text-primary);
   text-align: left;
   cursor: pointer;
 }
@@ -5655,9 +5760,9 @@
   display: grid;
   gap: 1rem;
   padding: 1.5rem;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid color-mix(in srgb, var(--text-muted) 22%, transparent);
   border-radius: 1.6rem;
-  background: #0b1120;
+  background: var(--surface-raised);
   box-shadow: 0 24px 70px rgba(2, 6, 23, 0.7);
 }
 
@@ -5685,13 +5790,13 @@
 }
 
 .cs-schedule-dialog h2 {
-  color: #f8fafc;
+  color: var(--text-primary);
   font-size: 1.35rem;
 }
 
 .cs-schedule-dialog p,
 .cs-schedule-note {
-  color: rgba(148, 163, 184, 0.82);
+  color: var(--text-muted);
   font-size: 0.82rem;
 }
 
@@ -5705,10 +5810,10 @@
   align-items: center;
   gap: 0.7rem;
   padding: 0.8rem 0.9rem;
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  border: 1px solid color-mix(in srgb, var(--text-muted) 22%, transparent);
   border-radius: 0.9rem;
-  background: rgba(255, 255, 255, 0.035);
-  color: #f8fafc;
+  background: color-mix(in srgb, var(--surface-raised) 86%, transparent);
+  color: var(--text-primary);
   text-align: left;
   cursor: pointer;
 }
@@ -5740,8 +5845,26 @@
 }
 
 .cs-schedule-options small {
-  color: rgba(148, 163, 184, 0.84);
+  color: var(--text-muted);
   font-size: 0.72rem;
+}
+
+.cs-schedule-custom {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.85rem;
+  color: var(--text-primary);
+}
+
+.cs-schedule-custom input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--text-muted) 34%, transparent);
+  border-radius: 0.85rem;
+  background: color-mix(in srgb, var(--surface-raised) 92%, transparent);
+  color: var(--text-primary);
+  padding: 0.75rem 0.85rem;
+  color-scheme: dark light;
 }
 
 .cs-schedule-actions {
@@ -5766,6 +5889,138 @@
   border-color: rgba(139, 92, 246, 0.55);
   background: linear-gradient(135deg, #6366f1, #8b5cf6);
   color: #fff;
+}
+
+.cs-draft-dialog {
+  width: min(100%, 34rem);
+  max-height: min(78vh, 42rem);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem;
+  border: 1px solid color-mix(in srgb, var(--text-muted) 22%, transparent);
+  border-radius: 1.45rem;
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  box-shadow: 0 24px 70px rgba(2, 6, 23, 0.5);
+}
+
+.cs-draft-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.cs-draft-dialog-head h2 {
+  margin: 0.12rem 0 0;
+  font-size: 1.25rem;
+}
+
+.cs-draft-eyebrow {
+  color: #18bbae;
+  font-size: 0.66rem;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+}
+
+.cs-draft-close,
+.cs-draft-delete {
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--text-muted) 22%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-raised) 86%, transparent);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.cs-draft-close {
+  width: 2.45rem;
+  height: 2.45rem;
+}
+
+.cs-draft-close .cs-icon,
+.cs-draft-delete .cs-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.cs-draft-list {
+  min-height: 0;
+  display: grid;
+  gap: 0.6rem;
+  overflow-y: auto;
+}
+
+.cs-draft-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.45rem;
+  border: 1px solid color-mix(in srgb, var(--text-muted) 18%, transparent);
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--surface-raised) 78%, transparent);
+}
+
+.cs-draft-row.is-active {
+  border-color: rgba(45, 212, 191, 0.48);
+  background: rgba(20, 184, 166, 0.09);
+}
+
+.cs-draft-load {
+  min-width: 0;
+  display: grid;
+  gap: 0.18rem;
+  padding: 0.45rem;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cs-draft-load strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cs-draft-load small,
+.cs-draft-empty {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+}
+
+.cs-draft-mode {
+  width: max-content;
+  padding: 0.18rem 0.48rem;
+  border-radius: 999px;
+  background: rgba(99, 102, 241, 0.13);
+  color: #8b7cff;
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.cs-draft-delete {
+  width: 2.3rem;
+  height: 2.3rem;
+  color: #f87171;
+}
+
+.cs-draft-done {
+  align-self: flex-end;
+  padding: 0.62rem 1.15rem;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #6366f1, #14b8a6);
+  color: #fff;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
 }
 
 .cs-cancel-btn {

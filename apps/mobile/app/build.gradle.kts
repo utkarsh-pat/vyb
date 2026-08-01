@@ -27,8 +27,8 @@ android {
         applicationId = "social.vyb.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.1.7"
+        versionCode = 22
+        versionName = "0.1.21"
 
     }
 
@@ -55,7 +55,12 @@ android {
                 .orElse("https://api.vybnet.app/")
                 .get()
             buildConfigField("String", "API_BASE_URL", "\"$releaseApiUrl\"")
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
             if (hasReleaseSigning) {
                 signingConfig = signingConfigs.getByName("release")
             }

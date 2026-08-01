@@ -39,6 +39,7 @@ import androidx.compose.material.icons.automirrored.filled.RotateRight
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.FitScreen
@@ -100,6 +101,7 @@ import kotlinx.serialization.encodeToString
 @Composable
 internal fun StoryBuilderScreen(
     media: SelectedMedia,
+    intent: MediaPublishIntent,
     onApply: (SelectedMedia) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -113,6 +115,7 @@ internal fun StoryBuilderScreen(
     var confirmClose by remember { mutableStateOf(false) }
     var textEditor by remember { mutableStateOf<StoryTextOverlay?>(null) }
     var stickerPicker by remember { mutableStateOf(false) }
+    var cropPicker by remember { mutableStateOf(false) }
     var exporting by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -139,6 +142,7 @@ internal fun StoryBuilderScreen(
             Box(Modifier.fillMaxSize()) {
                 StoryCanvas(
                     media = media,
+                    intent = intent,
                     snapshot = snapshot,
                     drawingEnabled = tool == StoryTool.Draw && !preview,
                     onTransform = { zoom, panX, panY, rotation ->
@@ -152,10 +156,10 @@ internal fun StoryBuilderScreen(
                             rotation = snapshot.rotation + rotation
                         )
                     },
-                    onTextMoved = { id, x, y ->
+                    onTextTransformed = { id, x, y, size ->
                         snapshot = snapshot.copy(
                             texts = snapshot.texts.map {
-                                if (it.id == id) it.copy(x = x, y = y) else it
+                                if (it.id == id) it.copy(x = x, y = y, size = size) else it
                             }
                         )
                     },
@@ -223,7 +227,7 @@ internal fun StoryBuilderScreen(
                                 exporting = true
                                 scope.launch {
                                     runCatching {
-                                        exportStoryComposition(context, media, snapshot)
+                                        exportStoryComposition(context, media, intent, snapshot)
                                     }.onSuccess(onApply).onFailure {
                                         error = it.message ?: "Could not export story."
                                         exporting = false
@@ -261,7 +265,7 @@ internal fun StoryBuilderScreen(
                                     y = .45f
                                 )
                             }
-                            EditorToolButton("Sticker", Icons.Default.EmojiEmotions, false) {
+                            EditorToolButton("Emojis", Icons.Default.EmojiEmotions, false) {
                                 stickerPicker = true
                             }
                             EditorToolButton("Draw", Icons.Default.Draw, tool == StoryTool.Draw) {
@@ -270,18 +274,14 @@ internal fun StoryBuilderScreen(
                             EditorToolButton("Rotate", Icons.AutoMirrored.Filled.RotateRight, false) {
                                 commit(snapshot.copy(rotation = snapshot.rotation + 90f))
                             }
-                            EditorToolButton(
-                                if (snapshot.fill) "Fill" else "Fit",
-                                Icons.Default.FitScreen,
-                                snapshot.fill
-                            ) {
-                                commit(snapshot.copy(fill = !snapshot.fill))
+                            EditorToolButton("Crop", Icons.Default.Crop, snapshot.fill) {
+                                cropPicker = true
                             }
                         }
                         Spacer(Modifier.height(28.dp))
                     }
                 } else {
-                    IconButton(
+                    TextButton(
                         onClick = { preview = false },
                         modifier = Modifier
                             .statusBarsPadding()
@@ -290,11 +290,13 @@ internal fun StoryBuilderScreen(
                             .background(Color.Black.copy(alpha = .55f), CircleShape)
                     ) {
                         Icon(Icons.Default.Close, "Exit preview", tint = Color.White)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Back to edit", color = Color.White)
                     }
                 }
                 if (exporting) {
                     Text(
-                        "Preparing story…",
+                        "Preparing media…",
                         modifier = Modifier
                             .align(Alignment.Center)
                             .background(Color.Black.copy(alpha = .72f), RoundedCornerShape(16.dp))
@@ -339,6 +341,40 @@ internal fun StoryBuilderScreen(
             }
         )
     }
+    if (cropPicker) {
+        val options = if (intent == MediaPublishIntent.Post) {
+            listOf(
+                "Original" to ("original" to false),
+                "Fill original" to ("original" to true),
+                "Square 1:1" to ("square" to true),
+                "Portrait 4:5" to ("portrait" to true),
+                "Landscape 16:9" to ("landscape" to true)
+            )
+        } else {
+            listOf("Fit" to ("story" to false), "Fill 9:16" to ("story" to true))
+        }
+        AlertDialog(
+            onDismissRequest = { cropPicker = false },
+            title = { Text("Crop and framing") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Choose an output frame. You can then pinch and drag the media inside it.")
+                    options.forEach { (label, option) ->
+                        FilterChip(
+                            selected = snapshot.cropAspect == option.first && snapshot.fill == option.second,
+                            onClick = {
+                                commit(snapshot.copy(cropAspect = option.first, fill = option.second))
+                                cropPicker = false
+                            },
+                            label = { Text(label) },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { cropPicker = false }) { Text("Close") } }
+        )
+    }
     if (confirmClose) {
         AlertDialog(
             onDismissRequest = { confirmClose = false },
@@ -355,7 +391,7 @@ internal fun StoryBuilderScreen(
     error?.let { message ->
         AlertDialog(
             onDismissRequest = { error = null },
-            title = { Text("Story export failed") },
+            title = { Text("Media export failed") },
             text = { Text(message) },
             confirmButton = {
                 TextButton(onClick = { error = null }) { Text("OK") }
@@ -367,10 +403,11 @@ internal fun StoryBuilderScreen(
 @Composable
 private fun StoryCanvas(
     media: SelectedMedia,
+    intent: MediaPublishIntent,
     snapshot: StoryEditorSnapshot,
     drawingEnabled: Boolean,
     onTransform: (Float, Float, Float, Float) -> Unit,
-    onTextMoved: (String, Float, Float) -> Unit,
+    onTextTransformed: (String, Float, Float, Float) -> Unit,
     onTextEdit: (StoryTextOverlay) -> Unit,
     onStickerMoved: (String, Float, Float) -> Unit,
     onStroke: (List<StoryPoint>) -> Unit,
@@ -378,10 +415,11 @@ private fun StoryCanvas(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val currentOnTransform by rememberUpdatedState(onTransform)
-    val currentOnTextMoved by rememberUpdatedState(onTextMoved)
+    val currentOnTextTransformed by rememberUpdatedState(onTextTransformed)
     val currentOnTextEdit by rememberUpdatedState(onTextEdit)
     val currentOnStickerMoved by rememberUpdatedState(onStickerMoved)
     var bitmap by remember(media.uri) { mutableStateOf<Bitmap?>(null) }
+    var activeStrokePoints by remember(media.uri) { mutableStateOf<List<StoryPoint>>(emptyList()) }
     LaunchedEffect(media.uri, media.mediaType) {
         bitmap = if (media.mediaType == "image") {
             withContext(Dispatchers.IO) {
@@ -396,9 +434,20 @@ private fun StoryCanvas(
         contentAlignment = Alignment.Center
     ) {
         val density = androidx.compose.ui.platform.LocalDensity.current
-        val idealWidth = maxHeight * 9f / 16f
+        val sourceAspect = bitmap
+            ?.takeIf { it.width > 0 && it.height > 0 }
+            ?.let { it.width.toFloat() / it.height.toFloat() }
+            ?: (4f / 3f)
+        val canvasAspect = when {
+            intent != MediaPublishIntent.Post -> 9f / 16f
+            snapshot.cropAspect == "square" -> 1f
+            snapshot.cropAspect == "portrait" -> 4f / 5f
+            snapshot.cropAspect == "landscape" -> 16f / 9f
+            else -> sourceAspect
+        }
+        val idealWidth = maxHeight * canvasAspect
         val canvasWidth = if (maxWidth < idealWidth) maxWidth else idealWidth
-        val canvasHeight = canvasWidth * 16f / 9f
+        val canvasHeight = canvasWidth / canvasAspect
         val widthPx = with(density) { canvasWidth.toPx() }
         val heightPx = with(density) { canvasHeight.toPx() }
         Box(
@@ -478,18 +527,24 @@ private fun StoryCanvas(
                                     points = mutableListOf(
                                         StoryPoint(start.x / size.width, start.y / size.height)
                                     )
+                                    activeStrokePoints = points.toList()
                                 },
                                 onDragEnd = {
                                     if (points.size > 1) onStroke(points)
                                     points = mutableListOf()
+                                    activeStrokePoints = emptyList()
                                 },
-                                onDragCancel = { points = mutableListOf() }
+                                onDragCancel = {
+                                    points = mutableListOf()
+                                    activeStrokePoints = emptyList()
+                                }
                             ) { change, _ ->
                                 change.consume()
                                 points += StoryPoint(
                                     change.position.x / size.width,
                                     change.position.y / size.height
                                 )
+                                activeStrokePoints = points.toList()
                             }
                         }
                     }
@@ -514,6 +569,20 @@ private fun StoryCanvas(
                             )
                         )
                     }
+                }
+                if (activeStrokePoints.size > 1) {
+                    val livePath = androidx.compose.ui.graphics.Path().apply {
+                        moveTo(activeStrokePoints.first().x * size.width, activeStrokePoints.first().y * size.height)
+                        activeStrokePoints.drop(1).forEach { lineTo(it.x * size.width, it.y * size.height) }
+                    }
+                    drawPath(
+                        livePath,
+                        color = Color(snapshot.drawColor),
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(
+                            width = snapshot.drawWidth * size.width / 360f,
+                            pathEffect = PathEffect.cornerPathEffect(8f)
+                        )
+                    )
                 }
             }
             snapshot.texts.forEach { overlay ->
@@ -541,14 +610,17 @@ private fun StoryCanvas(
                                 onDoubleTap = { currentOnTextEdit(overlay) }
                             )
                         }
+                        // Keep this gesture coroutine stable while each pinch frame updates
+                        // overlay.size; restarting it mid-gesture made live zoom appear stuck.
                         .pointerInput(overlay.id) {
                             var x = overlay.x
                             var y = overlay.y
-                            detectDragGestures { change, drag ->
-                                change.consume()
-                                x = (x + drag.x / widthPx).coerceIn(0f, 1f)
-                                y = (y + drag.y / heightPx).coerceIn(0f, 1f)
-                                currentOnTextMoved(overlay.id, x, y)
+                            var textSize = overlay.size
+                            detectTransformGestures { _, pan, zoom, _ ->
+                                x = (x + pan.x / widthPx).coerceIn(0f, 1f)
+                                y = (y + pan.y / heightPx).coerceIn(0f, 1f)
+                                textSize = (textSize * zoom).coerceIn(18f, 96f)
+                                currentOnTextTransformed(overlay.id, x, y, textSize)
                             }
                         },
                     color = Color(overlay.color),
@@ -746,22 +818,35 @@ private fun StoryTextDialog(
 
 @Composable
 private fun StickerPickerDialog(onDismiss: () -> Unit, onSticker: (String) -> Unit) {
-    val stickers = listOf(
+    var showMore by remember { mutableStateOf(false) }
+    val emojis = listOf(
         "😀", "😂", "😍", "🥳", "🔥", "❤️", "✨", "🎉",
         "👍", "🙌", "💯", "📍", "🎓", "☕", "🎵", "🏆"
     )
+    val moreEmojis = listOf(
+        "\uD83E\uDD29", "\uD83D\uDE0E", "\uD83E\uDD1D", "\uD83D\uDCAA",
+        "\uD83C\uDF08", "\uD83C\uDF1F", "\uD83D\uDE80", "\uD83C\uDFAF",
+        "\uD83C\uDFC0", "\u26BD", "\uD83C\uDFAE", "\uD83D\uDCBB",
+        "\uD83D\uDCDA", "\uD83D\uDCF8", "\uD83D\uDCA1", "\u2705"
+    )
+    val visibleEmojis = if (showMore) emojis + moreEmojis else emojis
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Choose a sticker") },
+        title = { Text("Choose an emoji") },
         text = {
             Column {
-                stickers.chunked(4).forEach { row ->
+                visibleEmojis.chunked(4).forEach { row ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                         row.forEach { emoji ->
                             TextButton(onClick = { onSticker(emoji) }) {
                                 Text(emoji, fontSize = 32.sp)
                             }
                         }
+                    }
+                }
+                if (!showMore) {
+                    TextButton(onClick = { showMore = true }, modifier = Modifier.align(Alignment.End)) {
+                        Text("More emojis")
                     }
                 }
             }
@@ -773,6 +858,7 @@ private fun StickerPickerDialog(onDismiss: () -> Unit, onSticker: (String) -> Un
 private suspend fun exportStoryComposition(
     context: Context,
     media: SelectedMedia,
+    intent: MediaPublishIntent,
     snapshot: StoryEditorSnapshot
 ): SelectedMedia = withContext(Dispatchers.IO) {
     val metadata = StoryCompositionCodec.encodeToString(snapshot.toComposition())
@@ -784,8 +870,17 @@ private suspend fun exportStoryComposition(
     }
     val source = context.contentResolver.openInputStream(media.uri)?.use(BitmapFactory::decodeStream)
         ?: error("The selected image could not be read.")
-    val width = 1080
-    val height = 1920
+    val (width, height) = when {
+        intent != MediaPublishIntent.Post -> 1080 to 1920
+        snapshot.cropAspect == "square" -> 1080 to 1080
+        snapshot.cropAspect == "portrait" -> 1080 to 1350
+        snapshot.cropAspect == "landscape" -> 1600 to 900
+        else -> {
+            val scaleToLimit = min(1f, 2048f / max(source.width, source.height).toFloat())
+            (source.width * scaleToLimit).roundToInt().coerceAtLeast(1) to
+                (source.height * scaleToLimit).roundToInt().coerceAtLeast(1)
+        }
+    }
     val output = createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val canvas = AndroidCanvas(output)
     canvas.drawColor(android.graphics.Color.BLACK)
@@ -893,6 +988,7 @@ private data class StoryEditorSnapshot(
     val offsetY: Float = 0f,
     val rotation: Float = 0f,
     val fill: Boolean = true,
+    val cropAspect: String = "original",
     val texts: List<StoryTextOverlay> = emptyList(),
     val stickers: List<StorySticker> = emptyList(),
     val strokes: List<StoryStroke> = emptyList(),

@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -43,10 +44,12 @@ import social.vyb.app.ui.VybMuted
 import social.vyb.app.ui.VybPanel
 import social.vyb.app.ui.VybPanelLifted
 import social.vyb.app.ui.VybResponsiveFrame
+import social.vyb.app.ui.VybTeal
 import social.vyb.app.ui.VybText
 import social.vyb.app.ui.theme.LocalThemePreference
 import social.vyb.app.ui.theme.LocalThemePreferenceSetter
 import social.vyb.app.ui.theme.ThemePreference
+import social.vyb.app.features.social.SocialAvatar
 
 @Composable
 internal fun ProfileSettingsHub(
@@ -90,6 +93,7 @@ internal fun ProfileSettingsHub(
                         name = profile?.fullName.orEmpty().ifBlank { "Vyb member" },
                         username = profile?.username.orEmpty(),
                         email = email,
+                        avatarUrl = profile?.avatarUrl,
                         modifier = Modifier.weight(.72f)
                     )
                     Column(Modifier.weight(1.28f)) {
@@ -108,7 +112,8 @@ internal fun ProfileSettingsHub(
                 SettingsIdentityCard(
                     name = profile?.fullName.orEmpty().ifBlank { "Vyb member" },
                     username = profile?.username.orEmpty(),
-                    email = email
+                    email = email,
+                    avatarUrl = profile?.avatarUrl
                 )
                 Text(
                     "MASTER SETTINGS",
@@ -143,6 +148,7 @@ private fun SettingsIdentityCard(
     name: String,
     username: String,
     email: String,
+    avatarUrl: String?,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -152,22 +158,11 @@ private fun SettingsIdentityCard(
         shape = RoundedCornerShape(22.dp)
     ) {
         Column(Modifier.padding(18.dp)) {
-            Surface(
-                modifier = Modifier.size(52.dp),
-                color = VybIndigo.copy(alpha = .2f),
-                shape = CircleShape
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Spacer(Modifier.weight(1f))
-                    Text(
-                        name.take(1).uppercase(),
-                        color = VybText,
-                        fontWeight = FontWeight.Black,
-                        fontSize = 20.sp
-                    )
-                    Spacer(Modifier.weight(1f))
-                }
-            }
+            SocialAvatar(
+                avatarUrl = avatarUrl,
+                displayName = name,
+                size = 52.dp
+            )
             Text(name, color = VybText, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 12.dp))
             if (username.isNotBlank()) Text("@$username", color = VybMuted)
             Text(
@@ -313,12 +308,23 @@ private fun AppearanceSettings() {
 @Composable
 private fun SettingsFeedback(state: ProfileUiState) {
     val message = state.error ?: state.notice ?: return
+    val isError = state.error != null
     Surface(
         modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-        color = if (state.error != null) Color(0xFF5B2031) else Color(0xFF123F3B),
+        color = if (isError) MaterialTheme.colorScheme.errorContainer
+        else VybTeal.copy(alpha = .14f),
+        border = BorderStroke(
+            1.dp,
+            if (isError) MaterialTheme.colorScheme.error.copy(alpha = .32f)
+            else VybTeal.copy(alpha = .34f)
+        ),
         shape = RoundedCornerShape(14.dp)
     ) {
-        Text(message, color = VybText, modifier = Modifier.padding(13.dp))
+        Text(
+            message,
+            color = if (isError) MaterialTheme.colorScheme.onErrorContainer else VybText,
+            modifier = Modifier.padding(13.dp)
+        )
     }
 }
 

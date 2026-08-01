@@ -10,6 +10,24 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
+import kotlin.math.absoluteValue
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -36,13 +54,15 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
-import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
@@ -86,11 +106,13 @@ import kotlinx.coroutines.launch
 import social.vyb.app.ui.VybEmptyState
 import social.vyb.app.ui.VybLoadingMark
 import social.vyb.app.ui.VybRemoteImage
+import social.vyb.app.ui.VybFillVideoView
+import social.vyb.app.ui.VybRemoteVideo
 import social.vyb.app.ui.resolveRemoteMediaUrl
 import social.vyb.app.features.media.StoryCompositionCodec
 import social.vyb.app.features.media.StoryCompositionJson
 import social.vyb.app.features.social.CommentThreadState
-import social.vyb.app.features.social.CommentsBottomSheet
+import social.vyb.app.features.social.SocialThreadSheet
 import social.vyb.app.features.social.PostEngagementState
 import social.vyb.app.features.social.PostOverflowActions
 import social.vyb.app.features.social.PostRepostDialog
@@ -98,6 +120,10 @@ import social.vyb.app.features.social.PostReactionMembersDialog
 import social.vyb.app.features.social.ReactionMembersState
 import social.vyb.app.features.social.SocialActionsViewModel
 import social.vyb.app.features.social.SocialOperationFeedback
+import social.vyb.app.features.social.SocialAvatar
+import social.vyb.app.features.social.SocialCommentAction
+import social.vyb.app.features.social.SocialReactionsSheet
+import social.vyb.app.features.social.BouncyIconButton
 
 /**
  * Drop-in home-feed story lane. It owns no navigation and opens the full-screen
@@ -208,17 +234,45 @@ private fun AddStoryBubble(onClick: () -> Unit) {
 fun NativeVibesScreen(
     modifier: Modifier = Modifier,
     viewModel: StoriesVibesViewModel = viewModel(),
+    initialVibeId: String? = null,
+    onInitialVibeConsumed: () -> Unit = {},
     viewerUserId: String? = null,
     socialViewModel: SocialActionsViewModel,
     onCreateVibe: () -> Unit = {},
+    onCreateStory: () -> Unit = {},
     onSearch: () -> Unit = {},
-    onOpenProfile: (String) -> Unit = {}
+    onOpenProfile: (String) -> Unit = {},
+    refreshSignal: Int = 0,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val state by viewModel.vibes.collectAsStateWithLifecycle()
     val socialState = socialViewModel.state
     var commentsPostId by remember { mutableStateOf<String?>(null) }
+    var shareVibeId by remember { mutableStateOf<String?>(null) }
+    var reportVibeId by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(viewModel) { viewModel.loadVibes() }
+    LaunchedEffect(refreshSignal) {
+        if (refreshSignal > 0) viewModel.refreshVibes()
+    }
+
+    shareVibeId?.let { id ->
+        val vibe = state.items.find { it.id == id }
+        vibe?.let { v ->
+            social.vyb.app.features.social.SocialShareSheet(
+                postId = v.id,
+                postKind = v.kind,
+                postPlacement = v.placement,
+                postTitle = v.title,
+                postBody = v.body,
+                postMediaUrl = v.mediaUrl,
+                authorDisplayName = v.author.displayName,
+                authorUsername = v.author.username,
+                authorIsAnonymous = v.author.isAnonymous,
+                onDismiss = { shareVibeId = null },
+                onAddToStory = onCreateStory
+            )
+        }
+    }
 
     when {
         state.isLoading -> {
@@ -242,6 +296,13 @@ fun NativeVibesScreen(
         }
         else -> {
             val pagerState = rememberPagerState(pageCount = { state.items.size })
+            LaunchedEffect(initialVibeId, state.items) {
+                val targetIndex = state.items.indexOfFirst { it.id == initialVibeId }
+                if (targetIndex >= 0) {
+                    pagerState.scrollToPage(targetIndex)
+                    onInitialVibeConsumed()
+                }
+            }
             LaunchedEffect(pagerState.currentPage, state.items.size, state.nextCursor) {
                 if (pagerState.currentPage >= state.items.lastIndex - 2) {
                     viewModel.loadMoreVibes()
@@ -318,8 +379,8 @@ fun NativeVibesScreen(
                         onSearch = onSearch,
                         onCreateVibe = onCreateVibe,
                         onRefresh = viewModel::refreshVibes,
-                        onShare = { shareVibe(context, vibe) },
-                        onOpenProfile = { onOpenProfile(vibe.author.username) }
+                        onShare = { shareVibeId = vibe.id },
+                        onOpenProfile = onOpenProfile
                     )
                 }
 
@@ -344,16 +405,19 @@ fun NativeVibesScreen(
     }
 
     commentsPostId?.let { postId ->
-        CommentsBottomSheet(
+        SocialThreadSheet(
             postId = postId,
             thread = socialState.commentThreads[postId] ?: CommentThreadState(),
             onLoad = { socialViewModel.loadComments(postId) },
             onRetry = { socialViewModel.loadComments(postId, force = true) },
-            onAddComment = { text, parentCommentId, done ->
+            onAddComment = { text, parentCommentId, isAnonymous, mediaUrl, mediaType, done ->
                 socialViewModel.addComment(
                     postId,
                     text,
                     parentCommentId = parentCommentId,
+                    isAnonymous = isAnonymous,
+                    mediaUrl = mediaUrl,
+                    mediaType = mediaType,
                     onAdded = done
                 )
             },
@@ -365,6 +429,9 @@ fun NativeVibesScreen(
             },
             onDeleteComment = { commentId ->
                 socialViewModel.deleteComment(postId, commentId)
+            },
+            onReportComment = { commentId, reason ->
+                socialViewModel.report("comment", commentId, reason)
             },
             busyCommentIds = socialState.busyCommentIds,
             onDismiss = { commentsPostId = null }
@@ -396,14 +463,12 @@ private fun StoryBubble(story: StoryItem, onClick: () -> Unit) {
                 .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center
         ) {
-            if (story.avatarUrl != null) {
-                RemoteImage(story.avatarUrl, Modifier.fillMaxSize(), ContentScale.Crop)
-            } else {
-                Text(
-                    story.displayName.take(1).uppercase(),
-                    fontWeight = FontWeight.Bold
-                )
-            }
+            SocialAvatar(
+                avatarUrl = story.avatarUrl,
+                displayName = story.displayName,
+                size = 52.dp,
+                contentDescription = "${story.displayName} story avatar"
+            )
             if (story.mediaType == "video") {
                 Icon(
                     Icons.Default.PlayArrow,
@@ -531,41 +596,71 @@ private fun VibePage(
     onCreateVibe: () -> Unit,
     onRefresh: () -> Unit,
     onShare: () -> Unit,
-    onOpenProfile: () -> Unit
+    onOpenProfile: (String) -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val playbackPreferences = remember {
+        context.getSharedPreferences("vibe_playback", Context.MODE_PRIVATE)
+    }
     var repostOpen by remember(vibe.id) { mutableStateOf(false) }
-    var muted by remember(vibe.id) { mutableStateOf(false) }
+    var muted by remember { mutableStateOf(playbackPreferences.getBoolean("muted", false)) }
+    var hasAudio by remember(vibe.id) { mutableStateOf<Boolean?>(null) }
     var paused by remember(vibe.id) { mutableStateOf(false) }
-    var playbackRate by remember(vibe.id) { mutableStateOf(1f) }
+    var playbackRate by remember(vibe.id) { mutableFloatStateOf(1f) }
+    var holdActivated by remember(vibe.id) { mutableStateOf(false) }
+    var showPlaybackFeedback by remember(vibe.id) { mutableStateOf(false) }
     var heartBurst by remember(vibe.id) { mutableStateOf(false) }
     var likesOpen by remember(vibe.id) { mutableStateOf(false) }
     var descriptionExpanded by remember(vibe.id) { mutableStateOf(false) }
     val gestureScope = rememberCoroutineScope()
+    // Swipe-to-profile state
+    var swipeDeltaX by remember(vibe.id) { mutableFloatStateOf(0f) }
+    var swipeConsumed by remember(vibe.id) { mutableStateOf(false) }
+    val profileHintAlpha by animateFloatAsState(
+        targetValue = (swipeDeltaX / 160f).coerceIn(0f, 1f),
+        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        label = "profileHint"
+    )
     LaunchedEffect(heartBurst) {
         if (heartBurst) {
             delay(520)
             heartBurst = false
         }
     }
+    // Reset swipe state when vibe changes
+    LaunchedEffect(vibe.id) {
+        swipeDeltaX = 0f
+        swipeConsumed = false
+    }
     Box(
         Modifier
             .fillMaxSize()
             .background(Color.Black)
             .pointerInput(vibe.id) {
-                detectTapGestures(
-                    onPress = {
-                        val speedJob = gestureScope.launch {
-                            delay(180)
-                            playbackRate = 2f
-                        }
-                        tryAwaitRelease()
-                        speedJob.cancel()
-                        playbackRate = 1f
+                var profileSwipeEligible = false
+                detectHorizontalDragGestures(
+                    onDragStart = { start ->
+                        profileSwipeEligible = start.y < size.height - 72.dp.toPx()
+                        swipeDeltaX = 0f
                     },
-                    onTap = { paused = !paused },
-                    onDoubleTap = {
-                        if (engagement.viewerReactionType == null) onToggleLike()
-                        heartBurst = true
+                    onDragEnd = {
+                        if (
+                            swipeDeltaX > 140f && !swipeConsumed &&
+                            !vibe.author.isAnonymous && vibe.author.username.isNotBlank()
+                        ) {
+                            swipeConsumed = true
+                            onOpenProfile(vibe.author.username)
+                        }
+                        swipeDeltaX = 0f
+                    },
+                    onDragCancel = { swipeDeltaX = 0f },
+                    onHorizontalDrag = { change, dragAmount ->
+                        if (profileSwipeEligible && !swipeConsumed) {
+                            // A right-to-left drag has a negative delta. Convert it to a
+                            // positive reveal distance while cancelling any reverse motion.
+                            swipeDeltaX = (swipeDeltaX - dragAmount).coerceAtLeast(0f)
+                            if (swipeDeltaX > 10f) change.consume()
+                        }
                     }
                 )
             }
@@ -581,19 +676,56 @@ private fun VibePage(
             }
             vibe.kind == "video" || vibe.media.any { it.kind == "video" } -> {
                 NativeVideo(
-                    mediaUrl,
+                    url = mediaUrl,
                     isActive = isActive && !paused,
                     modifier = Modifier.fillMaxSize(),
                     crop = true,
                     muted = muted,
-                    playbackRate = playbackRate
+                    playbackRate = playbackRate,
+                    showScrubber = true,
+                    onAudioAvailabilityChanged = { hasAudio = it }
                 )
             }
             else -> RemoteImage(mediaUrl, Modifier.fillMaxSize(), ContentScale.Fit)
         }
 
         Box(
-            Modifier.fillMaxSize().background(
+            Modifier
+                .fillMaxSize()
+                // Keep the gesture surface above AndroidView/VideoView so taps are
+                // delivered consistently while action buttons rendered later remain clickable.
+                .pointerInput(vibe.id) {
+                    detectTapGestures(
+                        onPress = {
+                            holdActivated = false
+                            val speedJob = gestureScope.launch {
+                                delay(320)
+                                holdActivated = true
+                                playbackRate = 2f
+                            }
+                            tryAwaitRelease()
+                            speedJob.cancel()
+                            playbackRate = 1f
+                        },
+                        onTap = {
+                            if (holdActivated) {
+                                holdActivated = false
+                            } else {
+                                paused = !paused
+                                showPlaybackFeedback = true
+                                gestureScope.launch {
+                                    delay(700)
+                                    showPlaybackFeedback = false
+                                }
+                            }
+                        },
+                        onDoubleTap = {
+                            if (engagement.viewerReactionType == null) onToggleLike()
+                            heartBurst = true
+                        }
+                    )
+                }
+                .background(
                 Brush.verticalGradient(
                     listOf(
                         Color.Transparent,
@@ -601,20 +733,74 @@ private fun VibePage(
                         Color.Black.copy(alpha = .86f)
                     )
                 )
+                )
             )
-        )
 
-        IconButton(
-            onClick = { muted = !muted },
-            modifier = Modifier.align(Alignment.TopStart).padding(12.dp)
-                .background(Color.Black.copy(alpha = .42f), CircleShape)
-        ) {
-            Icon(
-                if (muted) Icons.AutoMirrored.Filled.VolumeOff
-                else Icons.AutoMirrored.Filled.VolumeUp,
-                if (muted) "Unmute vibe" else "Mute vibe",
-                tint = Color.White
-            )
+        if (vibe.kind == "video" || vibe.media.any { it.kind == "video" }) {
+            IconButton(
+                onClick = {
+                    if (hasAudio != false) {
+                        muted = !muted
+                        playbackPreferences.edit().putBoolean("muted", muted).apply()
+                    }
+                },
+                enabled = hasAudio != false,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(start = 8.dp, top = 8.dp)
+                    .size(34.dp)
+                    .background(Color.Black.copy(alpha = .48f), CircleShape)
+            ) {
+                val audioMuted = muted || hasAudio == false
+                Icon(
+                    if (audioMuted) Icons.AutoMirrored.Filled.VolumeOff
+                    else Icons.AutoMirrored.Filled.VolumeUp,
+                    when {
+                        hasAudio == false -> "This vibe has no audio"
+                        muted -> "Unmute vibe"
+                        else -> "Mute vibe"
+                    },
+                    tint = if (hasAudio == false) Color.White.copy(alpha = .72f) else Color.White,
+                    modifier = Modifier.size(17.dp)
+                )
+            }
+            if (playbackRate > 1f) {
+                Surface(
+                    modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp),
+                    color = Color.Black.copy(alpha = .58f),
+                    shape = RoundedCornerShape(999.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.FastForward, null, tint = Color.White, modifier = Modifier.size(17.dp))
+                        Spacer(Modifier.width(5.dp))
+                        Text("2x", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            AnimatedVisibility(
+                visible = showPlaybackFeedback,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.Center)
+            ) {
+                Surface(
+                    modifier = Modifier.size(64.dp),
+                    color = Color.Black.copy(alpha = .46f),
+                    shape = CircleShape
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            if (paused) Icons.Default.PlayArrow else Icons.Default.Pause,
+                            if (paused) "Play vibe" else "Pause vibe",
+                            tint = Color.White,
+                            modifier = Modifier.size(34.dp)
+                        )
+                    }
+                }
+            }
         }
 
         if (heartBurst) {
@@ -624,6 +810,39 @@ private fun VibePage(
                 tint = Color.White,
                 modifier = Modifier.align(Alignment.Center).size(88.dp)
             )
+        }
+
+        // Swipe-to-profile hint arrow on right edge
+        if (profileHintAlpha > 0.05f) {
+            Box(
+                Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 12.dp)
+                    .size(48.dp)
+                    .graphicsLayer { alpha = profileHintAlpha }
+                    .background(Color.White.copy(alpha = 0.18f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Person,
+                    contentDescription = "View profile",
+                    tint = Color.White,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            if (profileHintAlpha > 0.6f) {
+                Text(
+                    "View Profile",
+                    color = Color.White.copy(alpha = profileHintAlpha),
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 70.dp)
+                        .background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(20.dp))
+                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                )
+            }
         }
 
         Column(
@@ -639,12 +858,15 @@ private fun VibePage(
                     Icons.Default.FavoriteBorder
                 },
                 tint = if (engagement.viewerReactionType != null) Color(0xFF00D4C1) else Color.White,
-                onClick = onToggleLike
+                onClick = onToggleLike,
+                onLabelClick = {
+                    onLoadReactionMembers()
+                    likesOpen = true
+                }
             )
             Spacer(Modifier.height(12.dp))
-            VibeRailAction(
+            VibeCommentRailAction(
                 label = commentCount.toCompactMetric(),
-                icon = Icons.Default.ChatBubbleOutline,
                 onClick = onOpenComments
             )
             Spacer(Modifier.height(12.dp))
@@ -692,7 +914,7 @@ private fun VibePage(
             Row(
                 Modifier.clickable(
                     enabled = !vibe.author.isAnonymous,
-                    onClick = onOpenProfile
+                    onClick = { onOpenProfile(vibe.author.username) }
                 ),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -713,7 +935,7 @@ private fun VibePage(
                 Text(
                     description,
                     color = Color.White,
-                    maxLines = if (descriptionExpanded) Int.MAX_VALUE else 2,
+                    maxLines = if (descriptionExpanded) Int.MAX_VALUE else 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier
                         .padding(top = 6.dp)
@@ -729,34 +951,15 @@ private fun VibePage(
                     )
                 }
             }
-            vibe.location?.let {
-                Text(
-                    it,
-                    color = Color.White.copy(alpha = .72f),
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = 5.dp)
-                )
-            }
-            Row(
-                Modifier.padding(top = 5.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    "${engagement.reactionCount.toCompactMetric()} likes",
-                    color = Color.White.copy(alpha = .72f),
-                    style = MaterialTheme.typography.bodySmall
-                )
-                Text(
-                    "See likes",
-                    color = Color.White,
-                    fontWeight = FontWeight.SemiBold,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.clickable {
-                        onLoadReactionMembers()
-                        likesOpen = true
-                    }
-                )
+            if (descriptionExpanded) {
+                vibe.location?.let {
+                    Text(
+                        it,
+                        color = Color.White.copy(alpha = .72f),
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 5.dp)
+                    )
+                }
             }
         }
     }
@@ -770,8 +973,10 @@ private fun VibePage(
         )
     }
     if (likesOpen) {
-        PostReactionMembersDialog(
-            state = reactionMembers,
+        SocialReactionsSheet(
+            reactionCount = engagement.reactionCount,
+            members = reactionMembers.items,
+            onOpenProfile = onOpenProfile,
             onDismiss = { likesOpen = false }
         )
     }
@@ -783,13 +988,35 @@ private fun VibeRailAction(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     enabled: Boolean = true,
     tint: Color = Color.White,
+    onClick: () -> Unit,
+    onLabelClick: (() -> Unit)? = null
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        BouncyIconButton(onClick = onClick, enabled = enabled) {
+            Icon(icon, label, tint = tint, modifier = Modifier.size(29.dp))
+        }
+        Text(
+            label,
+            color = tint,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = if (onLabelClick != null) Modifier.clickable(onClick = onLabelClick).padding(2.dp) else Modifier
+        )
+    }
+}
+
+@Composable
+private fun VibeCommentRailAction(
+    label: String,
     onClick: () -> Unit
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        IconButton(onClick = onClick, enabled = enabled) {
-            Icon(icon, label, tint = tint, modifier = Modifier.size(29.dp))
-        }
-        Text(label, color = tint, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+        SocialCommentAction(
+            onClick = onClick,
+            tint = Color.White,
+            contentDescription = "Open vibe comments"
+        )
+        Text(label, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -924,17 +1151,34 @@ private fun NativeVideo(
     modifier: Modifier = Modifier,
     crop: Boolean = false,
     muted: Boolean = false,
-    playbackRate: Float = 1f
+    playbackRate: Float = 1f,
+    showScrubber: Boolean = true,
+    onAudioAvailabilityChanged: (Boolean) -> Unit = {}
 ) {
     val resolvedUrl = remember(url) { resolveRemoteMediaUrl(url) }
     var prepared by remember(resolvedUrl) { mutableStateOf(false) }
     var failed by remember(resolvedUrl) { mutableStateOf(false) }
     var activePlayer by remember(resolvedUrl) { mutableStateOf<MediaPlayer?>(null) }
+    // Scrubber state
+    var positionMs by remember(resolvedUrl) { mutableIntStateOf(0) }
+    var durationMs by remember(resolvedUrl) { mutableIntStateOf(0) }
+    var isScrubbing by remember { mutableStateOf(false) }
+    var scrubFraction by remember { mutableFloatStateOf(0f) }
+    // Poll playback position every 300ms
+    LaunchedEffect(prepared, isActive) {
+        while (prepared && isActive) {
+            activePlayer?.let {
+                positionMs = runCatching { it.currentPosition }.getOrDefault(0)
+                durationMs = runCatching { it.duration }.getOrDefault(0)
+            }
+            delay(300)
+        }
+    }
     Box(modifier.background(Color.Black), contentAlignment = Alignment.Center) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { context ->
-                VideoView(context).apply {
+                (if (crop) VybFillVideoView(context) else VideoView(context)).apply {
                     layoutParams = ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
@@ -947,15 +1191,16 @@ private fun NativeVideo(
                     prepared = true
                     failed = false
                     player.isLooping = true
+                    onAudioAvailabilityChanged(
+                        player.trackInfo.any { it.trackType == MediaPlayer.TrackInfo.MEDIA_TRACK_TYPE_AUDIO }
+                    )
                     player.setVideoScalingMode(
                         if (crop) MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
                         else MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT
                     )
                     player.setVolume(if (muted) 0f else 1f, if (muted) 0f else 1f)
-                    if (android.os.Build.VERSION.SDK_INT >= 23) {
-                        runCatching {
-                            player.playbackParams = player.playbackParams.setSpeed(playbackRate)
-                        }
+                    runCatching {
+                        player.playbackParams = player.playbackParams.setSpeed(playbackRate)
                     }
                     if (isActive) video.start()
                 }
@@ -976,7 +1221,7 @@ private fun NativeVideo(
                             if (muted) 0f else 1f,
                             if (muted) 0f else 1f
                         )
-                        if (activePlayer != null && android.os.Build.VERSION.SDK_INT >= 23) {
+                        if (activePlayer != null) {
                             activePlayer?.playbackParams =
                                 activePlayer!!.playbackParams.setSpeed(playbackRate)
                         }
@@ -990,6 +1235,98 @@ private fun NativeVideo(
         when {
             failed -> Text("Media unavailable", color = Color.White.copy(alpha = .65f))
             !prepared -> CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp)
+        }
+        // Scrubber bar at the very bottom
+        if (showScrubber && prepared && durationMs > 0) {
+            val displayFraction = if (isScrubbing) scrubFraction
+                else positionMs.toFloat() / durationMs.toFloat()
+            BoxWithConstraints(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(32.dp)
+                    .semantics {
+                        progressBarRangeInfo = ProgressBarRangeInfo(displayFraction, 0f..1f)
+                        setProgress { requested ->
+                            val next = requested.coerceIn(0f, 1f)
+                            scrubFraction = next
+                            activePlayer?.seekTo((next * durationMs).roundToInt())
+                            true
+                        }
+                    }
+                    .pointerInput(resolvedUrl, durationMs) {
+                        detectTapGestures { offset ->
+                            val next = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
+                            scrubFraction = next
+                            activePlayer?.seekTo((next * durationMs).roundToInt())
+                        }
+                    }
+                    .pointerInput(resolvedUrl) {
+                        detectDragGestures(
+                            onDragStart = { offset ->
+                                isScrubbing = true
+                                scrubFraction = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
+                            },
+                            onDragEnd = {
+                                activePlayer?.seekTo((scrubFraction * durationMs).roundToInt())
+                                isScrubbing = false
+                            },
+                            onDragCancel = { isScrubbing = false },
+                            onDrag = { change, _ ->
+                                change.consume()
+                                scrubFraction = (change.position.x / size.width.toFloat()).coerceIn(0f, 1f)
+                            }
+                        )
+                    }
+            ) {
+                val thumbX = maxWidth * displayFraction
+                Canvas(Modifier.fillMaxSize()) {
+                    // Track
+                    drawLine(
+                        color = android.graphics.Color.WHITE.let { Color(it).copy(alpha = 0.3f) },
+                        start = Offset(0f, size.height - 4.dp.toPx()),
+                        end = Offset(size.width, size.height - 4.dp.toPx()),
+                        strokeWidth = 2.dp.toPx()
+                    )
+                    // Progress
+                    drawLine(
+                        color = Color.White,
+                        start = Offset(0f, size.height - 4.dp.toPx()),
+                        end = Offset(size.width * displayFraction, size.height - 4.dp.toPx()),
+                        strokeWidth = 2.dp.toPx()
+                    )
+                    // Thumb
+                    val thumbRadius = if (isScrubbing) 7.dp.toPx() else 4.dp.toPx()
+                    drawCircle(
+                        color = Color.White,
+                        radius = thumbRadius,
+                        center = Offset(size.width * displayFraction, size.height - 4.dp.toPx())
+                    )
+                }
+                // Time tooltip while scrubbing
+                if (isScrubbing) {
+                    val seekMs = (scrubFraction * durationMs).roundToInt()
+                    val totalMs = durationMs
+                    fun msToMmSs(ms: Int): String {
+                        val s = ms / 1000
+                        return "%d:%02d".format(s / 60, s % 60)
+                    }
+                    Box(
+                        Modifier
+                            .offset(x = (thumbX - 28.dp).coerceIn(0.dp, maxWidth - 56.dp))
+                            .background(Color.Black.copy(alpha = 0.75f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                            .align(Alignment.TopStart)
+                    ) {
+                        Text(
+                            "${msToMmSs(seekMs)} / ${msToMmSs(totalMs)}",
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -1010,16 +1347,11 @@ private fun RemoteImage(
 
 @Composable
 private fun Avatar(url: String?, displayName: String) {
-    Box(
-        Modifier.size(42.dp).clip(CircleShape).background(Color(0xFF27364D)),
-        contentAlignment = Alignment.Center
-    ) {
-        if (url == null) {
-            Text(displayName.take(1).uppercase(), color = Color.White, fontWeight = FontWeight.Bold)
-        } else {
-            RemoteImage(url, Modifier.fillMaxSize(), ContentScale.Crop)
-        }
-    }
+    SocialAvatar(
+        avatarUrl = url,
+        displayName = displayName,
+        size = 42.dp
+    )
 }
 
 @Composable
@@ -1041,25 +1373,11 @@ private fun InlineMessage(message: String) {
     }
 }
 
-private fun shareVibe(context: Context, vibe: VibeItem) {
-    val text = buildString {
-        append(vibe.body.ifBlank { vibe.title.ifBlank { "Watch this campus vibe" } })
-        append("\nhttps://www.vybnet.app/vibes?post=")
-        append(vibe.id)
-    }
-    context.startActivity(
-        Intent.createChooser(
-            Intent(Intent.ACTION_SEND).apply {
-                type = "text/plain"
-                putExtra(Intent.EXTRA_TEXT, text)
-            },
-            "Share vibe"
-        )
-    )
-}
 
-private fun Int.toCompactMetric(): String = when {
-    this >= 1_000_000 -> "${this / 1_000_000}.${(this % 1_000_000) / 100_000}M"
-    this >= 1_000 -> "${this / 1_000}.${(this % 1_000) / 100}K"
-    else -> toString()
+
+fun Int.toCompactMetric(): String = when {
+    this >= 1_000_000 -> String.format(java.util.Locale.US, "%.1fM", this / 1_000_000.0)
+    this >= 10_000 -> String.format(java.util.Locale.US, "%.1fk", this / 1000.0)
+    this >= 1_000 -> String.format(java.util.Locale.US, "%.1fk", this / 1000.0)
+    else -> this.toString()
 }

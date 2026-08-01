@@ -1,5 +1,14 @@
 package social.vyb.app.features.social
 
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.graphicsLayer
 import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -33,12 +42,13 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.BookmarkBorder
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -70,6 +80,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -82,8 +93,13 @@ import kotlinx.coroutines.launch
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import social.vyb.app.features.media.MediaComposerScreen
+import social.vyb.app.features.media.MediaComposerViewModel
 import social.vyb.app.features.media.MediaPublishIntent
+import social.vyb.app.features.media.MAX_POST_MEDIA_ITEMS
 import social.vyb.app.ui.VybMuted
+import social.vyb.app.ui.VybBorder
+import social.vyb.app.ui.VybPanel
+import social.vyb.app.ui.VybPanelLifted
 import social.vyb.app.ui.VybText
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -93,7 +109,19 @@ fun CreatePostComposer(
     displayName: String,
     username: String,
     communities: List<PostCommunityOption>,
+    mediaViewModel: MediaComposerViewModel,
+    onDraftSaved: () -> Unit = {},
+    onPublishingStarted: () -> Unit = {},
     onPublish: (
+        text: String,
+        isAnonymous: Boolean,
+        allowAnonymousComments: Boolean,
+        visibility: String,
+        communityId: String?,
+        onPublished: () -> Unit
+    ) -> Unit,
+    onSchedulePost: (
+        publishAtMillis: Long,
         text: String,
         isAnonymous: Boolean,
         allowAnonymousComments: Boolean,
@@ -118,16 +146,26 @@ fun CreatePostComposer(
         }
     }
     var selectedIntent by remember { mutableStateOf(MediaPublishIntent.Post) }
-    var mediaComposerOpen by remember { mutableStateOf(false) }
     var settingsDialogOpen by remember { mutableStateOf(false) }
     var externalPickerOpen by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     var dismissing by remember { mutableStateOf(false) }
 
-    fun hideThenDismiss() {
+    fun hideThenDismiss(saveDraft: Boolean = true) {
         if (dismissing) return
         dismissing = true
+        if (saveDraft) {
+            val saved = mediaViewModel.saveDraft(
+                isAnonymous = anonymous && selectedIntent != MediaPublishIntent.Story,
+                allowAnonymousComments = allowAnonymousComments,
+                visibility = reach.wireValue,
+                communityId = selectedCommunityId.takeIf { reach == PostReach.CommunityOnly },
+                announce = false
+            ) != null
+            if (saved) onDraftSaved()
+            mediaViewModel.resetComposer(selectedIntent)
+        }
         scope.launch {
             runCatching {
                 if (sheetState.isVisible) sheetState.hide()
@@ -139,12 +177,12 @@ fun CreatePostComposer(
     ModalBottomSheet(
         onDismissRequest = {
             if (!state.creatingPost && !externalPickerOpen) {
-                if (mediaComposerOpen) mediaComposerOpen = false else hideThenDismiss()
+                hideThenDismiss()
             }
         },
         modifier = modifier,
         sheetState = sheetState,
-        containerColor = StudioBackground,
+        containerColor = VybPanel,
         tonalElevation = 0.dp,
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         dragHandle = {
@@ -152,12 +190,11 @@ fun CreatePostComposer(
                 Modifier
                     .padding(top = 12.dp, bottom = 8.dp)
                     .size(width = 38.dp, height = 4.dp)
-                    .background(Color.White.copy(alpha = .22f), RoundedCornerShape(99.dp))
+                    .background(VybMuted.copy(alpha = .42f), RoundedCornerShape(99.dp))
             )
         }
     ) {
-        if (selectedIntent != MediaPublishIntent.Post || mediaComposerOpen) {
-            Column(
+        Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .fillMaxHeight(.92f)
@@ -168,20 +205,19 @@ fun CreatePostComposer(
                     showSettings = true,
                     onIntentSelected = { intent ->
                         selectedIntent = intent
-                        mediaComposerOpen = false
                         if (intent == MediaPublishIntent.Story) anonymous = false
                     },
                     onOpenSettings = { settingsDialogOpen = true },
-                    onDismiss = ::hideThenDismiss
+                    onDismiss = { hideThenDismiss() }
                 )
-                HorizontalDivider(color = Color.White.copy(alpha = .07f))
+                HorizontalDivider(color = VybBorder)
                 MediaComposerScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f),
                     initialIntent = selectedIntent,
                     initialCaption = text,
-                    autoLaunchPicker = mediaComposerOpen,
+                    autoLaunchPicker = false,
                     showIntentPicker = false,
                     displayName = displayName,
                     username = username,
@@ -191,41 +227,54 @@ fun CreatePostComposer(
                     communityId = selectedCommunityId.takeIf {
                         reach == PostReach.CommunityOnly
                     },
-                    onCancelCreation = ::hideThenDismiss,
+                    onCaptionChanged = { text = it },
+                    onIntentChanged = { intent ->
+                        selectedIntent = intent
+                        if (intent == MediaPublishIntent.Story) anonymous = false
+                    },
+                    onPublishWithoutMedia = if (selectedIntent == MediaPublishIntent.Post) {
+                        {
+                            onPublish(
+                                text,
+                                anonymous,
+                                allowAnonymousComments,
+                                reach.wireValue,
+                                selectedCommunityId.takeIf { reach == PostReach.CommunityOnly },
+                                {
+                                    mediaViewModel.uiState.value.activeDraftId
+                                        ?.let(mediaViewModel::discardDraft)
+                                    hideThenDismiss(false)
+                                }
+                            )
+                        }
+                    } else null,
+                    onScheduleWithoutMedia = if (selectedIntent == MediaPublishIntent.Post) {
+                        { publishAtMillis, draftId ->
+                            onSchedulePost(
+                                publishAtMillis,
+                                text,
+                                anonymous,
+                                allowAnonymousComments,
+                                reach.wireValue,
+                                selectedCommunityId.takeIf { reach == PostReach.CommunityOnly }
+                            ) {
+                                draftId?.let(mediaViewModel::discardDraft)
+                            }
+                            hideThenDismiss(false)
+                        }
+                    } else null,
+                    onCancelCreation = { hideThenDismiss(false) },
                     onExternalPickerChanged = { externalPickerOpen = it },
+                    onDraftSaved = onDraftSaved,
+                    onPublishingStarted = {
+                        onPublishingStarted()
+                        hideThenDismiss(false)
+                    },
                     onPublished = {
-                        mediaComposerOpen = false
-                        hideThenDismiss()
-                    }
+                        // Home observes the shared composer ViewModel and refreshes the feed.
+                    },
+                    viewModel = mediaViewModel
                 )
-            }
-        } else {
-            CreationStudioPostContent(
-                state = state,
-                displayName = displayName,
-                username = username,
-                text = text,
-                anonymous = anonymous,
-                onTextChanged = { text = it.take(2_000) },
-                onIntentSelected = { intent ->
-                    selectedIntent = intent
-                    mediaComposerOpen = false
-                    if (intent == MediaPublishIntent.Story) anonymous = false
-                },
-                onOpenSettings = { settingsDialogOpen = true },
-                onAddPhoto = { mediaComposerOpen = true },
-                onDismiss = ::hideThenDismiss,
-                onPublish = {
-                    onPublish(
-                        text,
-                        anonymous,
-                        allowAnonymousComments,
-                        reach.wireValue,
-                        selectedCommunityId.takeIf { reach == PostReach.CommunityOnly },
-                        ::hideThenDismiss
-                    )
-                }
-            )
         }
     }
 
@@ -270,13 +319,6 @@ private fun CreationStudioPostContent(
     onPublish: () -> Unit
 ) {
     val authorName = displayName.ifBlank { "Vyb member" }
-    val initials = authorName
-        .split(" ")
-        .filter(String::isNotBlank)
-        .take(2)
-        .joinToString("") { it.take(1).uppercase() }
-        .ifBlank { "V" }
-
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -292,7 +334,7 @@ private fun CreationStudioPostContent(
             onDismiss = onDismiss
         )
 
-        HorizontalDivider(color = Color.White.copy(alpha = .07f))
+        HorizontalDivider(color = VybBorder)
 
         Column(
             modifier = Modifier
@@ -304,11 +346,10 @@ private fun CreationStudioPostContent(
             StudioAuthorRow(
                 authorName = authorName,
                 username = username,
-                initials = initials,
                 anonymous = anonymous
             )
 
-            HorizontalDivider(color = Color.White.copy(alpha = .06f))
+            HorizontalDivider(color = VybBorder)
 
             Box(
                 modifier = Modifier
@@ -340,7 +381,7 @@ private fun CreationStudioPostContent(
                 )
             }
 
-            HorizontalDivider(color = Color.White.copy(alpha = .06f))
+            HorizontalDivider(color = VybBorder)
 
             Text(
                 "Photos",
@@ -353,10 +394,10 @@ private fun CreationStudioPostContent(
                     .size(104.dp)
                     .border(
                         1.dp,
-                        Color.White.copy(alpha = .16f),
+                        VybBorder,
                         RoundedCornerShape(14.dp)
                     )
-                    .background(Color.White.copy(alpha = .03f), RoundedCornerShape(14.dp))
+                    .background(VybPanelLifted, RoundedCornerShape(14.dp))
                     .clickable(
                         enabled = !state.creatingPost,
                         onClick = onAddPhoto
@@ -453,11 +494,11 @@ private fun StudioHeader(
             Surface(
                 onClick = { if (enabled) menuExpanded = true },
                 enabled = enabled,
-                color = Color.White.copy(alpha = .06f),
+                color = VybPanelLifted,
                 shape = RoundedCornerShape(99.dp),
                 border = androidx.compose.foundation.BorderStroke(
                     1.dp,
-                    Color.White.copy(alpha = .1f)
+                    VybBorder
                 )
             ) {
                 Row(
@@ -482,7 +523,7 @@ private fun StudioHeader(
             DropdownMenu(
                 expanded = menuExpanded,
                 onDismissRequest = { menuExpanded = false },
-                containerColor = Color(0xFF151B2D)
+                containerColor = VybPanel
             ) {
                 MediaPublishIntent.entries.forEach { intent ->
                     DropdownMenuItem(
@@ -536,8 +577,8 @@ private fun StudioCircleButton(
         enabled = enabled,
         modifier = Modifier
             .size(48.dp)
-            .border(1.dp, Color.White.copy(alpha = .1f), CircleShape)
-            .background(Color.White.copy(alpha = .05f), CircleShape)
+            .border(1.dp, VybBorder, CircleShape)
+            .background(VybPanelLifted, CircleShape)
     ) {
         Icon(icon, description, tint = VybMuted)
     }
@@ -547,29 +588,18 @@ private fun StudioCircleButton(
 private fun StudioAuthorRow(
     authorName: String,
     username: String,
-    initials: String,
     anonymous: Boolean
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .background(
-                    Brush.linearGradient(listOf(StudioIndigo, StudioViolet)),
-                    CircleShape
-                ),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                initials,
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                fontSize = 14.sp
-            )
-        }
+        SocialAvatar(
+            avatarUrl = null,
+            displayName = if (anonymous) "Anonymous Vyber" else authorName,
+            contentDescription = if (anonymous) "Anonymous avatar" else "$authorName avatar",
+            size = 44.dp
+        )
         Column(Modifier.padding(start = 12.dp).weight(1f)) {
             Text(
                 if (anonymous) "Anonymous Vyber" else authorName,
@@ -609,7 +639,7 @@ private fun PostSettingsDialog(
     var communityMenuOpen by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = Color(0xFF111827),
+        containerColor = VybPanel,
         titleContentColor = VybText,
         textContentColor = VybMuted,
         title = { Text("${intent.name} settings", fontWeight = FontWeight.Bold) },
@@ -639,7 +669,7 @@ private fun PostSettingsDialog(
                         onCheckedChange = onAnonymousCommentsChanged
                     )
                 }
-                HorizontalDivider(color = Color.White.copy(alpha = .08f))
+                HorizontalDivider(color = VybBorder)
                 Text(
                     "${intent.name} reach",
                     color = VybText,
@@ -691,7 +721,7 @@ private fun PostSettingsDialog(
                             onClick = { communityMenuOpen = true },
                             enabled = enabled && communities.isNotEmpty(),
                             modifier = Modifier.fillMaxWidth(),
-                            color = Color.White.copy(alpha = .055f),
+                            color = VybPanelLifted,
                             shape = RoundedCornerShape(14.dp),
                             border = androidx.compose.foundation.BorderStroke(
                                 1.dp,
@@ -719,7 +749,7 @@ private fun PostSettingsDialog(
                         DropdownMenu(
                             expanded = communityMenuOpen,
                             onDismissRequest = { communityMenuOpen = false },
-                            containerColor = Color(0xFF172033)
+                            containerColor = VybPanel
                         ) {
                             communities.forEach { community ->
                                 DropdownMenuItem(
@@ -763,7 +793,7 @@ private fun SettingsToggleRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color.White.copy(alpha = .035f), RoundedCornerShape(14.dp))
+            .background(VybPanelLifted, RoundedCornerShape(14.dp))
             .clickable(enabled = enabled) { onCheckedChange(!checked) }
             .padding(horizontal = 8.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -806,12 +836,12 @@ private fun StudioToggle(
     val borderColor = if (checked) {
         accent.copy(alpha = .38f)
     } else {
-        Color.White.copy(alpha = .12f)
+        VybBorder
     }
     val backgroundColor = if (checked) {
         accent.copy(alpha = .1f)
     } else {
-        Color(0xFF0F172A).copy(alpha = .52f)
+        VybPanelLifted
     }
     Row(
         modifier = modifier
@@ -853,12 +883,12 @@ private fun StudioFooter(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xFF0A0E1A).copy(alpha = .92f))
+            .background(VybPanel.copy(alpha = .96f))
             .padding(horizontal = 18.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Text(
-            "Up to 6 photos · Text-only posts are fine too",
+            "Up to $MAX_POST_MEDIA_ITEMS photos · Text-only posts are fine too",
             modifier = Modifier.fillMaxWidth(),
             color = VybMuted.copy(alpha = .75f),
             fontSize = 11.sp
@@ -889,7 +919,6 @@ private fun StudioFooter(
     }
 }
 
-private val StudioBackground = Color(0xFF080D1A)
 private val StudioIndigo = Color(0xFF6366F1)
 private val StudioViolet = Color(0xFFA855F7)
 private val StudioTeal = Color(0xFF22D3C5)
@@ -1254,7 +1283,7 @@ fun PostActionsBar(
             )
             Spacer(Modifier.weight(1f))
             Text(
-                "${engagement.savedCount} shares",
+                "${engagement.savedCount} saves",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall
             )
@@ -1266,10 +1295,26 @@ fun PostActionsBar(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box {
+                val likeInteractionSource = remember { MutableInteractionSource() }
+                val isLikePressed by likeInteractionSource.collectIsPressedAsState()
+                val likeScale by animateFloatAsState(
+                    targetValue = if (isLikePressed) 0.7f else 1f,
+                    animationSpec = spring(
+                        stiffness = Spring.StiffnessHigh,
+                        dampingRatio = Spring.DampingRatioLowBouncy
+                    ),
+                    label = "likeBouncy"
+                )
                 Box(
                     modifier = Modifier
                         .size(48.dp)
+                        .graphicsLayer {
+                            scaleX = likeScale
+                            scaleY = likeScale
+                        }
                         .combinedClickable(
+                            interactionSource = likeInteractionSource,
+                            indication = LocalIndication.current,
                             enabled = !engagement.reactionLoading,
                             onClick = {
                                 onToggleReaction(engagement.viewerReactionType ?: "like")
@@ -1306,10 +1351,11 @@ fun PostActionsBar(
                     }
                 }
             }
-            IconButton(onClick = onOpenComments) {
-                Icon(Icons.Outlined.ChatBubbleOutline, "Open comments", tint = actionTint)
-            }
-            IconButton(
+            SocialCommentAction(
+                onClick = onOpenComments,
+                tint = actionTint
+            )
+            BouncyIconButton(
                 onClick = onShare ?: {
                     sharePost(context, postShareText(postId, title, body))
                 }
@@ -1317,10 +1363,10 @@ fun PostActionsBar(
                 Icon(Icons.Default.Share, "Share post", tint = actionTint)
             }
             Spacer(Modifier.weight(1f))
-            IconButton(onClick = onRepost) {
+            BouncyIconButton(onClick = onRepost) {
                 Icon(Icons.Default.Sync, "Repost", tint = actionTint)
             }
-            IconButton(onClick = onToggleSave, enabled = !engagement.saveLoading) {
+            BouncyIconButton(onClick = onToggleSave, enabled = !engagement.saveLoading) {
                 if (engagement.saveLoading) {
                     CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                 } else {
@@ -1418,184 +1464,4 @@ fun PostRepostDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun CommentsBottomSheet(
-    postId: String,
-    thread: CommentThreadState,
-    onLoad: () -> Unit,
-    onRetry: () -> Unit,
-    onAddComment: (text: String, parentCommentId: String?, onAdded: () -> Unit) -> Unit,
-    onToggleCommentReaction: (commentId: String) -> Unit,
-    onUpdateComment: (commentId: String, body: String) -> Unit,
-    onDeleteComment: (commentId: String) -> Unit,
-    busyCommentIds: Set<String>,
-    onDismiss: () -> Unit
-) {
-    var text by remember(postId) { mutableStateOf("") }
-    var replyTo by remember(postId) { mutableStateOf<SocialComment?>(null) }
-    LaunchedEffect(postId) { onLoad() }
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            Modifier.fillMaxWidth().imePadding().padding(horizontal = 16.dp)
-        ) {
-            Text("Comments", style = MaterialTheme.typography.titleLarge)
-            Spacer(Modifier.height(12.dp))
-            when {
-                thread.loading -> {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                        CircularProgressIndicator()
-                    }
-                }
-                thread.error != null && thread.items.isEmpty() -> {
-                    Text(thread.error, color = MaterialTheme.colorScheme.error)
-                    TextButton(onClick = onRetry) { Text("Retry") }
-                }
-                thread.items.isEmpty() -> {
-                    Text("No comments yet. Start the conversation.")
-                }
-                else -> {
-                    LazyColumn(modifier = Modifier.weight(1f, fill = false)) {
-                        items(thread.items, key = { it.id }) { comment ->
-                            CommentRow(
-                                comment = comment,
-                                busy = comment.id in busyCommentIds,
-                                onReply = { replyTo = comment },
-                                onToggleReaction = { onToggleCommentReaction(comment.id) },
-                                onUpdate = onUpdateComment,
-                                onDelete = onDeleteComment,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    }
-                }
-            }
-            thread.error?.takeIf { thread.items.isNotEmpty() }?.let {
-                Text(it, color = MaterialTheme.colorScheme.error)
-            }
-            Spacer(Modifier.height(12.dp))
-            replyTo?.let { target ->
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "Replying to ${target.author?.displayName ?: "member"}",
-                        modifier = Modifier.weight(1f),
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    TextButton(onClick = { replyTo = null }) { Text("Cancel") }
-                }
-            }
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text("Add a comment") },
-                    enabled = !thread.submitting,
-                    maxLines = 4
-                )
-                Spacer(Modifier.width(8.dp))
-                Button(
-                    onClick = {
-                        onAddComment(text, replyTo?.id) {
-                            text = ""
-                            replyTo = null
-                        }
-                    },
-                    enabled = text.trim().length >= 2 && !thread.submitting
-                ) {
-                    if (thread.submitting) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.width(18.dp).height(18.dp),
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Text("Send")
-                    }
-                }
-            }
-            Spacer(Modifier.height(20.dp))
-        }
-    }
-}
-
-@Composable
-private fun CommentRow(
-    comment: SocialComment,
-    busy: Boolean,
-    onReply: () -> Unit,
-    onToggleReaction: () -> Unit,
-    onUpdate: (String, String) -> Unit,
-    onDelete: (String) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    var editing by remember(comment.id) { mutableStateOf(false) }
-    var draft by remember(comment.id, comment.body) { mutableStateOf(comment.body) }
-    Column(
-        modifier
-            .padding(start = if (comment.parentCommentId == null) 0.dp else 22.dp)
-            .padding(vertical = 8.dp)
-    ) {
-        Text(
-            comment.author?.displayName
-                ?: if (comment.isAnonymous) "Anonymous" else "Vyb member",
-            style = MaterialTheme.typography.labelLarge
-        )
-        if (editing) {
-            OutlinedTextField(
-                value = draft,
-                onValueChange = { draft = it },
-                enabled = !busy,
-                modifier = Modifier.fillMaxWidth()
-            )
-        } else {
-            Text(comment.body, style = MaterialTheme.typography.bodyMedium)
-        }
-        Row {
-            TextButton(
-                onClick = onToggleReaction,
-                enabled = !busy,
-                modifier = Modifier.defaultMinSize(minHeight = 48.dp)
-            ) {
-                Icon(
-                    imageVector = if (comment.viewerHasLiked) {
-                        Icons.Filled.Favorite
-                    } else {
-                        Icons.Outlined.FavoriteBorder
-                    },
-                    contentDescription = if (comment.viewerHasLiked) {
-                        "Unlike comment"
-                    } else {
-                        "Like comment"
-                    },
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    if (comment.reactions > 0) comment.reactions.toString() else "Like"
-                )
-            }
-            TextButton(onClick = onReply, enabled = !busy) { Text("Reply") }
-            if (comment.viewerCanManage) {
-                TextButton(
-                    onClick = {
-                        if (editing) {
-                            onUpdate(comment.id, draft)
-                            editing = false
-                        } else {
-                            editing = true
-                        }
-                    },
-                    enabled = !busy && (!editing || draft.trim().length >= 2)
-                ) { Text(if (editing) "Save" else "Edit") }
-                TextButton(onClick = { onDelete(comment.id) }, enabled = !busy) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
-                }
-            }
-        }
-    }
 }

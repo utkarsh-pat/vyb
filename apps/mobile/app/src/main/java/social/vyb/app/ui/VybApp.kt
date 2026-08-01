@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package social.vyb.app.ui
 
 import android.Manifest
@@ -7,17 +9,34 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.mandatorySystemGestures
+import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.tappableElement
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Explore
@@ -39,14 +58,19 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.ui.Alignment
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -189,9 +213,18 @@ private fun VybAppContent(
     }
 
     val navController = rememberNavController()
+    var pendingPostId by remember { mutableStateOf<String?>(null) }
+    var pendingVibeId by remember { mutableStateOf<String?>(null) }
+    var pendingConversationId by remember { mutableStateOf<String?>(null) }
+    var pendingMarketId by remember { mutableStateOf<String?>(null) }
+    var pendingMarketType by remember { mutableStateOf<String?>(null) }
+    var pendingEventId by remember { mutableStateOf<String?>(null) }
     val socialActionsViewModel: SocialActionsViewModel = viewModel()
+    val haptic = LocalHapticFeedback.current
     val backStack by navController.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
+    var reselectedRoute by remember { mutableStateOf<String?>(null) }
+    var reselectVersion by remember { mutableIntStateOf(0) }
     val navigateTo: (String) -> Unit = { route ->
         navController.navigate(route) {
             popUpTo(navController.graph.findStartDestination().id) {
@@ -201,9 +234,25 @@ private fun VybAppContent(
             restoreState = true
         }
     }
+    val selectPrimaryDestination: (String) -> Unit = { route ->
+        if (currentRoute == route) {
+            reselectedRoute = route
+            reselectVersion += 1
+            if (route == "home") viewModel.refreshHomeFeed()
+        } else {
+            navigateTo(route)
+        }
+    }
     LaunchedEffect(notificationHref) {
         val href = notificationHref ?: return@LaunchedEffect
-        navigateTo(notificationDestination(href))
+        val target = notificationTarget(href)
+        pendingPostId = target.postId
+        pendingVibeId = target.vibeId
+        pendingConversationId = target.conversationId
+        pendingMarketId = target.marketId
+        pendingMarketType = target.marketType
+        pendingEventId = target.eventId
+        navigateTo(target.route)
         onNotificationHrefConsumed()
     }
 
@@ -212,23 +261,49 @@ private fun VybAppContent(
         // destinations in a rail so content is not squeezed into a phone-width
         // strip or covered by an oversized bottom bar.
         val useNavigationRail = maxWidth >= 600.dp
+        val iconOnly = maxHeight < 620.dp || maxWidth < 330.dp
+        // Some OEMs briefly report the visible navigation-bar inset as zero
+        // when switching between gesture and three-button navigation at
+        // runtime. The ignoring-visibility, tappable-element and mandatory
+        // gesture union keeps the app bar above every system navigation mode.
+        val bottomSystemInsets = WindowInsets.navigationBarsIgnoringVisibility
+            .union(WindowInsets.tappableElement)
+            .union(WindowInsets.mandatorySystemGestures)
+            .only(WindowInsetsSides.Bottom)
+
         Scaffold(
             containerColor = VybBackground,
+            // The bottom bar owns the bottom system inset. Keeping it out of
+            // Scaffold's content insets prevents parent consumption from
+            // starving the bottom bar after an OEM navigation-mode change.
+            contentWindowInsets = WindowInsets.safeDrawing.only(
+                WindowInsetsSides.Top + WindowInsetsSides.Horizontal
+            ),
             bottomBar = {
                 if (!useNavigationRail) {
-                BoxWithConstraints {
-                    val iconOnly = maxHeight < 620.dp || maxWidth < 330.dp
-                    Column {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .background(VybPanel.copy(alpha = .85f))
+                            .windowInsetsPadding(bottomSystemInsets)
+                    ) {
                         HorizontalDivider(color = VybBorder)
                         NavigationBar(
-                            modifier = Modifier.height(if (iconOnly) 58.dp else 66.dp),
-                            containerColor = VybPanel.copy(alpha = .90f),
-                            tonalElevation = 0.dp
+                            modifier = Modifier.height(if (iconOnly) 52.dp else 56.dp),
+                            containerColor = VybPanel.copy(alpha = .85f),
+                            tonalElevation = 0.dp,
+                            // The compact bar owns a fixed content height. The
+                            // surrounding Column reserves the changing gesture/
+                            // three-button system navigation inset separately.
+                            windowInsets = WindowInsets(0, 0, 0, 0)
                         ) {
                             destinations.forEach { destination ->
                                 NavigationBarItem(
                                     selected = currentRoute == destination.route,
-                                    onClick = { navigateTo(destination.route) },
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        selectPrimaryDestination(destination.route)
+                                    },
                                     icon = {
                                         Icon(
                                             destination.icon,
@@ -252,7 +327,6 @@ private fun VybAppContent(
                         }
                     }
                 }
-                }
             }
         ) { padding ->
             Row(Modifier.fillMaxSize().padding(padding)) {
@@ -261,7 +335,10 @@ private fun VybAppContent(
                         destinations.forEach { destination ->
                             NavigationRailItem(
                                 selected = currentRoute == destination.route,
-                                onClick = { navigateTo(destination.route) },
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    selectPrimaryDestination(destination.route)
+                                },
                                 icon = { Icon(destination.icon, destination.label) },
                                 label = { Text(destination.label) }
                             )
@@ -271,28 +348,37 @@ private fun VybAppContent(
                 VybPageBackground(Modifier.weight(1f).fillMaxSize()) {
                     NavHost(navController, startDestination = "home") {
                         composable("home") {
-                            HomeScreen(
+                            key(if (reselectedRoute == "home") reselectVersion else 0) { HomeScreen(
                                 state = viewModel.state,
+                                initialPostId = pendingPostId,
+                                onInitialPostConsumed = { pendingPostId = null },
                                 onRefresh = viewModel::refreshHomeFeed,
                                 onOpenSearch = { navController.navigate("search") },
                                 onOpenMessages = { navController.navigate("messages") },
                                 onOpenNotifications = { navController.navigate("notifications") },
                                 onCreateStory = { navController.navigate("create-story") },
+                                onOpenProfile = { username -> navController.navigate("search-profile/${encodeRouteSegment(username)}") },
                                 socialViewModel = socialActionsViewModel
-                            )
+                            ) }
                         }
                         composable("vibes") {
-                            NativeVibesScreen(
+                            key(if (reselectedRoute == "vibes") reselectVersion else 0) { NativeVibesScreen(
+                                initialVibeId = pendingVibeId,
+                                onInitialVibeConsumed = { pendingVibeId = null },
                                 viewerUserId = viewModel.state.userId,
                                 socialViewModel = socialActionsViewModel,
                                 onCreateVibe = { navController.navigate("create-vibe") },
+                                onCreateStory = { navController.navigate("create-story") },
                                 onSearch = { navController.navigate("search") },
                                 onOpenProfile = { username ->
-                                    navController.navigate(
-                                        "search-profile/${encodeRouteSegment(username)}"
-                                    )
-                                }
-                            )
+                                    if (username == viewModel.state.email.substringBefore("@")) {
+                                        navigateTo("profile")
+                                    } else {
+                                        navController.navigate("search-profile/${encodeRouteSegment(username)}")
+                                    }
+                                },
+                                refreshSignal = if (reselectedRoute == "vibes") reselectVersion else 0
+                            ) }
                         }
                         composable("create-vibe") {
                             MediaComposerScreen(
@@ -301,7 +387,37 @@ private fun VybAppContent(
                                 displayName = viewModel.state.displayName,
                                 username = viewModel.state.email.substringBefore("@"),
                                 onCancelCreation = navController::navigateUp,
-                                onPublished = { navController.navigateUp() }
+                                onDraftSaved = {
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        "saved as draft",
+                                        android.widget.Toast.LENGTH_SHORT
+                                    ).show()
+                                },
+                                onPublished = {
+                                    viewModel.refreshHomeFeed()
+                                    navController.navigateUp()
+                                }
+                            )
+                        }
+                        composable("create-post") {
+                            MediaComposerScreen(
+                                initialIntent = MediaPublishIntent.Post,
+                                showIntentPicker = false,
+                                displayName = viewModel.state.displayName,
+                                username = viewModel.state.email.substringBefore("@"),
+                                onCancelCreation = navController::navigateUp,
+                                onDraftSaved = {
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        "saved as draft",
+                                        android.widget.Toast.LENGTH_SHORT
+                                    ).show()
+                                },
+                                onPublished = {
+                                    viewModel.refreshHomeFeed()
+                                    navController.navigateUp()
+                                }
                             )
                         }
                         composable("create-story") {
@@ -311,11 +427,23 @@ private fun VybAppContent(
                                 displayName = viewModel.state.displayName,
                                 username = viewModel.state.email.substringBefore("@"),
                                 onCancelCreation = navController::navigateUp,
-                                onPublished = { navController.navigateUp() }
+                                onDraftSaved = {
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        "saved as draft",
+                                        android.widget.Toast.LENGTH_SHORT
+                                    ).show()
+                                },
+                                onPublished = {
+                                    viewModel.refreshHomeFeed()
+                                    navController.navigateUp()
+                                }
                             )
                         }
                         composable("messages") {
                             MessagesFeatureScreen(
+                                initialConversationId = pendingConversationId,
+                                onInitialConversationConsumed = { pendingConversationId = null },
                                 onOpenCommunity = { slug ->
                                     navController.navigate(
                                         "messages/community/${Uri.encode(slug)}"
@@ -334,16 +462,27 @@ private fun VybAppContent(
                         composable("search") {
                             SearchScreen(
                                 onBack = navController::navigateUp,
-                                onOpenPost = { navigateTo("home") },
-                                onOpenVibe = { navigateTo("vibes") },
-                                onOpenMarket = { navigateTo("market") }
+                                onOpenPost = { postId -> pendingPostId = postId; navigateTo("home") },
+                                onOpenVibe = { vibeId -> pendingVibeId = vibeId; navigateTo("vibes") },
+                                onOpenMarket = { item ->
+                                    pendingMarketId = item.id
+                                    pendingMarketType = if (item.kind.name == "Request") "request" else "listing"
+                                    navigateTo("market")
+                                }
                             )
                         }
                         composable("notifications") {
                             NotificationScreen(
                                 onBack = navController::navigateUp,
                                 onNavigateHref = { href ->
-                                    navigateTo(notificationDestination(href))
+                                    val target = notificationTarget(href)
+                                    pendingPostId = target.postId
+                                    pendingVibeId = target.vibeId
+                                    pendingConversationId = target.conversationId
+                                    pendingMarketId = target.marketId
+                                    pendingMarketType = target.marketType
+                                    pendingEventId = target.eventId
+                                    navigateTo(target.route)
                                 }
                             )
                         }
@@ -351,24 +490,56 @@ private fun VybAppContent(
                             SearchScreen(
                                 onBack = navController::navigateUp,
                                 initialUsername = entry.arguments?.getString("username"),
-                                onOpenPost = { navigateTo("home") },
-                                onOpenVibe = { navigateTo("vibes") },
-                                onOpenMarket = { navigateTo("market") }
+                                onOpenPost = { postId -> pendingPostId = postId; navigateTo("home") },
+                                onOpenVibe = { vibeId -> pendingVibeId = vibeId; navigateTo("vibes") },
+                                onOpenMarket = { item ->
+                                    pendingMarketId = item.id
+                                    pendingMarketType = if (item.kind.name == "Request") "request" else "listing"
+                                    navigateTo("market")
+                                }
                             )
                         }
-                        composable("market") { MarketFeatureScreen() }
-                        composable("hub") { UnifiedHubScreen() }
+                        composable("market") {
+                            key(if (reselectedRoute == "market") reselectVersion else 0) { MarketFeatureScreen(
+                                initialTargetId = pendingMarketId,
+                                initialTargetType = pendingMarketType,
+                                onInitialTargetConsumed = {
+                                    pendingMarketId = null
+                                    pendingMarketType = null
+                                },
+                                refreshSignal = if (reselectedRoute == "market") reselectVersion else 0,
+                            ) }
+                        }
+                        composable("hub") {
+                            key(if (reselectedRoute == "hub") reselectVersion else 0) { UnifiedHubScreen(
+                                initialEventId = pendingEventId,
+                                onInitialEventConsumed = { pendingEventId = null },
+                                refreshSignal = if (reselectedRoute == "hub") reselectVersion else 0,
+                            ) }
+                        }
                         composable("profile") {
-                            ProfileFeatureScreen(
+                            key(if (reselectedRoute == "profile") reselectVersion else 0) { ProfileFeatureScreen(
                                 email = viewModel.state.email,
                                 onSignOut = { viewModel.signOut(context) },
-                                onCreatePost = { navigateTo("home") }
-                            )
+                                onCreatePost = { navController.navigate("create-post") },
+                                onOpenPost = { postId ->
+                                    pendingPostId = postId
+                                    navigateTo("home")
+                                },
+                                onOpenVibe = { vibeId ->
+                                    pendingVibeId = vibeId
+                                    navigateTo("vibes")
+                                },
+                                refreshSignal = if (reselectedRoute == "profile") reselectVersion else 0
+                            ) }
                         }
                     }
                 }
             }
         }
+
+        // Removed overlay bottom bar since it's now fixed in Scaffold
+
         AppUpdatePrompt(enabled = true)
     }
 }
@@ -383,19 +554,48 @@ internal fun userFacingCampusLoadError(error: String?): String {
 }
 
 internal fun notificationDestination(href: String): String {
-    val uri = runCatching { java.net.URI(href.trim()) }.getOrNull() ?: return "home"
+    return notificationTarget(href).route
+}
+
+private data class NotificationTarget(
+    val route: String,
+    val postId: String? = null,
+    val vibeId: String? = null,
+    val conversationId: String? = null,
+    val marketId: String? = null,
+    val marketType: String? = null,
+    val eventId: String? = null,
+)
+
+private fun notificationTarget(href: String): NotificationTarget {
+    val uri = runCatching { java.net.URI(href.trim()) }.getOrNull() ?: return NotificationTarget("home")
     val host = uri.host?.lowercase()
     if (host != null && host != "vybnet.app" && !host.endsWith(".vybnet.app")) {
-        return "home"
+        return NotificationTarget("home")
     }
     val path = uri.path?.takeIf(String::isNotBlank) ?: href.substringBefore("?")
+    val query = uri.rawQuery.orEmpty().split("&")
+        .mapNotNull { part ->
+            val pieces = part.split("=", limit = 2)
+            val key = pieces.firstOrNull()?.let(::decodeQueryValue)?.takeIf(String::isNotBlank) ?: return@mapNotNull null
+            key to decodeQueryValue(pieces.getOrElse(1) { "" })
+        }
+        .toMap()
+    val postId = query["postId"] ?: query["post"]
+    if (!postId.isNullOrBlank()) {
+        return if (path.startsWith("/vibes") || path.startsWith("/reels")) {
+            NotificationTarget(route = "vibes", vibeId = postId)
+        } else {
+            NotificationTarget(route = "home", postId = postId)
+        }
+    }
     return when {
         path.startsWith("/u/") -> {
             val username = path.removePrefix("/u/").substringBefore("/").trim()
             if (username.isBlank()) {
-                "search"
+                NotificationTarget("search")
             } else {
-                "search-profile/${encodeRouteSegment(username)}"
+                NotificationTarget("search-profile/${encodeRouteSegment(username)}")
             }
         }
         path.startsWith("/messages/community/") -> {
@@ -403,19 +603,35 @@ internal fun notificationDestination(href: String): String {
                 .removePrefix("/messages/community/")
                 .substringBefore("/")
                 .trim()
-            if (slug.isBlank()) "messages" else {
-                "messages/community/${encodeRouteSegment(slug)}"
+            if (slug.isBlank()) NotificationTarget("messages") else {
+                NotificationTarget("messages/community/${encodeRouteSegment(slug)}")
             }
         }
-        path.startsWith("/messages") -> "messages"
-        path.startsWith("/market") -> "market"
-        path.startsWith("/vibes") || path.startsWith("/reels") -> "vibes"
-        path.startsWith("/search") -> "search"
-        path.startsWith("/dashboard") || path.startsWith("/profile") || path.startsWith("/settings") -> "profile"
-        path.startsWith("/hub") || path.startsWith("/events") -> "hub"
-        else -> "home"
+        path.startsWith("/messages/") -> NotificationTarget(
+            route = "messages",
+            conversationId = path.removePrefix("/messages/").substringBefore("/").takeIf(String::isNotBlank),
+        )
+        path.startsWith("/messages") -> NotificationTarget("messages")
+        path.startsWith("/market") -> NotificationTarget(
+            route = "market",
+            marketId = query["id"] ?: query["listing"] ?: query["request"],
+            marketType = query["type"] ?: when {
+                query.containsKey("request") -> "request"
+                query.containsKey("listing") -> "listing"
+                else -> null
+            },
+        )
+        path.startsWith("/vibes") || path.startsWith("/reels") -> NotificationTarget("vibes")
+        path.startsWith("/search") -> NotificationTarget("search")
+        path.startsWith("/dashboard") || path.startsWith("/profile") || path.startsWith("/settings") -> NotificationTarget("profile")
+        path.startsWith("/hub") || path.startsWith("/events") -> NotificationTarget("hub", eventId = query["eventId"])
+        else -> NotificationTarget("home")
     }
 }
+
+private fun decodeQueryValue(value: String): String =
+    runCatching { java.net.URLDecoder.decode(value, java.nio.charset.StandardCharsets.UTF_8) }
+        .getOrDefault("")
 
 private fun encodeRouteSegment(value: String): String =
     java.net.URLEncoder.encode(
@@ -424,52 +640,42 @@ private fun encodeRouteSegment(value: String): String =
     ).replace("+", "%20")
 
 @Composable
-private fun UnifiedHubScreen() {
+private fun UnifiedHubScreen(
+    initialEventId: String? = null,
+    onInitialEventConsumed: (() -> Unit)? = null,
+    refreshSignal: Int = 0,
+) {
     var selectedTab by remember { mutableIntStateOf(1) }
-    Column {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = Color.Transparent,
-            shape = RoundedCornerShape(0.dp)
-        ) {
-            BoxWithConstraints {
-                val compactTabs = maxWidth < 360.dp
-                Row {
-                    listOf("Games Hub", "Events Hub").forEachIndexed { index, label ->
-                        Surface(
-                            onClick = { selectedTab = index },
-                            modifier = Modifier.weight(1f),
-                            color = if (selectedTab == index) Color.Transparent else VybBackgroundDeep,
-                            shape = if (selectedTab == index) {
-                                RoundedCornerShape(0.dp)
-                            } else if (index == 0) {
-                                RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp)
-                            } else {
-                                RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp)
-                            }
-                        ) {
-                            Box(
-                                Modifier.padding(
-                                    horizontal = if (compactTabs) 6.dp else 10.dp,
-                                    vertical = 15.dp
-                                ),
-                                contentAlignment = androidx.compose.ui.Alignment.Center
-                            ) {
-                                Text(
-                                    text = if (compactTabs) {
-                                        if (index == 0) "Games" else "Events"
-                                    } else {
-                                        label
-                                    },
-                                    color = if (selectedTab == index) VybText else VybMuted,
-                                    maxLines = 1
-                                )
-                            }
-                        }
-                    }
+    Column(
+        Modifier.pointerInput(selectedTab) {
+            var drag = 0f
+            detectHorizontalDragGestures(
+                onDragStart = { drag = 0f },
+                onDragCancel = { drag = 0f },
+                onDragEnd = {
+                    if (drag < -90f && selectedTab == 0) selectedTab = 1
+                    if (drag > 90f && selectedTab == 1) selectedTab = 0
+                    drag = 0f
+                },
+                onHorizontalDrag = { change, amount ->
+                    drag += amount
+                    if (kotlin.math.abs(drag) > 12f) change.consume()
                 }
-            }
+            )
         }
-        if (selectedTab == 0) FunHubScreen() else CampusHubScreen()
+    ) {
+        VybConnectedTabSelector(
+            tabs = listOf(
+                VybConnectedTab("Games Hub"),
+                VybConnectedTab("Events Hub")
+            ),
+            selectedIndex = selectedTab,
+            onSelected = { selectedTab = it }
+        )
+        if (selectedTab == 0) FunHubScreen(refreshSignal = refreshSignal) else CampusHubScreen(
+            initialEventId = initialEventId,
+            onInitialEventConsumed = onInitialEventConsumed,
+            refreshSignal = refreshSignal,
+        )
     }
 }

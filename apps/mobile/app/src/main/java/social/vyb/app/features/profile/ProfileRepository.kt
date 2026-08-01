@@ -2,13 +2,14 @@ package social.vyb.app.features.profile
 
 import android.content.ContentResolver
 import android.net.Uri
-import android.util.Base64
 import com.google.firebase.auth.FirebaseAuth
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.suspendCancellableCoroutine
+import okhttp3.RequestBody
+import okhttp3.MediaType.Companion.toMediaType
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
@@ -21,6 +22,8 @@ import social.vyb.app.data.ProfileEnvelope
 import social.vyb.app.data.UpsertProfileRequest
 import social.vyb.app.data.network.VybNetwork
 import social.vyb.app.data.network.requireBearerToken
+import social.vyb.app.features.media.ContentUriRequestBody
+import social.vyb.app.features.media.measureContentBytes
 import social.vyb.app.features.search.FollowResponse
 import social.vyb.app.features.search.PublicProfileResponse
 
@@ -37,7 +40,9 @@ internal interface ProfileApi {
     @POST("v1/social-media/upload")
     suspend fun uploadMedia(
         @Header("Authorization") bearer: String,
-        @Body body: ProfileMediaUploadRequest
+        @Query("intent") intent: String,
+        @Query("fileName") fileName: String,
+        @Body body: RequestBody
     ): ProfileMediaUploadEnvelope
 
     @GET("v1/users/{username}")
@@ -45,6 +50,12 @@ internal interface ProfileApi {
         @Header("Authorization") bearer: String,
         @Path("username") username: String
     ): PublicProfileResponse
+
+    @GET("v1/posts/saved")
+    suspend fun savedPosts(
+        @Header("Authorization") bearer: String,
+        @Query("limit") limit: Int = 50
+    ): ProfileSavedPostsEnvelope
 
     @GET("v1/users/{username}/{scope}")
     suspend fun connections(
@@ -122,17 +133,17 @@ class ProfileRepository(
         require(mimeType in setOf("image/jpeg", "image/png", "image/webp", "image/heic", "image/heif")) {
             "Choose a JPG, PNG, WebP, HEIC, or HEIF image."
         }
-        val bytes = resolver.openInputStream(uri)?.use { it.readBytes() }
-            ?: error("The selected photo is no longer available. Choose it again.")
-        require(bytes.isNotEmpty() && bytes.size <= 4 * 1024 * 1024) {
-            "Profile photo must be smaller than 4 MB."
-        }
+        val maxBytes = 4L * 1024L * 1024L
+        val sizeBytes = resolver.measureContentBytes(uri, maxBytes)
         return api.uploadMedia(
             auth.requireBearerToken(),
-            ProfileMediaUploadRequest(
-                fileName = "profile-photo",
-                mimeType = mimeType,
-                base64Data = Base64.encodeToString(bytes, Base64.NO_WRAP)
+            intent = "avatar",
+            fileName = uri.lastPathSegment?.substringAfterLast('/') ?: "profile-photo",
+            body = ContentUriRequestBody(
+                resolver = resolver,
+                uri = uri,
+                mediaType = mimeType.toMediaType(),
+                expectedBytes = sizeBytes
             )
         ).asset.url
     }
@@ -141,6 +152,8 @@ class ProfileRepository(
         require(scope == "followers" || scope == "following")
         return api.connections(auth.requireBearerToken(), username, scope).items
     }
+
+    suspend fun loadSavedPosts() = api.savedPosts(auth.requireBearerToken()).items
 
     suspend fun setFollowing(username: String, following: Boolean): FollowResponse {
         val bearer = auth.requireBearerToken()

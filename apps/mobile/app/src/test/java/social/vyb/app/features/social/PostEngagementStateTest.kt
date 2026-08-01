@@ -77,4 +77,28 @@ class PostEngagementStateTest {
             local.mergeAuthoritative(authoritative)
         )
     }
+
+    @Test
+    fun staleFeedSnapshotCannotUndoSuccessfulSave() {
+        val backend = PostEngagementState(savedCount = 0, isSaved = false)
+        val result = reconcilePendingSave(
+            backend = backend,
+            pending = SaveResult(postId = "post-1", savedCount = 1, isSaved = true),
+        )
+
+        assertEquals(PostEngagementState(savedCount = 1, isSaved = true), result.engagement)
+        assertEquals(false, result.confirmedByBackend)
+    }
+
+    @Test
+    fun refreshedFeedConfirmsAndReleasesSaveOverride() {
+        val backend = PostEngagementState(savedCount = 2, isSaved = true)
+        val result = reconcilePendingSave(
+            backend = backend,
+            pending = SaveResult(postId = "post-1", savedCount = 1, isSaved = true),
+        )
+
+        assertEquals(backend, result.engagement)
+        assertEquals(true, result.confirmedByBackend)
+    }
 }

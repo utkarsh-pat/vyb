@@ -1,7 +1,7 @@
 # Vyb Documentation Hub
 
 Owner: Architecture and Product
-Last Updated: 2026-07-30
+Last Updated: 2026-08-02
 Status: Marketplace-first MVP documentation set
 
 ## Canonical Review Order
@@ -25,6 +25,7 @@ Status: Marketplace-first MVP documentation set
 17. relevant module LLD under `lld/phase-1`;
 18. matching API contract, query review, and ADR;
 19. [Complete System Test Cases](./qa/SYSTEM_TEST_CASES.md).
+20. [Android and PWA Parity Release Review](./qa/ANDROID_PWA_PARITY_RELEASE_2026-08-02.md).
 
 ## Architecture Decisions
 

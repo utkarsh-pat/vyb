@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,8 +14,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -28,11 +31,18 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.ModeComment
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.TableRows
 import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -42,6 +52,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -50,12 +61,16 @@ import androidx.compose.ui.unit.sp
 import social.vyb.app.R
 import social.vyb.app.data.ProfileRecord
 import social.vyb.app.features.social.SocialPost
+import social.vyb.app.features.social.SocialAvatar
 import social.vyb.app.ui.VybBorder
+import social.vyb.app.ui.VybBackground
+import social.vyb.app.ui.VybBackgroundDeep
 import social.vyb.app.ui.VybIndigo
 import social.vyb.app.ui.VybMuted
 import social.vyb.app.ui.VybPanel
 import social.vyb.app.ui.VybPanelLifted
 import social.vyb.app.ui.VybRemoteImage
+import social.vyb.app.ui.VybTeal
 import social.vyb.app.ui.VybText
 
 @Composable
@@ -66,7 +81,8 @@ internal fun PwaProfileSurface(
     onSettings: () -> Unit,
     onCreatePost: () -> Unit,
     onConnections: (String) -> Unit,
-    onOpenLink: (String) -> Unit
+    onOpenLink: (String) -> Unit,
+    onOpenContent: (SocialPost) -> Unit
 ) {
     val profile = requireNotNull(state.privateProfile)
     val publicProfile = requireNotNull(state.publicProfile)
@@ -78,17 +94,39 @@ internal fun PwaProfileSurface(
         .distinctBy { if (it.network == "twitter") "x" else it.network }
     val content = when (state.activeTab) {
         "vibes" -> publicProfile.posts.filter { it.kind == "video" || it.placement == "vibe" }
-        "saved" -> emptyList()
+        "saved" -> state.savedPosts
         else -> publicProfile.posts
     }
+    val profileTabs = listOf("posts", "vibes", "saved")
 
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
         modifier = Modifier
             .fillMaxSize()
+            .pointerInput(state.activeTab) {
+                var drag = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = { drag = 0f },
+                    onDragCancel = { drag = 0f },
+                    onDragEnd = {
+                        val current = profileTabs.indexOf(state.activeTab).coerceAtLeast(0)
+                        val target = when {
+                            drag < -90f -> (current + 1).coerceAtMost(profileTabs.lastIndex)
+                            drag > 90f -> (current - 1).coerceAtLeast(0)
+                            else -> current
+                        }
+                        if (target != current) onTab(profileTabs[target])
+                        drag = 0f
+                    },
+                    onHorizontalDrag = { change, amount ->
+                        drag += amount
+                        if (kotlin.math.abs(drag) > 12f) change.consume()
+                    }
+                )
+            }
             .background(
                 Brush.verticalGradient(
-                    listOf(Color(0xFF071A35), Color(0xFF071426), Color(0xFF0A1325))
+                    listOf(VybBackgroundDeep, VybBackground, VybBackground)
                 )
             ),
         contentPadding = PaddingValues(bottom = 22.dp),
@@ -111,7 +149,16 @@ internal fun PwaProfileSurface(
                 ProfileUnderlineTabs(state.activeTab, onTab)
             }
         }
-        if (content.isEmpty()) {
+        if (state.activeTab == "saved" && state.savedLoading) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Box(
+                    Modifier.fillMaxWidth().padding(top = 88.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = VybIndigo)
+                }
+            }
+        } else if (content.isEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Column(
                     Modifier.fillMaxWidth().padding(top = 78.dp),
@@ -128,7 +175,7 @@ internal fun PwaProfileSurface(
                         modifier = Modifier.size(30.dp)
                     )
                     Text(
-                        when (state.activeTab) {
+                        state.savedError ?: when (state.activeTab) {
                             "vibes" -> "No vibes yet"
                             "saved" -> "No saved yet"
                             else -> "No posts yet"
@@ -141,7 +188,7 @@ internal fun PwaProfileSurface(
             }
         } else {
             items(content, key = SocialPost::id) { post ->
-                ProfileGridTile(post)
+                ProfileGridTile(post = post, onOpen = { onOpenContent(post) })
             }
         }
     }
@@ -194,7 +241,7 @@ private fun ProfileSummary(
             .fillMaxWidth()
             .background(
                 Brush.horizontalGradient(
-                    listOf(VybIndigo.copy(alpha = .18f), Color(0xFF00BFAE).copy(alpha = .10f))
+                    listOf(VybIndigo.copy(alpha = .14f), VybTeal.copy(alpha = .10f))
                 )
             )
             .padding(horizontal = 18.dp, vertical = 18.dp)
@@ -283,20 +330,12 @@ private fun ProfilePhoto(profile: ProfileRecord) {
             .padding(5.dp).clip(CircleShape).background(VybPanelLifted),
         contentAlignment = Alignment.Center
     ) {
-        if (profile.avatarUrl.isNullOrBlank()) {
-            Text(
-                profile.fullName.take(1).uppercase(),
-                color = VybText,
-                fontSize = 26.sp,
-                fontWeight = FontWeight.Bold
-            )
-        } else {
-            VybRemoteImage(
-                profile.avatarUrl,
-                "${profile.fullName} profile photo",
-                Modifier.fillMaxSize()
-            )
-        }
+        SocialAvatar(
+            avatarUrl = profile.avatarUrl,
+            displayName = profile.fullName,
+            size = 72.dp,
+            contentDescription = "${profile.fullName} profile photo"
+        )
     }
 }
 
@@ -343,7 +382,7 @@ private fun ProfileUnderlineTabs(active: String, onTab: (String) -> Unit) {
                 }
                 Box(
                     Modifier.fillMaxWidth().padding(top = 9.dp)
-                        .background(if (selected) Color.White else Color.Transparent)
+                        .background(if (selected) VybIndigo else Color.Transparent)
                         .size(height = 2.dp, width = 1.dp)
                 )
             }
@@ -352,9 +391,13 @@ private fun ProfileUnderlineTabs(active: String, onTab: (String) -> Unit) {
 }
 
 @Composable
-private fun ProfileGridTile(post: SocialPost) {
+private fun ProfileGridTile(post: SocialPost, onOpen: () -> Unit) {
     Box(
-        Modifier.fillMaxWidth().aspectRatio(1f).background(VybPanelLifted)
+        Modifier
+            .fillMaxWidth()
+            .aspectRatio(1f)
+            .background(VybPanelLifted)
+            .clickable(onClick = onOpen)
     ) {
         val url = post.mediaUrl?.takeIf(String::isNotBlank)
         when {
@@ -362,7 +405,7 @@ private fun ProfileGridTile(post: SocialPost) {
                 Modifier.fillMaxSize().background(VybPanelLifted),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Default.PlayArrow, "Open vibe", tint = Color.White)
+                Icon(Icons.Default.PlayArrow, "Open vibe", tint = VybMuted)
             }
             url != null -> VybRemoteImage(
                 url,
@@ -387,7 +430,7 @@ private fun ProfileGridTile(post: SocialPost) {
                 "♡ ${post.reactions}",
                 color = Color.White,
                 fontSize = 11.sp,
-                modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp)
             )
         }
     }

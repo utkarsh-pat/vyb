@@ -4,20 +4,18 @@ import kotlinx.serialization.Serializable
 import social.vyb.app.data.ProfileEnvelope
 import social.vyb.app.features.search.CampusPerson
 import social.vyb.app.features.search.PublicProfileResponse
-
-@Serializable
-internal data class ProfileMediaUploadRequest(
-    val intent: String = "avatar",
-    val fileName: String,
-    val mimeType: String,
-    val base64Data: String
-)
+import social.vyb.app.features.social.SocialPost
 
 @Serializable
 internal data class ProfileUploadedAsset(val url: String)
 
 @Serializable
 internal data class ProfileMediaUploadEnvelope(val asset: ProfileUploadedAsset)
+
+@Serializable
+internal data class ProfileSavedPostsEnvelope(
+    val items: List<SocialPost> = emptyList()
+)
 
 @Serializable
 data class ProfileConnection(

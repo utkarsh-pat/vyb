@@ -1,6 +1,6 @@
 "use client";
 
-import { motion, useMotionValue, useTransform, animate } from "framer-motion";
+import { motion, useMotionValue, useTransform, animate, AnimatePresence } from "framer-motion";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 type MediaVariant = {
@@ -195,7 +195,14 @@ export function MediaCarousel({
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18l6-6-6-6" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
       </button>
 
-      {/* Pagination dots — bottom center */}
+      <span className="feed-carousel__multiple-icon" aria-label={`${total} media items`}>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="4" y="4" width="13" height="13" rx="2" />
+          <path d="M8 20h10a2 2 0 0 0 2-2V8" />
+        </svg>
+      </span>
+
+      {/* Pagination dots sit below the media, immediately above post metrics. */}
       <div className="feed-carousel__dots" aria-hidden="true">
         {items.map((_, i) => (
           <button
@@ -246,6 +253,10 @@ function pickVideoSource(src: string, variants: MediaVariant[] | undefined) {
 export function FeedVideo({ src, variants, isActive = true }: FeedVideoProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playbackSrc, setPlaybackSrc] = useState(src);
+  const [isPaused, setIsPaused] = useState(false);
+  const [isHolding, setIsHolding] = useState(false);
+  const [showPlayIcon, setShowPlayIcon] = useState(false);
+  const [progress, setProgress] = useState(0);
 
   useEffect(() => {
     setPlaybackSrc(pickVideoSource(src, variants));
@@ -259,9 +270,16 @@ export function FeedVideo({ src, variants, isActive = true }: FeedVideoProps) {
       (entries) => {
         for (const entry of entries) {
           if (entry.isIntersecting && isActive) {
-            video.play().catch(() => { /* user gesture required */ });
+            // Only auto-play if the user hasn't explicitly paused it
+            if (!isPaused) {
+              video.play().catch(() => { /* user gesture required */ });
+            }
           } else {
             video.pause();
+            if (isHolding) {
+              setIsHolding(false);
+              video.playbackRate = 1.0;
+            }
           }
         }
       },
@@ -270,17 +288,119 @@ export function FeedVideo({ src, variants, isActive = true }: FeedVideoProps) {
 
     observer.observe(video);
     return () => observer.disconnect();
-  }, [isActive]);
+  }, [isActive, isPaused, isHolding]);
+
+  const handlePointerDown = () => {
+    setIsHolding(true);
+    if (videoRef.current) videoRef.current.playbackRate = 2.0;
+  };
+
+  const handlePointerUp = () => {
+    setIsHolding(false);
+    if (videoRef.current) videoRef.current.playbackRate = 1.0;
+  };
+
+  const handleTimeUpdate = () => {
+    const video = videoRef.current;
+    if (video && video.duration) {
+      setProgress((video.currentTime / video.duration) * 100);
+    }
+  };
 
   return (
-    <video
-      ref={videoRef}
-      src={playbackSrc}
-      className="feed-carousel__slide-img feed-carousel__slide-video"
-      muted
-      playsInline
-      loop
-      preload="none"
-    />
+    <div
+      className="feed-carousel__slide-video-container"
+      style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+    >
+      <video
+        ref={videoRef}
+        src={playbackSrc}
+        className="feed-carousel__slide-img feed-carousel__slide-video"
+        muted
+        playsInline
+        loop
+        preload="none"
+        onTimeUpdate={handleTimeUpdate}
+      />
+
+      {/* 2x Speed Badge */}
+      <AnimatePresence>
+        {isHolding && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            style={{
+              position: 'absolute',
+              top: '16px',
+              left: '16px',
+              background: 'rgba(0,0,0,0.6)',
+              padding: '6px 12px',
+              borderRadius: '12px',
+              color: 'white',
+              fontSize: '12px',
+              fontWeight: 'bold',
+              pointerEvents: 'none'
+            }}
+          >
+            2x Speed
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Play/Pause Icon Animation */}
+      <AnimatePresence>
+        {showPlayIcon && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 1.2 }}
+            transition={{ duration: 0.2 }}
+            style={{
+              position: 'absolute',
+              background: 'rgba(0,0,0,0.4)',
+              borderRadius: '50%',
+              width: '72px',
+              height: '72px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              pointerEvents: 'none'
+            }}
+          >
+            {isPaused ? (
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="white">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            ) : (
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="white">
+                <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+              </svg>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Thin Progress Timeline */}
+      <div style={{
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        width: '100%',
+        height: '3px',
+        background: 'rgba(255, 255, 255, 0.3)',
+        pointerEvents: 'none'
+      }}>
+        <div style={{
+          width: `${progress}%`,
+          height: '100%',
+          background: 'white',
+          transition: 'width 0.1s linear'
+        }} />
+      </div>
+    </div>
   );
 }

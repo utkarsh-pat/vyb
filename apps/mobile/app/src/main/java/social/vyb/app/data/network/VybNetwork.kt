@@ -5,6 +5,7 @@ import com.google.firebase.auth.FirebaseUser
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import java.net.URI
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -87,8 +88,20 @@ object VybNetwork {
         return retrofit.create(serviceClass)
     }
 
-    fun normalizeBaseUrl(value: String): String =
-        value.trim().let { if (it.endsWith("/")) it else "$it/" }
+    fun normalizeBaseUrl(value: String): String {
+        val normalized = value.trim()
+        val uri = runCatching { URI(normalized) }
+            .getOrElse { throw IllegalArgumentException("API base URL is invalid.", it) }
+        require(
+            uri.isAbsolute &&
+                uri.scheme.lowercase() in setOf("http", "https") &&
+                !uri.host.isNullOrBlank() &&
+                uri.userInfo == null &&
+                uri.rawQuery == null &&
+                uri.rawFragment == null
+        ) { "API base URL must be an absolute HTTP(S) origin without credentials or query data." }
+        return if (normalized.endsWith("/")) normalized else "$normalized/"
+    }
 }
 
 suspend fun FirebaseUser.requireIdToken(forceRefresh: Boolean = false): String =

@@ -51,10 +51,16 @@ class MessagesInboxViewModel(
         refresh()
     }
 
-    fun refresh() {
+    fun refresh(silent: Boolean = false) {
         if (refreshJob?.isActive == true) return
         refreshJob = viewModelScope.launch {
-            _state.update { it.copy(isLoading = true, error = null, communityError = null) }
+            _state.update {
+                it.copy(
+                    isLoading = if (silent) it.isLoading else true,
+                    error = null,
+                    communityError = null
+                )
+            }
             val inbox = async { runCatching { repository.loadInbox() } }
             val communities = async { runCatching { repository.loadCommunityInbox() } }
             val inboxResult = inbox.await()
@@ -103,10 +109,10 @@ class CommunityConversationViewModel(
         refresh()
     }
 
-    fun refresh() {
+    fun refresh(silent: Boolean = false) {
         if (refreshJob?.isActive == true) return
         refreshJob = viewModelScope.launch {
-            _state.update { it.copy(isLoading = true, error = null) }
+            _state.update { it.copy(isLoading = if (silent) it.isLoading else true, error = null) }
             runCatching { repository.loadCommunityConversation(slug) }
                 .onSuccess { result ->
                     _state.update {

@@ -37,6 +37,7 @@ type PostMedia @table(name: "post_media", singular: "postMedia", plural: "postMe
   mediaType: String! @col(name: "media_type")
   mimeType: String! @col(name: "mime_type")
   sizeBytes: Int64! @col(name: "size_bytes")
+  position: Int! @default(value: 0)
   width: Int
   height: Int
   durationMs: Int @col(name: "duration_ms")

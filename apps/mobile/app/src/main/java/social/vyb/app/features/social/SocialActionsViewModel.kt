@@ -6,12 +6,39 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
 class SocialActionsViewModel(
     private val repository: SocialActionsRepository = SocialActionsRepository()
 ) : ViewModel() {
     var state by mutableStateOf(SocialActionsUiState())
         private set
+    private val pendingSaveOverrides = mutableMapOf<String, SaveResult>()
+
+    fun schedulePost(
+        publishAtMillis: Long,
+        text: String,
+        isAnonymous: Boolean = false,
+        allowAnonymousComments: Boolean = true,
+        visibility: String = PostReach.Public.wireValue,
+        communityId: String? = null,
+        onCreated: (SocialPost) -> Unit = {}
+    ) {
+        val waitMillis = publishAtMillis - System.currentTimeMillis()
+        if (waitMillis <= 0L || text.isBlank()) return
+        state = state.copy(operationNotice = "Post scheduled")
+        viewModelScope.launch {
+            delay(waitMillis)
+            createPost(
+                text = text,
+                isAnonymous = isAnonymous,
+                allowAnonymousComments = allowAnonymousComments,
+                visibility = visibility,
+                communityId = communityId,
+                onCreated = onCreated
+            )
+        }
+    }
 
     fun seedPost(
         postId: String,
@@ -20,12 +47,16 @@ class SocialActionsViewModel(
         savedCount: Int = 0,
         isSaved: Boolean = false
     ) {
-        val authoritative = PostEngagementState(
+        val backendState = PostEngagementState(
             reactionCount = reactionCount,
             viewerReactionType = viewerReactionType,
             savedCount = savedCount,
             isSaved = isSaved
         )
+        val pendingSave = pendingSaveOverrides[postId]
+        val saveResolution = reconcilePendingSave(backendState, pendingSave)
+        if (saveResolution.confirmedByBackend) pendingSaveOverrides.remove(postId)
+        val authoritative = saveResolution.engagement
         val reconciled = state.engagements[postId]
             ?.mergeAuthoritative(authoritative)
             ?: authoritative
@@ -110,6 +141,7 @@ class SocialActionsViewModel(
             runCatching { repository.toggleSave(postId) }
                 .onSuccess { result ->
                     val latest = state.engagements[postId] ?: current
+                    pendingSaveOverrides[postId] = result
                     updateEngagement(
                         postId,
                         latest.copy(
@@ -118,6 +150,7 @@ class SocialActionsViewModel(
                             saveLoading = false
                         )
                     )
+                    SavedPostsSync.publish(result.postId, result.isSaved)
                 }
                 .onFailure { error ->
                     val latest = state.engagements[postId] ?: current
@@ -159,13 +192,15 @@ class SocialActionsViewModel(
         text: String,
         parentCommentId: String? = null,
         isAnonymous: Boolean = false,
+        mediaUrl: String? = null,
+        mediaType: String? = null,
         onAdded: () -> Unit = {}
     ) {
         val current = state.commentThreads[postId] ?: CommentThreadState()
         if (current.submitting) return
         updateThread(postId, current.copy(submitting = true, error = null))
         viewModelScope.launch {
-            runCatching { repository.addComment(postId, text, parentCommentId, isAnonymous) }
+            runCatching { repository.addComment(postId, text, parentCommentId, isAnonymous, mediaUrl, mediaType) }
                 .onSuccess { comment ->
                     val latest = state.commentThreads[postId] ?: current
                     updateThread(
@@ -400,6 +435,31 @@ internal fun PostEngagementState.mergeAuthoritative(
     savedCount = if (saveLoading) savedCount else authoritative.savedCount,
     isSaved = if (saveLoading) isSaved else authoritative.isSaved
 )
+
+internal data class SaveReconciliation(
+    val engagement: PostEngagementState,
+    val confirmedByBackend: Boolean,
+)
+
+internal fun reconcilePendingSave(
+    backend: PostEngagementState,
+    pending: SaveResult?,
+): SaveReconciliation {
+    if (pending == null) return SaveReconciliation(backend, confirmedByBackend = false)
+    if (pending.isSaved == backend.isSaved) {
+        return SaveReconciliation(backend, confirmedByBackend = true)
+    }
+    // Navigation can recompose from the previous feed snapshot before a
+    // refreshed feed observes the save mutation. Do not let that stale
+    // snapshot undo the successful mutation response.
+    return SaveReconciliation(
+        engagement = backend.copy(
+            savedCount = pending.savedCount,
+            isSaved = pending.isSaved,
+        ),
+        confirmedByBackend = false,
+    )
+}
 
 internal fun List<SocialComment>.replaceComment(updated: SocialComment): List<SocialComment> =
     map { if (it.id == updated.id) updated else it }

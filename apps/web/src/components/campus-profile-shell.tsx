@@ -604,11 +604,11 @@ function getPostMediaAssets(post: FeedCard) {
 }
 
 function getInitials(value: string) {
-  const parts = value.split(/\s+/u).filter(Boolean).slice(0, 2);
-  if (parts.length === 0) {
-    return "V";
-  }
-  return parts.map((part) => part[0]?.toUpperCase() ?? "").join("") || "V";
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" style={{ width: "100%", height: "100%", opacity: 0.55 }}>
+      <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+    </svg>
+  );
 }
 
 function buildEmptyMessage(tab: ProfileTab, isOwnProfile: boolean) {
@@ -2079,7 +2079,7 @@ export function CampusProfileShell({
                       )
                     ) : (
                       <div className="vyb-insta-text-tile">
-                        <p>{(post.body || post.title || "Campus update").slice(0, 60)}...</p>
+                        <p>{(post.body || post.title).slice(0, 60)}{(post.body || post.title).length > 60 ? "..." : ""}</p>
                       </div>
                     )}
 
@@ -2098,7 +2098,7 @@ export function CampusProfileShell({
                       </div>
                     ) : null}
 
-                    <div className="vyb-insta-grid-bottom-stat" aria-hidden="true">
+                    <div className="vyb-insta-grid-bottom-stat" aria-hidden="true" style={{ backgroundColor: "rgba(0,0,0,0.6)", borderRadius: "16px", padding: "4px 8px", bottom: "8px", left: "8px", width: "fit-content" }}>
                       <HeartIcon />
                       <span>{formatMetric(post.reactions)}</span>
                     </div>

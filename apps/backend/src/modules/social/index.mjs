@@ -9,7 +9,7 @@ import {
 } from "../identity/profile-repository.mjs";
 import { trackActivity } from "../moderation/repository.mjs";
 import { resolveLiveContext } from "../shared/viewer-context.mjs";
-import { persistSocialMediaAsset } from "./media-storage.mjs";
+import { persistSocialMediaAsset, persistSocialMediaStream } from "./media-storage.mjs";
 import { emitSocialRealtimeEvent } from "./realtime-hub.mjs";
 import {
   createComment,
@@ -25,12 +25,14 @@ import {
   followUser,
   getFollowStats,
   getUserSocialStatsMap,
+  getViewerFollowingUserIds,
   isFollowing,
   listCommentsByPost,
   listProfileConnections,
   listPostReactions,
   listPosts,
   listPostsByUser,
+  listSavedPosts,
   listStories,
   markStorySeen,
   togglePostSave,
@@ -54,6 +56,7 @@ const MAX_SOCIAL_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_SOCIAL_VIDEO_BYTES = 40 * 1024 * 1024;
 const MAX_VIBE_VIDEO_BYTES = 40 * 1024 * 1024;
 const MAX_STORY_COMPOSITION_BYTES = 64 * 1024;
+const MAX_POST_MEDIA_ITEMS = 8;
 const SOCIAL_RATE_LIMIT_RULES = [
   {
     id: "post-create",
@@ -724,7 +727,7 @@ async function enrichCommentItems(tenantId, items) {
   }));
 }
 
-async function buildReactionMemberItems(tenantId, items) {
+async function buildReactionMemberItems(tenantId, items, viewerUserId) {
   if (items.length === 0) {
     return [];
   }
@@ -738,6 +741,11 @@ async function buildReactionMemberItems(tenantId, items) {
       .filter((profile) => typeof profile.membershipId === "string" && profile.membershipId.trim().length > 0)
       .map((profile) => [profile.membershipId, profile])
   );
+  const followingUserIds = await getViewerFollowingUserIds({
+    tenantId,
+    viewerUserId,
+    userIds: profiles.map((profile) => profile.userId)
+  });
 
   return items.map((item) => {
     const profile = profileByMembershipId.get(item.membershipId) ?? null;
@@ -749,7 +757,9 @@ async function buildReactionMemberItems(tenantId, items) {
         displayName: profile?.fullName ?? "Vyb Student",
         avatarUrl: profile?.avatarUrl ?? null,
         reactionType: item.reactionType ?? "like",
-        reactedAt: item.createdAt
+        reactedAt: item.createdAt,
+        isViewer: Boolean(profile?.userId && profile.userId === viewerUserId),
+        viewerIsFollowing: Boolean(profile?.userId && followingUserIds.has(profile.userId))
       };
   });
 }
@@ -757,17 +767,7 @@ async function buildReactionMemberItems(tenantId, items) {
 function buildRepostBody(post, quote = null) {
   const trimmedQuote = requireNonEmptyString(quote) ? quote.trim() : null;
   const originalBody = requireNonEmptyString(post.body) ? post.body.trim() : "";
-  const repostLine = post.isAnonymous ? "Reposted from Anonymous" : `Reposted from @${post.author.username}`;
-
-  if (trimmedQuote && originalBody) {
-    return `${trimmedQuote}\n\n${repostLine}\n${originalBody}`;
-  }
-
-  if (trimmedQuote) {
-    return `${trimmedQuote}\n\n${repostLine}`;
-  }
-
-  return originalBody ? `${repostLine}\n${originalBody}` : repostLine;
+  return trimmedQuote ?? originalBody;
 }
 
 function resolveTenantScope({ requestedTenantId, resolvedTenantId, routeLabel }) {
@@ -1059,39 +1059,51 @@ export async function handleSocialRoute({ request, response, url, context }) {
   }
 
   if (request.method === "POST" && url.pathname === "/v1/social-media/upload") {
-    const payload = await readJson(request);
-    if (!payload || typeof payload !== "object") {
+    const requestContentType = String(request.headers["content-type"] ?? "").split(";")[0].trim().toLowerCase();
+    const isLegacyJsonUpload = requestContentType === "application/json";
+    const payload = isLegacyJsonUpload ? await readJson(request) : null;
+    if (isLegacyJsonUpload && (!payload || typeof payload !== "object")) {
       sendError(response, 400, "INVALID_JSON", "Request body must be valid JSON.");
       return true;
     }
 
+    const uploadIntentInput = isLegacyJsonUpload ? payload.intent : url.searchParams.get("intent");
     const intent =
-      payload.intent === "post" || payload.intent === "story" || payload.intent === "vibe" || payload.intent === "avatar"
-        ? payload.intent
+      uploadIntentInput === "post" || uploadIntentInput === "story" || uploadIntentInput === "vibe" || uploadIntentInput === "avatar"
+        ? uploadIntentInput
         : null;
     if (!intent) {
       sendError(response, 400, "INVALID_INTENT", "Upload intent is missing or invalid.");
       return true;
     }
 
-    if (!requireNonEmptyString(payload.mimeType) || !requireNonEmptyString(payload.fileName) || !requireNonEmptyString(payload.base64Data)) {
+    const fileName = isLegacyJsonUpload ? payload.fileName : url.searchParams.get("fileName");
+    const mimeType = isLegacyJsonUpload ? payload.mimeType : requestContentType;
+    const contentLength = Number(request.headers["content-length"] ?? Number.NaN);
+    if (
+      !requireNonEmptyString(mimeType) ||
+      !requireNonEmptyString(fileName) ||
+      (isLegacyJsonUpload ? !requireNonEmptyString(payload.base64Data) : !Number.isSafeInteger(contentLength) || contentLength <= 0)
+    ) {
       sendError(response, 400, "INVALID_FILE", "Choose an image or video before uploading.");
       return true;
     }
-    if (!isValidSocialUploadMimeType(intent, payload.mimeType)) {
+    if (!isValidSocialUploadMimeType(intent, mimeType)) {
       sendError(response, 400, "INVALID_AVATAR", "Profile photos must be images.");
       return true;
     }
 
     try {
-      const asset = await persistSocialMediaAsset({
+      const commonUpload = {
         tenantId: resolved.live.tenant.id,
         userId: resolved.live.user.id,
         intent,
-        fileName: payload.fileName.trim(),
-        mimeType: payload.mimeType.trim(),
-        base64Data: payload.base64Data
-      });
+        fileName: fileName.trim(),
+        mimeType: mimeType.trim()
+      };
+      const asset = isLegacyJsonUpload
+        ? await persistSocialMediaAsset({ ...commonUpload, base64Data: payload.base64Data })
+        : await persistSocialMediaStream({ ...commonUpload, sizeBytes: contentLength, stream: request });
 
       sendJson(response, 201, { asset });
     } catch (error) {
@@ -1099,8 +1111,9 @@ export async function handleSocialRoute({ request, response, url, context }) {
         tenantId: resolved.live.tenant.id,
         userId: resolved.live.user.id,
         intent,
-        fileName: payload.fileName ?? null,
-        mimeType: payload.mimeType ?? null,
+        fileName: fileName ?? null,
+        mimeType: mimeType ?? null,
+        streaming: !isLegacyJsonUpload,
         message: error instanceof Error ? error.message : "unknown"
       });
       sendError(
@@ -1110,6 +1123,23 @@ export async function handleSocialRoute({ request, response, url, context }) {
         error instanceof Error ? error.message : "We could not upload this media right now."
       );
     }
+    return true;
+  }
+
+  if (request.method === "GET" && url.pathname === "/v1/posts/saved") {
+    const limit = parseLimit(url.searchParams.get("limit"), 50);
+    if (limit === null) {
+      sendError(response, 400, "INVALID_LIMIT", "limit must be an integer between 1 and 50.");
+      return true;
+    }
+    const items = await listSavedPosts({
+      tenantId: resolved.live.tenant.id,
+      viewerUserId: resolvedUserId,
+      viewerMembershipId: resolvedMembershipId,
+      viewerCommunityIds: getLiveCommunityIds(resolved.live, resolved.live.tenant.id),
+      limit
+    });
+    sendJson(response, 200, { items: items.map(buildFeedPayload) });
     return true;
   }
 
@@ -1128,6 +1158,10 @@ export async function handleSocialRoute({ request, response, url, context }) {
 
     if (!requireNonEmptyString(tenantId)) {
       sendError(response, 400, "INVALID_TENANT", "tenantId is required.");
+      return true;
+    }
+    if (Array.isArray(payload.mediaAssets) && payload.mediaAssets.length > MAX_POST_MEDIA_ITEMS) {
+      sendError(response, 400, "TOO_MANY_MEDIA_ITEMS", `Posts support up to ${MAX_POST_MEDIA_ITEMS} media items.`);
       return true;
     }
 
@@ -1251,7 +1285,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
       mediaMimeType: requireNonEmptyString(payload.mediaMimeType) ? payload.mediaMimeType.trim() : null,
       mediaSizeBytes: Number.isFinite(Number(payload.mediaSizeBytes)) ? Number(payload.mediaSizeBytes) : null,
       location: requireNonEmptyString(payload.location) ? payload.location.trim() : profile.collegeName,
-      title: requireNonEmptyString(payload.title) ? payload.title.trim() : "Campus update",
+      title: requireNonEmptyString(payload.title) ? payload.title.trim() : null,
       body: requireNonEmptyString(payload.body) ? payload.body.trim() : "",
       viewerMembershipId: resolvedMembershipId ?? payload.membershipId ?? context.actor.id,
       viewerUserId: resolvedUserId,
@@ -1303,7 +1337,6 @@ export async function handleSocialRoute({ request, response, url, context }) {
       sendError(response, 400, "INVALID_TENANT", "tenantId is required.");
       return true;
     }
-
     if (payload.isAnonymous === true) {
       sendError(response, 400, "ANONYMOUS_STORY_DISABLED", "Stories cannot be published anonymously.");
       return true;
@@ -1797,6 +1830,31 @@ export async function handleSocialRoute({ request, response, url, context }) {
     return true;
   }
 
+  const getPostMatch = request.method === "GET" ? url.pathname.match(/^\/v1\/posts\/([^/]+)$/) : null;
+  if (getPostMatch) {
+    const post = await findPostById(getPostMatch[1], {
+      tenantId: resolved.live.tenant.id,
+      viewerMembershipId: resolvedMembershipId,
+      viewerUserId: resolvedUserId
+    });
+    if (!post) {
+      sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
+      return true;
+    }
+    if (!(await requirePostAccess(
+      response,
+      resolved.live,
+      post,
+      "view",
+      resolved.live.tenant.id,
+      resolvedUserId
+    ))) {
+      return true;
+    }
+    sendJson(response, 200, { item: buildFeedPayload(post) });
+    return true;
+  }
+
   const postLikesMatch = request.method === "GET" ? url.pathname.match(/^\/v1\/posts\/([^/]+)\/likes$/) : null;
   if (postLikesMatch) {
     const post = await findPostById(postLikesMatch[1], {
@@ -1823,7 +1881,8 @@ export async function handleSocialRoute({ request, response, url, context }) {
       await listPostReactions({
         postId: post.id,
         limit
-      })
+      }),
+      resolvedUserId
     );
 
     sendJson(response, 200, {
@@ -1875,9 +1934,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
       allowAnonymousComments: post.allowAnonymousComments !== false,
       mediaUrl: post.mediaUrl,
       location: post.location ?? profile.collegeName,
-      title: requireNonEmptyString(payload.quote)
-        ? `Quote repost • ${post.author.displayName}`
-        : `Repost • ${post.author.displayName}`,
+      title: null,
       body: buildRepostBody(post, payload.quote ?? null),
       viewerMembershipId: resolvedMembershipId ?? context.actor.id,
       viewerUserId: resolvedUserId

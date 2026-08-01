@@ -1,4 +1,5 @@
 package social.vyb.app.features.update
+import android.util.Log
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -61,7 +62,10 @@ fun AppUpdatePrompt(
                     AppUpdateState.Idle
                 }
             }
-            .getOrElse { AppUpdateState.Idle }
+            .getOrElse { error ->
+                Log.w("VybAppUpdate", "Update manifest check failed", error)
+                AppUpdateState.Idle
+            }
     }
 
     val currentState = state
@@ -74,10 +78,11 @@ fun AppUpdatePrompt(
         AppUpdateState.Checking,
         AppUpdateState.Idle -> null
     } ?: return
+    val mandatory = manifest.isMandatoryFor(BuildConfig.VERSION_CODE)
 
     AlertDialog(
         onDismissRequest = {
-            if (!manifest.forceUpdate) {
+            if (!mandatory) {
                 dismissedVersionCode = manifest.latestVersionCode
                 state = AppUpdateState.Idle
             }
@@ -137,7 +142,7 @@ fun AppUpdatePrompt(
             }
         },
         dismissButton = {
-            if (!manifest.forceUpdate) {
+            if (!mandatory) {
                 TextButton(
                     enabled = currentState !is AppUpdateState.Downloading,
                     onClick = {

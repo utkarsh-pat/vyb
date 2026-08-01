@@ -125,8 +125,7 @@ private fun DrawScope.drawWebLoadingMark(phase: Float) {
         fraction = leftStream.fraction,
         color = WebLoaderIndigo,
         alpha = leftStream.alpha,
-        width = 16f * strokeScale,
-        glowWidth = 30f * strokeScale
+        width = 16f * strokeScale
     )
     drawAnimatedLine(
         start = point(220f, 96f),
@@ -134,8 +133,7 @@ private fun DrawScope.drawWebLoadingMark(phase: Float) {
         fraction = rightStream.fraction,
         color = WebLoaderTeal,
         alpha = rightStream.alpha,
-        width = 16f * strokeScale,
-        glowWidth = 30f * strokeScale
+        width = 16f * strokeScale
     )
 
     drawAnimatedLine(
@@ -144,9 +142,7 @@ private fun DrawScope.drawWebLoadingMark(phase: Float) {
         fraction = rightArm.fraction,
         color = WebLoaderTeal,
         alpha = rightArm.alpha,
-        width = 48f * strokeScale,
-        glowWidth = 66f * strokeScale,
-        shadowOffset = 12f * strokeScale
+        width = 48f * strokeScale
     )
     drawTealArmCutout(
         first = point(165f, 158f),
@@ -160,9 +156,7 @@ private fun DrawScope.drawWebLoadingMark(phase: Float) {
         fraction = leftArm.fraction,
         color = WebLoaderIndigo,
         alpha = leftArm.alpha,
-        width = 48f * strokeScale,
-        glowWidth = 66f * strokeScale,
-        shadowOffset = 12f * strokeScale
+        width = 48f * strokeScale
     )
 
     drawLoaderDot(point(100f, 96f), 20f * strokeScale, WebLoaderIndigo, leftDot)
@@ -195,30 +189,12 @@ private fun DrawScope.drawAnimatedLine(
     fraction: Float,
     color: Color,
     alpha: Float,
-    width: Float,
-    glowWidth: Float,
-    shadowOffset: Float = 0f
+    width: Float
 ) {
     if (fraction <= 0f || alpha <= 0f) return
     val animatedEnd = Offset(
         x = start.x + (end.x - start.x) * fraction,
         y = start.y + (end.y - start.y) * fraction
-    )
-    if (shadowOffset > 0f) {
-        drawLine(
-            color = Color(0xFF02081A).copy(alpha = alpha * .35f),
-            start = start.copy(y = start.y + shadowOffset),
-            end = animatedEnd.copy(y = animatedEnd.y + shadowOffset),
-            strokeWidth = width * 1.06f,
-            cap = StrokeCap.Round
-        )
-    }
-    drawLine(
-        color = color.copy(alpha = alpha * .18f),
-        start = start,
-        end = animatedEnd,
-        strokeWidth = glowWidth,
-        cap = StrokeCap.Round
     )
     drawLine(
         color = color.copy(alpha = alpha),
@@ -236,11 +212,6 @@ private fun DrawScope.drawLoaderDot(
     state: LoaderDotState
 ) {
     if (state.alpha <= 0f) return
-    drawCircle(
-        color = color.copy(alpha = state.alpha * .16f),
-        radius = baseRadius * state.scale * 1.65f,
-        center = center
-    )
     drawCircle(
         color = color.copy(alpha = state.alpha),
         radius = baseRadius * state.scale,

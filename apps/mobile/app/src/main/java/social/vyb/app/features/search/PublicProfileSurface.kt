@@ -1,6 +1,7 @@
 package social.vyb.app.features.search
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,13 +44,16 @@ import social.vyb.app.ui.VybMuted
 import social.vyb.app.ui.VybPanelLifted
 import social.vyb.app.ui.VybRemoteImage
 import social.vyb.app.ui.VybText
+import social.vyb.app.features.social.SocialAvatar
 
 @Composable
 internal fun PublicProfileContent(
     response: PublicProfileResponse,
     mutating: Boolean,
     onBack: () -> Unit,
-    onToggleFollow: () -> Unit
+    onToggleFollow: () -> Unit,
+    onOpenPost: (String) -> Unit,
+    onOpenVibe: (String) -> Unit
 ) {
     val person = response.profile
     LazyVerticalGrid(
@@ -130,7 +134,16 @@ internal fun PublicProfileContent(
             }
         } else {
             items(response.posts, key = SocialPost::id) { post ->
-                Box(Modifier.fillMaxWidth().aspectRatio(1f).background(VybPanelLifted)) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(1f)
+                        .background(VybPanelLifted)
+                        .clickable {
+                            if (post.kind == "video" || post.placement == "vibe") onOpenVibe(post.id)
+                            else onOpenPost(post.id)
+                        }
+                ) {
                     val url = post.mediaUrl?.takeIf(String::isNotBlank)
                     when {
                         url != null && post.kind == "video" -> Box(
@@ -162,16 +175,12 @@ internal fun PublicProfileContent(
 
 @Composable
 private fun SearchProfileAvatar(name: String, url: String?, size: Int) {
-    Box(
-        Modifier.size(size.dp).clip(CircleShape).background(VybIndigo.copy(alpha = .25f)),
-        contentAlignment = Alignment.Center
-    ) {
-        if (url.isNullOrBlank()) {
-            Text(name.take(1).uppercase(), color = Color.White, fontWeight = FontWeight.Bold)
-        } else {
-            VybRemoteImage(url, "$name profile photo", Modifier.fillMaxSize())
-        }
-    }
+    SocialAvatar(
+        avatarUrl = url,
+        displayName = name,
+        size = size.dp,
+        contentDescription = "$name profile photo"
+    )
 }
 
 @Composable

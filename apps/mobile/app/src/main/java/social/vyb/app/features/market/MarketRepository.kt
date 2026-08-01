@@ -13,19 +13,20 @@ class MarketRepository(
     suspend fun dashboard(): MarketDashboard = call { api.dashboard(bearer()) }
 
     suspend fun create(draft: MarketPostDraft): MarketDashboard = call {
-        val isSale = draft.tab == "sale"
+        val validated = draft.validated()
+        val isSale = validated.tab == "sale"
         api.create(
             bearer(),
             CreateMarketPost(
-                tab = draft.tab,
-                title = draft.title.trim(),
-                category = draft.category.trim(),
-                description = draft.description.trim(),
-                campusSpot = draft.campusSpot.trim().ifBlank { null },
-                condition = draft.condition.trim().ifBlank { null },
-                priceAmount = draft.amount.takeIf { isSale },
-                budgetAmount = draft.amount.takeUnless { isSale },
-                budgetLabel = draft.amount.takeUnless { isSale }?.let { "Up to ₹$it" },
+                tab = validated.tab,
+                title = validated.title,
+                category = validated.category,
+                description = validated.description,
+                campusSpot = validated.campusSpot.ifBlank { null },
+                condition = validated.condition.ifBlank { null },
+                priceAmount = validated.amount.takeIf { isSale },
+                budgetAmount = validated.amount.takeUnless { isSale },
+                budgetLabel = validated.amount.takeUnless { isSale }?.let { "Up to ₹$it" },
             ),
         ).dashboard
     }

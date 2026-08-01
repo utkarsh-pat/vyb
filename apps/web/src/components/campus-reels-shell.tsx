@@ -5,7 +5,7 @@ import { animate, motion, useReducedMotion } from "framer-motion";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
   CHAT_IDENTITY_ALGORITHM,
   createStoredChatKeyMaterial,
@@ -69,6 +69,7 @@ type CampusReelsShellProps = {
 };
 
 const POST_OVERLAY_SCOPE = "post-overlay";
+const VIBE_MUTE_STORAGE_KEY = "vyb:vibes:muted";
 
 type PostOverlayKind = "lightbox" | "comments";
 
@@ -279,12 +280,11 @@ function formatMetric(value: number) {
 }
 
 function getInitials(value: string) {
-  return value
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((item) => item[0]?.toUpperCase() ?? "")
-    .join("");
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" style={{ width: "100%", height: "100%", opacity: 0.55 }}>
+      <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+    </svg>
+  );
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -415,6 +415,7 @@ export function CampusReelsShell({
   const snapAnimationRef = useRef<ReturnType<typeof animate> | null>(null);
   const tapTimeoutRef = useRef<number | null>(null);
   const holdTimeoutRef = useRef<number | null>(null);
+  const playbackFeedbackTimeoutRef = useRef<number | null>(null);
   const chatIdentityPromiseRef = useRef<Promise<StoredChatKeyMaterial> | null>(null);
   const snappingRef = useRef(false);
   const holdTriggeredRef = useRef(false);
@@ -428,6 +429,20 @@ export function CampusReelsShell({
     postId: null,
     timestamp: 0
   });
+
+  const [expandedBioIds, setExpandedBioIds] = useState<Set<string>>(new Set());
+
+  const toggleBioExpanded = useCallback((postId: string) => {
+    setExpandedBioIds((current) => {
+      const next = new Set(current);
+      if (next.has(postId)) {
+        next.delete(postId);
+      } else {
+        next.add(postId);
+      }
+      return next;
+    });
+  }, []);
 
   const [flashMessage, setFlashMessage] = useState<string | null>(null);
   const [heartBurstPostId, setHeartBurstPostId] = useState<string | null>(null);
@@ -454,9 +469,13 @@ export function CampusReelsShell({
   const [activeIndex, setActiveIndex] = useState(0);
   const [isDesktop, setIsDesktop] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [hasLoadedMutePreference, setHasLoadedMutePreference] = useState(false);
   const [isPlaybackPaused, setIsPlaybackPaused] = useState(false);
   const [speedBoostPostId, setSpeedBoostPostId] = useState<string | null>(null);
   const [progressByPost, setProgressByPost] = useState<Record<string, number>>({});
+  const [durationByPost, setDurationByPost] = useState<Record<string, number>>({});
+  const [scrubbingPostId, setScrubbingPostId] = useState<string | null>(null);
+  const [playbackFeedback, setPlaybackFeedback] = useState<{ postId: string; paused: boolean } | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(initialNextCursor);
   const [isLoadingMoreVibes, setIsLoadingMoreVibes] = useState(false);
   const [storedCampusSettings, setStoredCampusSettings] = useState(createDefaultCampusSettings);
@@ -487,6 +506,25 @@ export function CampusReelsShell({
     mediaQuery.addEventListener("change", applyDesktopState);
     return () => mediaQuery.removeEventListener("change", applyDesktopState);
   }, []);
+
+  useEffect(() => {
+    try {
+      setIsMuted(window.localStorage.getItem(VIBE_MUTE_STORAGE_KEY) === "true");
+    } catch {
+      // Storage can be unavailable in private browsing or under device policy.
+    } finally {
+      setHasLoadedMutePreference(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedMutePreference) return;
+    try {
+      window.localStorage.setItem(VIBE_MUTE_STORAGE_KEY, String(isMuted));
+    } catch {
+      // Persistence is an enhancement and must never block playback controls.
+    }
+  }, [hasLoadedMutePreference, isMuted]);
 
   useEffect(() => {
     if (!flashMessage) {
@@ -726,6 +764,9 @@ export function CampusReelsShell({
       if (holdTimeoutRef.current !== null) {
         window.clearTimeout(holdTimeoutRef.current);
       }
+      if (playbackFeedbackTimeoutRef.current !== null) {
+        window.clearTimeout(playbackFeedbackTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -854,7 +895,15 @@ export function CampusReelsShell({
 
     tapTimeoutRef.current = window.setTimeout(() => {
       if (activePost?.id === post.id && post.kind === "video") {
-        setIsPlaybackPaused((current) => !current);
+        setIsPlaybackPaused((current) => {
+          const nextPaused = !current;
+          setPlaybackFeedback({ postId: post.id, paused: nextPaused });
+          if (playbackFeedbackTimeoutRef.current !== null) {
+            window.clearTimeout(playbackFeedbackTimeoutRef.current);
+          }
+          playbackFeedbackTimeoutRef.current = window.setTimeout(() => setPlaybackFeedback(null), 700);
+          return nextPaused;
+        });
       }
 
       tapTimeoutRef.current = null;
@@ -1519,6 +1568,11 @@ export function CampusReelsShell({
     }
 
     const nextProgress = element.duration > 0 ? element.currentTime / element.duration : 0;
+    if (element.duration > 0 && Number.isFinite(element.duration)) {
+      setDurationByPost((current) => current[postId] === element.duration
+        ? current
+        : { ...current, [postId]: element.duration });
+    }
     setProgressByPost((current) => {
       const previous = current[postId] ?? 0;
       if (Math.abs(previous - nextProgress) < 0.01) {
@@ -1530,6 +1584,15 @@ export function CampusReelsShell({
         [postId]: nextProgress
       };
     });
+  }
+
+  function handleVideoSeek(postId: string, nextProgress: number) {
+    const video = videoRefs.current[postId];
+    if (!video || !Number.isFinite(video.duration) || video.duration <= 0) return;
+
+    const boundedProgress = clamp(nextProgress, 0, 1);
+    video.currentTime = boundedProgress * video.duration;
+    setProgressByPost((current) => ({ ...current, [postId]: boundedProgress }));
   }
 
   return (
@@ -1656,8 +1719,6 @@ export function CampusReelsShell({
                           </div>
                         )}
 
-                        <div className="vyb-vibes-stage-gradient" />
-
                         <div
                           className="vyb-vibes-press-surface"
                           aria-hidden="true"
@@ -1689,6 +1750,12 @@ export function CampusReelsShell({
                         {item.kind === "video" && speedBoostPostId === item.id ? (
                           <span className="vyb-vibes-speed-badge" aria-hidden="true">
                             2x
+                          </span>
+                        ) : null}
+
+                        {item.kind === "video" && playbackFeedback?.postId === item.id ? (
+                          <span className="vyb-vibes-playback-feedback" aria-live="polite">
+                            <PlaybackIcon paused={playbackFeedback.paused} />
                           </span>
                         ) : null}
 
@@ -1739,15 +1806,17 @@ export function CampusReelsShell({
                               <span>{item.isAnonymous ? "Hidden profile" : `@${item.author.username}`}</span>
                             </div>
                           </div>
-                          <p className="vyb-vibes-caption">{item.body}</p>
+                          <p
+                            className={`vyb-vibes-caption ${expandedBioIds.has(item.id) ? "" : "line-clamp-1 cursor-pointer"}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleBioExpanded(item.id);
+                            }}
+                          >
+                            {item.body}
+                          </p>
                           <div className="vyb-vibes-stage-meta">
-                            <span>{collegeName}</span>
-                            {displayControls.hideReactionCount ? null : <span>{formatMetric(item.reactions)} likes</span>}
-                            {displayControls.hideReactionCount ? null : (
-                              <button type="button" onClick={() => void openPostLikes(item)}>
-                                See likes
-                              </button>
-                            )}
+                            {expandedBioIds.has(item.id) && <span>{collegeName}</span>}
                           </div>
                         </motion.div>
 
@@ -1760,7 +1829,8 @@ export function CampusReelsShell({
                           }}
                           transition={{ type: "spring", stiffness: 190, damping: 25 }}
                         >
-                          <button
+                          <motion.button
+                            whileTap={{ scale: 0.75 }}
                             type="button"
                             className={`vyb-vibes-action-button${item.viewerReactionType === "like" ? " is-active" : ""}`}
                             disabled={engagement.loadingPostId === item.id}
@@ -1770,9 +1840,19 @@ export function CampusReelsShell({
                             }}
                           >
                             <HeartIcon />
-                            {displayControls.hideReactionCount ? <span>Like</span> : <span>{formatMetric(item.reactions)}</span>}
-                          </button>
-                          <button
+                            {displayControls.hideReactionCount ? <span>Like</span> : (
+                              <span
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openPostLikes(item);
+                                }}
+                              >
+                                {formatMetric(item.reactions)}
+                              </span>
+                            )}
+                          </motion.button>
+                          <motion.button
+                            whileTap={{ scale: 0.75 }}
                             type="button"
                             className="vyb-vibes-action-button"
                             onClick={(event) => {
@@ -1782,8 +1862,9 @@ export function CampusReelsShell({
                           >
                             <CommentIcon />
                             {displayControls.hideCommentCount ? <span>Comments</span> : <span>{formatMetric(item.comments)}</span>}
-                          </button>
-                          <button
+                          </motion.button>
+                          <motion.button
+                            whileTap={{ scale: 0.75 }}
                             type="button"
                             className="vyb-vibes-action-button"
                             onClick={(event) => {
@@ -1793,8 +1874,9 @@ export function CampusReelsShell({
                           >
                             <RepostIcon />
                             <span>Repost</span>
-                          </button>
-                          <button
+                          </motion.button>
+                          <motion.button
+                            whileTap={{ scale: 0.75 }}
                             type="button"
                             className="vyb-vibes-action-button"
                             onClick={(event) => {
@@ -1804,7 +1886,7 @@ export function CampusReelsShell({
                           >
                             <ShareIcon />
                             <span>Share</span>
-                          </button>
+                          </motion.button>
                           <button
                             type="button"
                             className="vyb-vibes-action-button"
@@ -1819,9 +1901,39 @@ export function CampusReelsShell({
                           </button>
                         </motion.div>
 
-                        <span className="vyb-vibes-progress-line" aria-hidden="true">
-                          <span style={{ transform: `scaleX(${item.kind === "video" ? progress : isActive ? 1 : 0})` }} />
-                        </span>
+                        {item.kind === "video" ? (
+                          <div className={`vyb-vibes-scrubber${scrubbingPostId === item.id ? " is-scrubbing" : ""}`}>
+                            {scrubbingPostId === item.id ? (
+                              <span className="vyb-vibes-scrubber-time" aria-hidden="true">
+                                {formatMediaTime(progress * (durationByPost[item.id] ?? 0))} / {formatMediaTime(durationByPost[item.id] ?? 0)}
+                              </span>
+                            ) : null}
+                            <input
+                              type="range"
+                              min="0"
+                              max="1000"
+                              step="1"
+                              value={Math.round(progress * 1000)}
+                              aria-label={`Seek ${item.title || "vibe"}`}
+                              aria-valuetext={`${formatMediaTime(progress * (durationByPost[item.id] ?? 0))} of ${formatMediaTime(durationByPost[item.id] ?? 0)}`}
+                              style={{ "--vyb-vibe-progress": `${progress * 100}%` } as CSSProperties}
+                              onPointerDown={(event) => {
+                                event.stopPropagation();
+                                setScrubbingPostId(item.id);
+                              }}
+                              onPointerUp={(event) => {
+                                event.stopPropagation();
+                                setScrubbingPostId(null);
+                              }}
+                              onPointerCancel={() => setScrubbingPostId(null)}
+                              onChange={(event) => handleVideoSeek(item.id, Number(event.currentTarget.value) / 1000)}
+                            />
+                          </div>
+                        ) : (
+                          <span className="vyb-vibes-progress-line" aria-hidden="true">
+                            <span style={{ transform: `scaleX(${isActive ? 1 : 0})` }} />
+                          </span>
+                        )}
                       </div>
                     </motion.article>
                   </section>
@@ -2041,4 +2153,20 @@ export function CampusReelsShell({
       ) : null}
     </main>
   );
+}
+
+function PlaybackIcon({ paused }: { paused: boolean }) {
+  return (
+    <IconBase>
+      {paused
+        ? <path d="m8 5 11 7-11 7Z" fill="currentColor" stroke="none" />
+        : <path d="M7 5h3v14H7zM14 5h3v14h-3z" fill="currentColor" stroke="none" />}
+    </IconBase>
+  );
+}
+
+function formatMediaTime(value: number) {
+  if (!Number.isFinite(value) || value < 0) return "0:00";
+  const totalSeconds = Math.floor(value);
+  return `${Math.floor(totalSeconds / 60)}:${(totalSeconds % 60).toString().padStart(2, "0")}`;
 }

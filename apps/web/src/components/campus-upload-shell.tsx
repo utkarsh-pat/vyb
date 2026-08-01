@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
+import { Reorder, useDragControls } from "framer-motion";
 import {
   useEffect,
   useMemo,
@@ -17,6 +18,16 @@ import type {
 } from "../lib/campus-upload-store";
 import { formatBytes } from "../lib/social-media-client";
 import { enqueueBackgroundPublish } from "../lib/background-publish";
+import {
+  createComposerDraftId,
+  deleteComposerDraft,
+  getComposerDraft,
+  listComposerDrafts,
+  saveComposerDraft,
+  summarizeComposerDraft,
+  type ComposerDraftRecord,
+  type ComposerDraftSummary,
+} from "../lib/composer-drafts";
 import {
   STORY_MUSIC_CLIP_OPTIONS,
   STORY_MUSIC_DEFAULT_CLIP_SECONDS,
@@ -57,6 +68,7 @@ type StoryComposerAsset = {
 /* ─── Constants ─────────────────────────────────────────────────────────── */
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 40 * 1024 * 1024;
+const MAX_POST_MEDIA_ITEMS = 8;
 const STORY_IMAGE_DURATION_SECONDS = 15;
 const STORY_MAX_TOTAL_SECONDS = 60;
 const STORY_MAX_IMAGES = STORY_MAX_TOTAL_SECONDS / STORY_IMAGE_DURATION_SECONDS;
@@ -236,14 +248,77 @@ function IcoTrash() {
   );
 }
 
+function toDateTimeLocalValue(value: string | null) {
+  const date = value ? new Date(value) : new Date(Date.now() + 60 * 60 * 1000);
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
+function fromDateTimeLocalValue(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+type MomentImage = { id: string; url: string; file: File };
+
+function MomentReorderItem({
+  image,
+  index,
+  total,
+  disabled,
+  onSelect,
+  onEdit,
+  onRemove,
+}: {
+  image: MomentImage;
+  index: number;
+  total: number;
+  disabled: boolean;
+  onSelect: () => void;
+  onEdit: () => void;
+  onRemove: () => void;
+}) {
+  const dragControls = useDragControls();
+  return (
+    <Reorder.Item
+      as="div"
+      value={image}
+      className="cs-moment-img-thumb"
+      dragListener={false}
+      dragControls={dragControls}
+      whileDrag={{ scale: 1.06, zIndex: 12, boxShadow: "0 18px 42px rgba(0,0,0,.42)" }}
+      onClick={onSelect}
+    >
+      <img src={image.url} alt={`Upload ${index + 1}`} draggable={false} />
+      <button
+        type="button"
+        className="cs-moment-img-drag"
+        aria-label={`Hold and drag media ${index + 1} to reorder. ${index + 1} of ${total}`}
+        disabled={disabled}
+        onPointerDown={(event) => {
+          event.stopPropagation();
+          dragControls.start(event);
+        }}
+      >
+        ⋮⋮
+      </button>
+      <button type="button" className="cs-moment-img-edit" onClick={(event) => { event.stopPropagation(); onEdit(); }} aria-label={`Edit image ${index + 1}`}>
+        ✎
+      </button>
+      <button type="button" className="cs-moment-img-remove" onClick={(event) => { event.stopPropagation(); onRemove(); }} aria-label={`Remove image ${index + 1}`}>
+        <IcoTrash />
+      </button>
+    </Reorder.Item>
+  );
+}
+
 /* ─── Helpers ────────────────────────────────────────────────────────────── */
 function getInitials(name: string, username: string) {
-  const source = name.trim() || username.trim();
-  const tokens = source.split(/\s+/u).filter(Boolean);
-  if (tokens.length >= 2) {
-    return `${tokens[0][0] ?? ""}${tokens[1][0] ?? ""}`.toUpperCase();
-  }
-  return source.slice(0, 2).toUpperCase();
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" style={{ width: "100%", height: "100%", opacity: 0.55 }}>
+      <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+    </svg>
+  );
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -361,6 +436,12 @@ export function CampusUploadShell({
   const [isUtilityMenuOpen, setIsUtilityMenuOpen] = useState(false);
   const [isScheduleMenuOpen, setIsScheduleMenuOpen] = useState(false);
   const [scheduledFor, setScheduledFor] = useState<string | null>(null);
+  const [drafts, setDrafts] = useState<ComposerDraftSummary[]>([]);
+  const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
+  const [isDraftManagerOpen, setIsDraftManagerOpen] = useState(false);
+  const [isDraftBusy, setIsDraftBusy] = useState(false);
+  const activeDraftIdRef = useRef<string | null>(null);
+  const skipPageHideDraftRef = useRef(false);
 
   /* ── Vibe (single video) ─────────────────────────────────────────────── */
   const [vibeVideoUrl, setVibeVideoUrl] = useState<string | null>(null);
@@ -374,9 +455,13 @@ export function CampusUploadShell({
   /* ── Story / Moment media ────────────────────────────────────────────── */
   const [storyAssets, setStoryAssets] = useState<StoryComposerAsset[]>([]);
   const [activeStoryAssetId, setActiveStoryAssetId] = useState<string | null>(null);
-  const [momentImages, setMomentImages] = useState<{ id: string; url: string; file: File }[]>([]);
+  const [momentImages, setMomentImages] = useState<MomentImage[]>([]);
+  const [momentPreviewIndex, setMomentPreviewIndex] = useState(0);
+  const effectiveMomentPreviewIndex = Math.max(0, Math.min(momentPreviewIndex, momentImages.length - 1));
+  const [editingMomentImageId, setEditingMomentImageId] = useState<string | null>(null);
   const [isStoryMusicLibraryOpen, setIsStoryMusicLibraryOpen] = useState(false);
   const [isStoryBuilderOpen, setIsStoryBuilderOpen] = useState(false);
+
   const [storyMusicQuery, setStoryMusicQuery] = useState("");
   const [storyMusicTracks, setStoryMusicTracks] = useState<StoryMusicTrack[]>([]);
   const [isStoryMusicLoading, setIsStoryMusicLoading] = useState(false);
@@ -398,6 +483,9 @@ export function CampusUploadShell({
   const storyMusicPreviewRef = useRef<HTMLAudioElement | null>(null);
   const storyMusicPreviewTimeoutRef = useRef<number | null>(null);
   const stickerDragOffsetRef = useRef({ x: 0, y: 0 });
+  const latestVibeVideoUrlRef = useRef<string | null>(null);
+  const latestStoryAssetsRef = useRef<StoryComposerAsset[]>([]);
+  const latestMomentImagesRef = useRef<MomentImage[]>([]);
 
   /* ── Derived ─────────────────────────────────────────────────────────── */
   const avatarInitials = useMemo(
@@ -413,6 +501,11 @@ export function CampusUploadShell({
     () => storyAssets.find((asset) => asset.id === activeStoryAssetId) ?? storyAssets[0] ?? null,
     [activeStoryAssetId, storyAssets]
   );
+  const activeEditorAsset = useMemo(() => {
+    if (mode === "story") return activeStoryAsset;
+    const image = momentImages.find((item) => item.id === editingMomentImageId);
+    return image ? { ...image, kind: "image" as const } : null;
+  }, [activeStoryAsset, editingMomentImageId, mode, momentImages]);
 
   const canAddStoryMusic = mode === "story" && storyAssets.length === 1;
   const storyMusicTrimMax = useMemo(() => {
@@ -468,33 +561,100 @@ export function CampusUploadShell({
   }, [draftParam]);
 
   useEffect(() => {
-    if (draftParam || typeof window === "undefined") {
-      return;
+    let cancelled = false;
+
+    async function loadDraftShelf() {
+      try {
+        const legacyKey = `vybnet-post-draft:${viewerUsername}`;
+        const legacyRaw = window.localStorage.getItem(legacyKey);
+        if (legacyRaw) {
+          const legacy = JSON.parse(legacyRaw) as {
+            caption?: string;
+            mode?: PublishableCreationMode;
+            isAnonymous?: boolean;
+            allowAnonymousComments?: boolean;
+            postVisibility?: PostVisibility;
+            communityId?: string;
+            scheduledFor?: string | null;
+            savedAt?: string;
+          };
+          const legacyMode = legacy.mode === "story" || legacy.mode === "vibe" ? legacy.mode : "moment";
+          const migrated: ComposerDraftRecord = {
+            id: createComposerDraftId(),
+            owner: viewerUsername,
+            mode: legacyMode,
+            caption: legacy.caption ?? "",
+            savedAt: legacy.savedAt ?? new Date().toISOString(),
+            scheduledFor: legacy.scheduledFor ?? null,
+            isAnonymous: Boolean(legacy.isAnonymous),
+            allowAnonymousComments: legacy.allowAnonymousComments !== false,
+            postVisibility:
+              legacy.postVisibility === "followers" || legacy.postVisibility === "community"
+                ? legacy.postVisibility
+                : "public",
+            communityId: legacy.communityId ?? "",
+            momentAssets: [],
+            storyAssets: [],
+            storyMusic: null,
+            vibeVideoFile: null,
+          };
+          if (migrated.caption.trim()) {
+            await saveComposerDraft(migrated);
+          }
+          window.localStorage.removeItem(legacyKey);
+        }
+
+        const stored = await listComposerDrafts(viewerUsername);
+        if (!cancelled) {
+          setDrafts(stored.map(summarizeComposerDraft));
+        }
+      } catch {
+        if (!cancelled) setMessage("Local drafts could not be read on this browser.");
+      }
     }
 
-    try {
-      const raw = window.localStorage.getItem(`vybnet-post-draft:${viewerUsername}`);
-      if (!raw) {
-        return;
+    void loadDraftShelf();
+    return () => {
+      cancelled = true;
+    };
+  }, [viewerUsername]);
+
+  useEffect(() => {
+    function saveOnUnexpectedExit() {
+      if (skipPageHideDraftRef.current || isPublishing || !canPublish) return;
+      void persistCurrentDraft();
+      try {
+        window.sessionStorage.setItem("vybnet-composer-notice", "saved as draft");
+      } catch {
+        // The draft itself is persisted in IndexedDB; the notice is best-effort.
       }
-      const draft = JSON.parse(raw) as {
-        caption?: string;
-        isAnonymous?: boolean;
-        allowAnonymousComments?: boolean;
-        postVisibility?: PostVisibility;
-        communityId?: string;
-      };
-      setCaption((current) => current.trim() ? current : draft.caption ?? "");
-      setIsAnonymous(Boolean(draft.isAnonymous));
-      setAllowAnonymousComments(draft.allowAnonymousComments !== false);
-      if (draft.postVisibility === "followers" || draft.postVisibility === "community") {
-        setPostVisibility(draft.postVisibility);
-      }
-      setCommunityId(draft.communityId ?? "");
-    } catch {
-      // Ignore malformed device-local drafts.
     }
-  }, [draftParam, viewerUsername]);
+
+    window.addEventListener("pagehide", saveOnUnexpectedExit);
+    window.addEventListener("popstate", saveOnUnexpectedExit);
+    return () => {
+      window.removeEventListener("pagehide", saveOnUnexpectedExit);
+      window.removeEventListener("popstate", saveOnUnexpectedExit);
+    };
+  }, [
+    allowAnonymousComments,
+    canPublish,
+    caption,
+    communityId,
+    isAnonymous,
+    isPublishing,
+    mode,
+    momentImages,
+    postVisibility,
+    scheduledFor,
+    storyAssets,
+    storyMusicClipDurationSeconds,
+    storyMusicStickerPosition,
+    storyMusicTrack,
+    storyMusicTrimSeconds,
+    vibeVideoFile,
+    viewerUsername,
+  ]);
 
   useEffect(() => {
     if (storyAssets.length === 0) {
@@ -567,45 +727,209 @@ export function CampusUploadShell({
   }, [isStoryMusicLibraryOpen, storyMusicQuery]);
 
   useEffect(() => {
+    latestVibeVideoUrlRef.current = vibeVideoUrl;
+    latestStoryAssetsRef.current = storyAssets;
+    latestMomentImagesRef.current = momentImages;
+  }, [momentImages, storyAssets, vibeVideoUrl]);
+
+  useEffect(() => {
     return () => {
-      if (vibeVideoUrl?.startsWith("blob:")) {
-        URL.revokeObjectURL(vibeVideoUrl);
+      const latestVibeVideoUrl = latestVibeVideoUrlRef.current;
+      if (latestVibeVideoUrl?.startsWith("blob:")) {
+        URL.revokeObjectURL(latestVibeVideoUrl);
       }
 
-      storyAssets.forEach((asset) => {
+      latestStoryAssetsRef.current.forEach((asset) => {
         if (asset.url.startsWith("blob:")) {
           URL.revokeObjectURL(asset.url);
         }
       });
 
-      momentImages.forEach((entry) => {
+      latestMomentImagesRef.current.forEach((entry) => {
         if (entry.url.startsWith("blob:")) {
           URL.revokeObjectURL(entry.url);
         }
       });
     };
-  }, [momentImages, storyAssets, vibeVideoUrl]);
+  }, []);
 
   /* ── Helpers ─────────────────────────────────────────────────────────── */
-  function handleClose() {
+  function hasDraftContent() {
+    return caption.trim().length > 0
+      || momentImages.length > 0
+      || storyAssets.length > 0
+      || Boolean(vibeVideoFile);
+  }
+
+  function buildCurrentDraft(id = activeDraftIdRef.current ?? createComposerDraftId()): ComposerDraftRecord | null {
+    if (mode === "choice" || !hasDraftContent()) return null;
+
+    return {
+      id,
+      owner: viewerUsername,
+      mode,
+      caption,
+      savedAt: new Date().toISOString(),
+      scheduledFor,
+      isAnonymous: mode === "story" ? false : isAnonymous,
+      allowAnonymousComments,
+      postVisibility,
+      communityId,
+      momentAssets: momentImages.map((asset) => ({ id: asset.id, file: asset.file })),
+      storyAssets: storyAssets.map((asset) => ({
+        id: asset.id,
+        file: asset.file,
+        kind: asset.kind,
+        durationSeconds: asset.durationSeconds,
+        overlayMetadata: asset.overlayMetadata ?? null,
+        compositionJson: asset.compositionJson ?? null,
+      })),
+      storyMusic: storyMusicTrack
+        ? {
+            track: storyMusicTrack,
+            clipDurationSeconds: storyMusicClipDurationSeconds,
+            trimSeconds: storyMusicTrimSeconds,
+            stickerPosition: storyMusicStickerPosition,
+          }
+        : null,
+      vibeVideoFile,
+    };
+  }
+
+  async function refreshDraftShelf() {
+    const stored = await listComposerDrafts(viewerUsername);
+    setDrafts(stored.map(summarizeComposerDraft));
+  }
+
+  async function persistCurrentDraft() {
+    const draft = buildCurrentDraft();
+    if (!draft) return null;
+
+    await saveComposerDraft(draft);
+    activeDraftIdRef.current = draft.id;
+    setActiveDraftId(draft.id);
+    await refreshDraftShelf();
+    return draft.id;
+  }
+
+  function revokeComposerObjectUrls() {
+    if (vibeVideoUrl?.startsWith("blob:")) URL.revokeObjectURL(vibeVideoUrl);
+    storyAssets.forEach((asset) => {
+      if (asset.url.startsWith("blob:")) URL.revokeObjectURL(asset.url);
+    });
+    momentImages.forEach((asset) => {
+      if (asset.url.startsWith("blob:")) URL.revokeObjectURL(asset.url);
+    });
+  }
+
+  async function handleLoadDraft(id: string) {
+    setIsDraftBusy(true);
+    try {
+      const draft = await getComposerDraft(id);
+      if (!draft || draft.owner !== viewerUsername) {
+        setMessage("That local draft is no longer available.");
+        await refreshDraftShelf();
+        return;
+      }
+
+      revokeComposerObjectUrls();
+      activeDraftIdRef.current = draft.id;
+      setActiveDraftId(draft.id);
+      setMode(draft.mode);
+      setCaption(draft.caption);
+      setScheduledFor(draft.scheduledFor);
+      setIsAnonymous(draft.mode === "story" ? false : draft.isAnonymous);
+      setAllowAnonymousComments(draft.allowAnonymousComments);
+      setPostVisibility(draft.postVisibility);
+      setCommunityId(draft.communityId);
+      setMomentImages(draft.momentAssets.map((asset) => ({
+        id: asset.id,
+        file: asset.file,
+        url: URL.createObjectURL(asset.file),
+      })));
+      setMomentPreviewIndex(0);
+      setStoryAssets(draft.storyAssets.map((asset) => ({
+        id: asset.id,
+        file: asset.file,
+        url: URL.createObjectURL(asset.file),
+        kind: asset.kind,
+        durationSeconds: asset.durationSeconds,
+        overlayMetadata: (asset.overlayMetadata ?? null) as StoryOverlayMetadata | null,
+        compositionJson: asset.compositionJson ?? null,
+      })));
+      setActiveStoryAssetId(draft.storyAssets[0]?.id ?? null);
+      const storedMusic = draft.storyMusic;
+      setStoryMusicTrack((storedMusic?.track ?? null) as StoryMusicTrack | null);
+      setStoryMusicClipDurationSeconds(storedMusic?.clipDurationSeconds ?? STORY_MUSIC_DEFAULT_CLIP_SECONDS);
+      setStoryMusicTrimSeconds(storedMusic?.trimSeconds ?? 0);
+      setStoryMusicStickerPosition(storedMusic?.stickerPosition ?? { x: 0.18, y: 0.72 });
+
+      if (draft.vibeVideoFile) {
+        const url = URL.createObjectURL(draft.vibeVideoFile);
+        setVibeVideoFile(draft.vibeVideoFile);
+        setVibeVideoUrl(url);
+        void loadVideoMetadata(draft.vibeVideoFile).then((metadata) => {
+          setVibeDuration(metadata.duration);
+          setVibeIsPortrait(isVibeAspectRatio(metadata.width, metadata.height));
+        }).catch(() => {
+          setVibeDuration(null);
+          setVibeIsPortrait(null);
+        });
+      } else {
+        setVibeVideoFile(null);
+        setVibeVideoUrl(null);
+        setVibeDuration(null);
+        setVibeIsPortrait(null);
+      }
+
+      setIsDraftManagerOpen(false);
+      setIsUtilityMenuOpen(false);
+      setMessage("Draft loaded.");
+    } finally {
+      setIsDraftBusy(false);
+    }
+  }
+
+  async function handleDiscardDraft(id: string) {
+    setIsDraftBusy(true);
+    try {
+      await deleteComposerDraft(id);
+      if (activeDraftIdRef.current === id) {
+        activeDraftIdRef.current = null;
+        setActiveDraftId(null);
+      }
+      await refreshDraftShelf();
+    } finally {
+      setIsDraftBusy(false);
+    }
+  }
+
+  async function handleClose() {
+    if (hasDraftContent() && !isPublishing) {
+      await persistCurrentDraft();
+      window.sessionStorage.setItem("vybnet-composer-notice", "saved as draft");
+    }
+    skipPageHideDraftRef.current = true;
     router.replace(returnTo);
   }
 
-  function handleSaveDraft() {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(
-        `vybnet-post-draft:${viewerUsername}`,
-        JSON.stringify({
-          caption,
-          isAnonymous,
-          allowAnonymousComments,
-          postVisibility,
-          communityId,
-          savedAt: new Date().toISOString()
-        })
-      );
-    }
+  function handleDiscardCreation() {
+    skipPageHideDraftRef.current = true;
     router.replace(returnTo);
+  }
+
+  async function handleSaveDraft() {
+    setIsDraftBusy(true);
+    try {
+      const saved = await persistCurrentDraft();
+      if (saved) {
+        window.sessionStorage.setItem("vybnet-composer-notice", "saved as draft");
+      }
+      skipPageHideDraftRef.current = true;
+      router.replace(returnTo);
+    } finally {
+      setIsDraftBusy(false);
+    }
   }
 
   function handleModeChange(nextMode: PublishableCreationMode) {
@@ -746,7 +1070,7 @@ export function CampusUploadShell({
       return;
     }
 
-    const availableSlots = Math.max(0, 6 - momentImages.length);
+    const availableSlots = Math.max(0, MAX_POST_MEDIA_ITEMS - momentImages.length);
     const nextFiles = valid.slice(0, availableSlots);
     const entries = nextFiles.map((file) => ({
       id: makeComposerAssetId(),
@@ -755,7 +1079,11 @@ export function CampusUploadShell({
     }));
 
     setMomentImages((prev) => [...prev, ...entries]);
-    setMessage(valid.length > availableSlots ? "Posts support up to 6 photos." : null);
+    setMessage(
+      valid.length > availableSlots
+        ? `Posts support up to ${MAX_POST_MEDIA_ITEMS} photos.`
+        : null
+    );
   }
 
   function removeStoryAsset(id: string) {
@@ -774,6 +1102,17 @@ export function CampusUploadShell({
     overlayMetadata: StoryOverlayMetadata | null;
     compositionJson: string | null;
   }) {
+    if (mode === "moment" && editingMomentImageId) {
+      setMomentImages((images) => images.map((image) => {
+        if (image.id !== editingMomentImageId) return image;
+        if (image.url.startsWith("blob:")) URL.revokeObjectURL(image.url);
+        return { ...image, file: result.file, url: URL.createObjectURL(result.file) };
+      }));
+      setEditingMomentImageId(null);
+      setIsStoryBuilderOpen(false);
+      setMessage("Media edits applied.");
+      return;
+    }
     if (!activeStoryAsset) return;
     setStoryAssets((assets) =>
       assets.map((asset) => {
@@ -976,9 +1315,14 @@ export function CampusUploadShell({
         }, { scheduledFor: nextScheduledFor });
       }
 
-      if (typeof window !== "undefined") {
-        window.localStorage.removeItem(`vybnet-post-draft:${viewerUsername}`);
+      const publishedDraftId = activeDraftIdRef.current;
+      if (publishedDraftId) {
+        await deleteComposerDraft(publishedDraftId);
+        activeDraftIdRef.current = null;
+        setActiveDraftId(null);
       }
+      window.localStorage.removeItem(`vybnet-post-draft:${viewerUsername}`);
+      skipPageHideDraftRef.current = true;
       router.replace(returnTo);
     } catch (err) {
       setIsPublishing(false);
@@ -1517,21 +1861,36 @@ export function CampusUploadShell({
                   />
                 </div>
 
-                <div className="cs-moment-images">
+                {momentImages.length > 0 ? (
+                  <div className="cs-moment-carousel-preview" aria-label="Post media preview carousel">
+                    <img src={momentImages[effectiveMomentPreviewIndex]?.url} alt={`Selected media ${effectiveMomentPreviewIndex + 1}`} />
+                    <span>{effectiveMomentPreviewIndex + 1}/{momentImages.length}</span>
+                    {momentImages.length > 1 ? (
+                      <>
+                        <button type="button" className="is-prev" disabled={effectiveMomentPreviewIndex === 0} onClick={() => setMomentPreviewIndex(Math.max(0, effectiveMomentPreviewIndex - 1))} aria-label="Previous media">‹</button>
+                        <button type="button" className="is-next" disabled={effectiveMomentPreviewIndex === momentImages.length - 1} onClick={() => setMomentPreviewIndex(Math.min(momentImages.length - 1, effectiveMomentPreviewIndex + 1))} aria-label="Next media">›</button>
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <Reorder.Group as="div" axis="x" values={momentImages} onReorder={setMomentImages} className="cs-moment-images" aria-label="Selected post media order">
                   {momentImages.map((img, i) => (
-                    <div key={img.id} className="cs-moment-img-thumb">
-                      <img src={img.url} alt={`Upload ${i + 1}`} />
-                      <button
-                        type="button"
-                        className="cs-moment-img-remove"
-                        onClick={() => removeMomentImage(i)}
-                        aria-label="Remove image"
-                      >
-                        <IcoTrash />
-                      </button>
-                    </div>
+                    <MomentReorderItem
+                      key={img.id}
+                      image={img}
+                      index={i}
+                      total={momentImages.length}
+                      disabled={isPublishing}
+                      onSelect={() => setMomentPreviewIndex(i)}
+                      onEdit={() => {
+                          setEditingMomentImageId(img.id);
+                          setIsStoryBuilderOpen(true);
+                      }}
+                      onRemove={() => removeMomentImage(i)}
+                    />
                   ))}
-                  {momentImages.length < 6 && (
+                  {momentImages.length < MAX_POST_MEDIA_ITEMS && (
                     <button
                       type="button"
                       className="cs-moment-img-add"
@@ -1542,7 +1901,7 @@ export function CampusUploadShell({
                       <span>{momentImages.length === 0 ? "Add photo" : "More"}</span>
                     </button>
                   )}
-                </div>
+                </Reorder.Group>
 
                 {message && <p className="cs-message">{message}</p>}
 
@@ -1714,11 +2073,15 @@ export function CampusUploadShell({
           </div>
         )}
 
-        {mode === "story" && isStoryBuilderOpen && activeStoryAsset && (
+        {isStoryBuilderOpen && activeEditorAsset && (
           <StoryBuilder
-            asset={activeStoryAsset}
+            asset={activeEditorAsset}
+            purpose={mode === "moment" ? "post" : "story"}
             onApply={applyStoryBuilderResult}
-            onClose={() => setIsStoryBuilderOpen(false)}
+            onClose={() => {
+              setEditingMomentImageId(null);
+              setIsStoryBuilderOpen(false);
+            }}
           />
         )}
 
@@ -1729,7 +2092,7 @@ export function CampusUploadShell({
                   ? "Portrait, landscape, and square videos publish with no-crop playback"
                 : mode === "story"
                   ? "Stories support photos or one video · music clips can export at 15s, 30s, 45s, or 60s"
-                  : "Up to 6 photos · Text-only posts are fine too"}
+                  : `Up to ${MAX_POST_MEDIA_ITEMS} photos · Text-only posts are fine too`}
             </div>
             <div className="cs-footer-actions">
               <div className="cs-utility-wrap">
@@ -1737,25 +2100,40 @@ export function CampusUploadShell({
                   type="button"
                   className="cs-utility-trigger"
                   onClick={() => setIsUtilityMenuOpen((current) => !current)}
-                  disabled={!canPublish || isPublishing}
+                  disabled={isPublishing || (!canPublish && drafts.length === 0)}
                   aria-label="Open post utilities"
                   aria-expanded={isUtilityMenuOpen}
                 >
                   <IcoUtility />
+                  {drafts.length > 0 ? <span className="cs-draft-count">{drafts.length > 99 ? "99+" : drafts.length}</span> : null}
                 </button>
                 {isUtilityMenuOpen ? (
                   <div className="cs-utility-menu" role="menu">
-                    <button type="button" role="menuitem" onClick={handleClose}>
+                    <button type="button" role="menuitem" onClick={handleDiscardCreation}>
                       <span className="cs-utility-action-icon cs-utility-action-icon--cancel">
                         <IcoClose />
                       </span>
                       <span><strong>Cancel creation</strong><small>Discard this editing session</small></span>
                     </button>
-                    <button type="button" role="menuitem" onClick={handleSaveDraft} disabled={!canPublish}>
+                    <button type="button" role="menuitem" onClick={() => void handleSaveDraft()} disabled={!canPublish || isDraftBusy}>
                       <span className="cs-utility-action-icon cs-utility-action-icon--draft">
                         <IcoDraft />
                       </span>
                       <span><strong>Save draft</strong><small>Continue this {mode === "moment" ? "post" : mode} later</small></span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={drafts.length === 0 || isDraftBusy}
+                      onClick={() => {
+                        setIsUtilityMenuOpen(false);
+                        setIsDraftManagerOpen(true);
+                      }}
+                    >
+                      <span className="cs-utility-action-icon cs-utility-action-icon--draft">
+                        <IcoDraft />
+                      </span>
+                      <span><strong>Drafts ({drafts.length})</strong><small>Load or discard a saved draft</small></span>
                     </button>
                     <button
                       type="button"
@@ -1787,6 +2165,45 @@ export function CampusUploadShell({
           </div>
         )}
 
+        {isDraftManagerOpen ? (
+          <div className="cs-schedule-backdrop" role="presentation">
+            <div className="cs-draft-dialog" role="dialog" aria-modal="true" aria-label={`Drafts (${drafts.length})`}>
+              <div className="cs-draft-dialog-head">
+                <div>
+                  <span className="cs-draft-eyebrow">ON THIS DEVICE</span>
+                  <h2>Drafts ({drafts.length})</h2>
+                </div>
+                <button type="button" className="cs-draft-close" onClick={() => setIsDraftManagerOpen(false)} aria-label="Close drafts">
+                  <IcoClose />
+                </button>
+              </div>
+              {drafts.length === 0 ? (
+                <p className="cs-draft-empty">No drafts saved on this device.</p>
+              ) : (
+                <div className="cs-draft-list">
+                  {drafts.map((draft) => (
+                    <article key={draft.id} className={`cs-draft-row${activeDraftId === draft.id ? " is-active" : ""}`}>
+                      <button type="button" className="cs-draft-load" disabled={isDraftBusy} onClick={() => void handleLoadDraft(draft.id)}>
+                        <span className="cs-draft-mode">{draft.mode === "moment" ? "Post" : draft.mode === "story" ? "Story" : "Vibe"}</span>
+                        <strong>{draft.caption.trim() || `${draft.mode === "moment" ? "Post" : draft.mode} draft`}</strong>
+                        <small>
+                          {new Date(draft.savedAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}
+                          {draft.mediaCount > 0 ? ` · ${draft.mediaCount} media` : ""}
+                          {draft.scheduledFor ? ` · scheduled ${new Date(draft.scheduledFor).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}` : ""}
+                        </small>
+                      </button>
+                      <button type="button" className="cs-draft-delete" disabled={isDraftBusy} onClick={() => void handleDiscardDraft(draft.id)} aria-label={`Discard ${draft.caption.trim() || "draft"}`}>
+                        <IcoTrash />
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              )}
+              <button type="button" className="cs-draft-done" onClick={() => setIsDraftManagerOpen(false)}>Done</button>
+            </div>
+          </div>
+        ) : null}
+
         {isScheduleMenuOpen ? (
           <div className="cs-schedule-backdrop" role="presentation">
             <div className="cs-schedule-dialog" role="dialog" aria-modal="true" aria-label={`Schedule ${mode === "moment" ? "post" : mode}`}>
@@ -1814,6 +2231,15 @@ export function CampusUploadShell({
                   </button>
                 ))}
               </div>
+              <label className="cs-schedule-custom">
+                <strong>Exact date &amp; time</strong>
+                <input
+                  type="datetime-local"
+                  min={toDateTimeLocalValue(new Date(Date.now() + 60_000).toISOString())}
+                  value={toDateTimeLocalValue(scheduledFor)}
+                  onChange={(event) => setScheduledFor(fromDateTimeLocalValue(event.target.value))}
+                />
+              </label>
               <small className="cs-schedule-note">
                 Scheduled uploads resume when Vybnet is open and an internet connection is available.
               </small>

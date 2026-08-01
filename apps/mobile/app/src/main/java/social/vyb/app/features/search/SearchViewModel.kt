@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 data class SearchUiState(
     val query: String = "",
@@ -44,6 +46,7 @@ class SearchViewModel(
     private val _state = MutableStateFlow(SearchUiState())
     val state: StateFlow<SearchUiState> = _state.asStateFlow()
     private var searchJob: Job? = null
+    private var profileJob: Job? = null
 
     init {
         loadSuggestions()
@@ -67,7 +70,9 @@ class SearchViewModel(
         searchJob = viewModelScope.launch {
             delay(300)
             _state.update { it.copy(loading = true) }
-            runCatching { repository.search(normalized) }
+            val result = runCatching { repository.search(normalized) }
+            currentCoroutineContext().ensureActive()
+            result
                 .onSuccess { result ->
                     if (_state.value.query == normalized) {
                         _state.update {
@@ -83,7 +88,11 @@ class SearchViewModel(
                         }
                     }
                 }
-                .onFailure { fail(it, "Search is unavailable right now.") }
+                .onFailure {
+                    if (_state.value.query == normalized) {
+                        fail(it, "Search is unavailable right now.")
+                    }
+                }
         }
     }
 
@@ -100,17 +109,23 @@ class SearchViewModel(
     }
 
     fun openProfile(username: String) {
-        viewModelScope.launch {
+        profileJob?.cancel()
+        profileJob = viewModelScope.launch {
             _state.update { it.copy(profileLoading = true, error = null) }
-            runCatching { repository.profile(username) }
+            val result = runCatching { repository.profile(username) }
+            currentCoroutineContext().ensureActive()
+            result
                 .onSuccess { profile ->
-                    _state.update { it.copy(selectedProfile = profile, profileLoading = false) }
+                    if (profile.profile.username.equals(username, ignoreCase = true)) {
+                        _state.update { it.copy(selectedProfile = profile, profileLoading = false) }
+                    }
                 }
                 .onFailure { fail(it, "Profile could not be loaded.") }
         }
     }
 
     fun closeProfile() {
+        profileJob?.cancel()
         _state.update { it.copy(selectedProfile = null, error = null) }
     }
 

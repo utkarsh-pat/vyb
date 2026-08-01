@@ -216,7 +216,15 @@ function CampusNavigationLink({
   }
 
   function handleClick(event: MouseEvent<HTMLAnchorElement>) {
-    if (shouldLetBrowserHandle(event) || isCurrentRoute) {
+    if (shouldLetBrowserHandle(event)) {
+      return;
+    }
+
+    if (isCurrentRoute) {
+      event.preventDefault();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      window.dispatchEvent(new CustomEvent("vyb:navigation-reselect", { detail: { href: item.href } }));
+      startTransition(() => router.refresh());
       return;
     }
 

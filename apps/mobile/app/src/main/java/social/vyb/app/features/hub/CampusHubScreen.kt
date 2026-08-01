@@ -59,6 +59,7 @@ import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -87,12 +88,26 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 @Composable
-fun CampusHubScreen(modifier: Modifier = Modifier) {
+fun CampusHubScreen(
+    modifier: Modifier = Modifier,
+    initialEventId: String? = null,
+    onInitialEventConsumed: (() -> Unit)? = null,
+    refreshSignal: Int = 0,
+) {
     val repository = remember { CampusHubRepository() }
     val viewModel: CampusHubViewModel = viewModel(
         factory = CampusHubViewModelFactory(repository)
     )
     val state by viewModel.state.collectAsStateWithLifecycle()
+
+    LaunchedEffect(refreshSignal) {
+        if (refreshSignal > 0) viewModel.refresh()
+    }
+
+    LaunchedEffect(initialEventId) {
+        val eventId = initialEventId?.trim()?.takeIf(String::isNotEmpty) ?: return@LaunchedEffect
+        viewModel.openEventById(eventId) { onInitialEventConsumed?.invoke() }
+    }
 
     when {
         state.hostEditorOpen -> HostEventEditor(

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -60,6 +61,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -84,10 +86,25 @@ import java.util.Locale
 @Composable
 fun MarketFeatureScreen(
     modifier: Modifier = Modifier,
+    initialTargetId: String? = null,
+    initialTargetType: String? = null,
+    onInitialTargetConsumed: (() -> Unit)? = null,
+    refreshSignal: Int = 0,
     marketViewModel: MarketViewModel = viewModel(),
 ) {
     val state by marketViewModel.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
+
+    LaunchedEffect(refreshSignal) {
+        if (refreshSignal > 0) marketViewModel.refresh()
+    }
+
+    LaunchedEffect(initialTargetId, initialTargetType, state.dashboard) {
+        val targetId = initialTargetId?.trim()?.takeIf(String::isNotEmpty) ?: return@LaunchedEffect
+        if (state.dashboard != null && marketViewModel.selectById(targetId, initialTargetType)) {
+            onInitialTargetConsumed?.invoke()
+        }
+    }
 
     LaunchedEffect(state.error, state.notice) {
         val message = state.error ?: state.notice
@@ -543,15 +560,25 @@ private fun MarketComposerDialog(
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 item { MarketTabs(selected = tab, onSelected = { tab = it }) }
                 item {
-                    OutlinedTextField(title, { title = it }, label = { Text("Title") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(
+                        title,
+                        { title = it.take(120) },
+                        label = { Text("Title") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
                 item {
-                    OutlinedTextField(category, { category = it }, label = { Text("Category") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(
+                        category,
+                        { category = it.take(60) },
+                        label = { Text("Category") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
                 item {
                     OutlinedTextField(
                         description,
-                        { description = it },
+                        { description = it.take(2_000) },
                         label = { Text("Description") },
                         minLines = 3,
                         modifier = Modifier.fillMaxWidth(),
@@ -560,15 +587,16 @@ private fun MarketComposerDialog(
                 item {
                     OutlinedTextField(
                         amount,
-                        { amount = it.filter(Char::isDigit) },
+                        { amount = it.filter(Char::isDigit).take(9) },
                         label = { Text(if (tab == "sale") "Price (₹)" else "Budget (₹, optional)") },
                         modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     )
                 }
                 item {
                     OutlinedTextField(
                         campusSpot,
-                        { campusSpot = it },
+                        { campusSpot = it.take(120) },
                         label = { Text("Campus spot") },
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -577,7 +605,7 @@ private fun MarketComposerDialog(
                     item {
                         OutlinedTextField(
                             condition,
-                            { condition = it },
+                            { condition = it.take(80) },
                             label = { Text("Condition") },
                             modifier = Modifier.fillMaxWidth(),
                         )
@@ -600,7 +628,11 @@ private fun MarketComposerDialog(
                         ),
                     )
                 },
-                enabled = !busy && title.isNotBlank() && category.isNotBlank() && description.isNotBlank(),
+                enabled = !busy &&
+                    title.isNotBlank() &&
+                    category.isNotBlank() &&
+                    description.isNotBlank() &&
+                    (tab != "sale" || (amount.toLongOrNull() ?: 0L) > 0L),
             ) { Text("Publish") }
         },
         dismissButton = { OutlinedButton(onClick = onDismiss) { Text("Cancel") } },

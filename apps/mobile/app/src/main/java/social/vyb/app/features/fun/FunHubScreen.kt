@@ -76,6 +76,7 @@ import social.vyb.app.features.scribble.ScribbleScreen
 fun FunHubScreen(
     modifier: Modifier = Modifier,
     initialTab: Int? = null,
+    refreshSignal: Int = 0,
     viewModel: FunViewModel = viewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -83,6 +84,9 @@ fun FunHubScreen(
         mutableStateOf(initialTab?.coerceIn(0, 2))
     }
     LaunchedEffect(viewModel) { viewModel.initialize() }
+    LaunchedEffect(refreshSignal) {
+        if (refreshSignal > 0) viewModel.refresh()
+    }
 
     BoxWithConstraints(modifier.fillMaxSize()) {
         val tablet = maxWidth >= 700.dp

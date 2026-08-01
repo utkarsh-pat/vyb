@@ -121,6 +121,24 @@ class MarketViewModel(
         _state.value = _state.value.copy(selected = detail, error = null)
     }
 
+    fun selectById(targetId: String, targetType: String? = null): Boolean {
+        val dashboard = _state.value.dashboard ?: return false
+        val detail = when (targetType) {
+            "request" -> dashboard.requests.firstOrNull { it.id == targetId }?.let(MarketDetail::Request)
+            "listing" -> dashboard.listings.firstOrNull { it.id == targetId }?.let(MarketDetail::Listing)
+            else -> dashboard.listings.firstOrNull { it.id == targetId }?.let(MarketDetail::Listing)
+                ?: dashboard.requests.firstOrNull { it.id == targetId }?.let(MarketDetail::Request)
+        } ?: return false
+        _state.value = _state.value.copy(
+            selected = detail,
+            tab = if (detail is MarketDetail.Listing) "sale" else (detail as MarketDetail.Request).value.tab,
+            showSavedOnly = false,
+            category = null,
+            error = null,
+        )
+        return true
+    }
+
     fun selectTab(tab: String) {
         _state.value = _state.value.copy(
             tab = tab,
@@ -165,8 +183,10 @@ class MarketViewModel(
             _state.value = _state.value.copy(error = "Enter a valid listing price.")
             return
         }
-        launch(notice = "Market post published.") { repository.create(draft) }
-        _state.value = _state.value.copy(showComposer = false)
+        launch(
+            notice = "Market post published.",
+            onSuccess = { _state.value = _state.value.copy(showComposer = false) }
+        ) { repository.create(draft) }
     }
 
     fun toggleSave(listingId: String) =
@@ -177,8 +197,10 @@ class MarketViewModel(
             _state.value = _state.value.copy(error = "Write a short message first.")
             return
         }
-        launch(notice = "Message sent to the owner.") { repository.contact(target, message) }
-        _state.value = _state.value.copy(selected = null)
+        launch(
+            notice = "Message sent to the owner.",
+            onSuccess = { _state.value = _state.value.copy(selected = null) }
+        ) { repository.contact(target, message) }
     }
 
     fun markSold(listingId: String) =
@@ -191,6 +213,7 @@ class MarketViewModel(
     private fun launch(
         load: Boolean = false,
         notice: String? = null,
+        onSuccess: () -> Unit = {},
         block: suspend () -> MarketDashboard,
     ) {
         viewModelScope.launch {
@@ -213,6 +236,7 @@ class MarketViewModel(
                                 ?: dashboard.requests.firstOrNull { it.id == id }?.let(MarketDetail::Request)
                         },
                     )
+                    onSuccess()
                 }
                 .onFailure { error ->
                     _state.value = _state.value.copy(

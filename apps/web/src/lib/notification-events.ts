@@ -737,7 +737,7 @@ export async function notifyMarketContactCreated(viewer: DevSession, target: Mar
       title: "New market message",
       body: `${viewer.displayName} contacted you about ${targetTitle}.`,
       cta_label: "Open",
-      href: "/market"
+      href: `/market?type=${encodeURIComponent(targetType)}&id=${encodeURIComponent(target.id)}`
     },
     privacy: {
       contains_plaintext: true,

@@ -1,6 +1,7 @@
 package social.vyb.app.features.realtime
 
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.awaitClose
@@ -34,14 +35,14 @@ class ChatRealtimeClient(
         .build(),
     private val json: Json = Json { ignoreUnknownKeys = true }
 ) {
-    @Volatile
-    private var activeSocket: WebSocket? = null
+    private val activeSockets = ConcurrentHashMap<String, WebSocket>()
 
     fun observe(conversationId: String): Flow<ChatRealtimeEvent> = callbackFlow {
         val stopped = AtomicBoolean(false)
         var reconnectAttempt = 0
         var connectJob: Job? = null
         var heartbeatJob: Job? = null
+        var flowSocket: WebSocket? = null
 
         fun scheduleConnect(delayMs: Long = 0L) {
             if (stopped.get() || connectJob?.isActive == true) return
@@ -63,7 +64,8 @@ class ChatRealtimeClient(
 
                 val listener = object : WebSocketListener() {
                     override fun onOpen(webSocket: WebSocket, response: Response) {
-                        activeSocket = webSocket
+                        flowSocket = webSocket
+                        activeSockets[conversationId] = webSocket
                         reconnectAttempt = 0
                         trySend(ChatRealtimeEvent.Connected)
                         heartbeatJob?.cancel()
@@ -119,7 +121,8 @@ class ChatRealtimeClient(
                     }
 
                     override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                        if (activeSocket === webSocket) activeSocket = null
+                        activeSockets.remove(conversationId, webSocket)
+                        if (flowSocket === webSocket) flowSocket = null
                         heartbeatJob?.cancel()
                         if (!stopped.get()) {
                             val retryDelay = retryDelayMillis(reconnectAttempt++)
@@ -134,7 +137,8 @@ class ChatRealtimeClient(
                         t: Throwable,
                         response: Response?
                     ) {
-                        if (activeSocket === webSocket) activeSocket = null
+                        activeSockets.remove(conversationId, webSocket)
+                        if (flowSocket === webSocket) flowSocket = null
                         heartbeatJob?.cancel()
                         if (!stopped.get()) {
                             val retryDelay = retryDelayMillis(reconnectAttempt++)
@@ -145,7 +149,7 @@ class ChatRealtimeClient(
                     }
                 }
 
-                activeSocket = client.newWebSocket(
+                flowSocket = client.newWebSocket(
                     Request.Builder().url(socketUrl).build(),
                     listener
                 )
@@ -162,13 +166,16 @@ class ChatRealtimeClient(
             stopped.set(true)
             connectJob?.cancel()
             heartbeatJob?.cancel()
-            activeSocket?.close(1000, "Conversation closed")
-            activeSocket = null
+            flowSocket?.let { socket ->
+                activeSockets.remove(conversationId, socket)
+                socket.close(1000, "Conversation closed")
+            }
+            flowSocket = null
         }
     }
 
     fun sendTyping(conversationId: String, isTyping: Boolean): Boolean =
-        activeSocket?.send(
+        activeSockets[conversationId]?.send(
             buildJsonObject {
                 put("type", "chat.typing")
                 put(
@@ -184,7 +191,7 @@ class ChatRealtimeClient(
     fun acknowledgeDelivered(conversationId: String, messageIds: List<String>): Boolean {
         val cleanIds = messageIds.distinct().filter(String::isNotBlank).take(50)
         if (cleanIds.isEmpty()) return false
-        return activeSocket?.send(
+        return activeSockets[conversationId]?.send(
             buildJsonObject {
                 put("type", "chat.delivered")
                 put(

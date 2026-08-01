@@ -4,7 +4,8 @@ import type { ChatConversationPreview, ChatIdentitySummary, FeedCard, PostLikerI
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { startTransition, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { startTransition, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type TouchEvent as ReactTouchEvent } from "react";
 import { buildDefaultAvatarUrl, CampusAvatarContent, useResolvedAvatarUrl } from "./campus-avatar";
 import { SocialPostActionSheet } from "./social-post-action-sheet";
 import { SocialPostLightbox } from "./social-post-lightbox";
@@ -16,6 +17,12 @@ import { useSocialPostEngagement } from "./use-social-post-engagement";
 import { VybLogoLockup, VybLogoMark } from "./vyb-logo";
 import { MediaCarousel } from "./media-carousel";
 import { StoryCompositionFrame } from "./story-composition-frame";
+import {
+  getBackgroundPublishTasks,
+  isBackgroundPublishTaskActive,
+  subscribeBackgroundPublishTasks,
+  type BackgroundPublishTask,
+} from "../lib/background-publish";
 import {
   closeAppHistoryLayer,
   hasAppRouteOriginForCurrentRoute,
@@ -78,7 +85,13 @@ function FeedCaption({ title, body }: { title?: string | null; body: string }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const MAX_LENGTH = 150;
   // Deduplicate title and body if they are identical
-  const displayTitle = title && title.trim() !== body.trim() ? title : null;
+  const normalizedTitle = title?.trim() ?? "";
+  const isGeneratedTitle =
+    normalizedTitle.toLowerCase() === "campus update" ||
+    /^(?:quote\s+)?repost\s*[•·-]/iu.test(normalizedTitle);
+  const displayTitle = normalizedTitle && !isGeneratedTitle && normalizedTitle !== body.trim()
+    ? normalizedTitle
+    : null;
   const shouldTruncate = body.length > MAX_LENGTH;
   const displayBody = shouldTruncate && !isExpanded ? body.slice(0, MAX_LENGTH) + "..." : body;
 
@@ -698,6 +711,11 @@ export function CampusHomeShell({
   const [flashMessage, setFlashMessage] = useState<string | null>(null);
   const [followBusyUsername, setFollowBusyUsername] = useState<string | null>(null);
   const [storyBusyId, setStoryBusyId] = useState<string | null>(null);
+  const [isFabVisible, setIsFabVisible] = useState(true);
+  const [backgroundPublishTasks, setBackgroundPublishTasks] = useState<BackgroundPublishTask[]>(() => getBackgroundPublishTasks());
+  const lastFabScrollYRef = useRef(0);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
   const [heartBurstPostId, setHeartBurstPostId] = useState<string | null>(null);
   const [lightboxPost, setLightboxPost] = useState<FeedCard | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<{
@@ -732,6 +750,7 @@ export function CampusHomeShell({
   const hasAppliedInitialPostRef = useRef(false);
   const hasAppliedInitialStoryRef = useRef(false);
   const messagesNavigationInFlightRef = useRef(false);
+  const pullStartYRef = useRef<number | null>(null);
 
   const storyGroups = useMemo(() => buildStoryRailGroups(storyFeed, viewerUsername), [storyFeed, viewerUsername]);
   const storySequence = useMemo(() => storyGroups.flatMap((group) => group.items), [storyGroups]);
@@ -798,6 +817,15 @@ export function CampusHomeShell({
   }, [settingsIdentity]);
 
   useEffect(() => {
+    const notice = window.sessionStorage.getItem("vybnet-composer-notice");
+    if (notice) {
+      window.sessionStorage.removeItem("vybnet-composer-notice");
+      setFlashMessage(notice);
+    }
+    return subscribeBackgroundPublishTasks(setBackgroundPublishTasks);
+  }, []);
+
+  useEffect(() => {
     if (!flashMessage) {
       return;
     }
@@ -810,6 +838,11 @@ export function CampusHomeShell({
       window.clearTimeout(timeoutId);
     };
   }, [flashMessage]);
+
+  const activePublishTask = backgroundPublishTasks.find((task) => isBackgroundPublishTaskActive(task.status)) ?? null;
+  const activePublishProgress = activePublishTask
+    ? Math.max(0.02, Math.min(1, activePublishTask.progress))
+    : 0;
 
   useEffect(() => {
     if (!heartBurstPostId) {
@@ -832,6 +865,41 @@ export function CampusHomeShell({
     };
   }, []);
 
+  function handleFeedTouchStart(event: ReactTouchEvent<HTMLElement>) {
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target?.closest(".vyb-campus-feed-stack") || window.scrollY > 0 || event.touches.length !== 1 || isPullRefreshing) {
+      pullStartYRef.current = null;
+      return;
+    }
+    pullStartYRef.current = event.touches[0]?.clientY ?? null;
+  }
+
+  function handleFeedTouchMove(event: ReactTouchEvent<HTMLElement>) {
+    const startY = pullStartYRef.current;
+    const currentY = event.touches[0]?.clientY;
+    if (startY === null || currentY === undefined) return;
+
+    const distance = Math.max(0, currentY - startY);
+    if (distance > 0) event.preventDefault();
+    setPullDistance(Math.min(96, distance * 0.55));
+  }
+
+  function handleFeedTouchEnd() {
+    pullStartYRef.current = null;
+    if (pullDistance < 58 || isPullRefreshing) {
+      setPullDistance(0);
+      return;
+    }
+
+    setIsPullRefreshing(true);
+    setPullDistance(58);
+    startTransition(() => router.refresh());
+    window.setTimeout(() => {
+      setIsPullRefreshing(false);
+      setPullDistance(0);
+    }, 800);
+  }
+
   useEffect(() => {
     if (!isFromSearch || !initialFocusedPostId) {
       return;
@@ -848,6 +916,25 @@ export function CampusHomeShell({
       window.removeEventListener("scroll", handleScroll);
     };
   }, [clearOrigin, initialFocusedPostId, isFromSearch]);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const nextScrollY = window.scrollY;
+      const delta = nextScrollY - lastFabScrollYRef.current;
+      if (nextScrollY <= 56) {
+        setIsFabVisible(true);
+      } else if (delta > 2) {
+        setIsFabVisible(false);
+      } else if (delta < -2) {
+        setIsFabVisible(true);
+      }
+      lastFabScrollYRef.current = nextScrollY;
+    };
+
+    lastFabScrollYRef.current = window.scrollY;
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   useEffect(() => {
     if (!reactionTrayPostId) {
@@ -1041,7 +1128,7 @@ export function CampusHomeShell({
     }
 
     if (reaction.active && reaction.viewerReactionType === "like" && (triggerBurst || requestedReactionType === "like")) {
-      setHeartBurstPostId(post.id);
+      // Heart burst removed from feed
     }
 
     syncPostEverywhere(post.id, (current) => ({
@@ -2015,7 +2102,25 @@ export function CampusHomeShell({
   }
 
   return (
-    <main className="vyb-campus-home" style={layoutStyle()}>
+    <main
+      className="vyb-campus-home"
+      style={layoutStyle()}
+      onTouchStart={handleFeedTouchStart}
+      onTouchMove={handleFeedTouchMove}
+      onTouchEnd={handleFeedTouchEnd}
+      onTouchCancel={handleFeedTouchEnd}
+    >
+      <div
+        className={`vyb-pwa-pull-indicator${isPullRefreshing ? " is-refreshing" : ""}`}
+        style={{
+          opacity: Math.min(1, pullDistance / 40),
+          transform: `translate(-50%, ${pullDistance - 51}px) rotate(${pullDistance * 2}deg)`
+        }}
+        aria-live="polite"
+        aria-label={isPullRefreshing ? "Refreshing campus feed" : undefined}
+      >
+        <VybLogoMark />
+      </div>
       <CampusDesktopNavigation navItems={navItems} viewerName={viewerName} viewerUsername={viewerUsername} />
 
       <section className="vyb-campus-main">
@@ -2081,10 +2186,6 @@ export function CampusHomeShell({
             <Link href="/notifications" className="vyb-campus-top-icon vyb-campus-top-link" aria-label="Open notifications">
               <BellIcon />
             </Link>
-            <button type="button" className="vyb-campus-post-trigger vyb-campus-post-trigger-mobile" onClick={() => navigateWithOrigin(createPostHref)}>
-              <AddPostIcon />
-              <span>Post</span>
-            </button>
             <Link
               href={messagesHref}
               className="vyb-campus-top-icon vyb-campus-top-link"
@@ -2273,7 +2374,7 @@ export function CampusHomeShell({
                       )}
                     </div>
                     <div className="fc-metrics-right">
-                      <span>{formatMetric(post.savedCount || 0)} shares</span>
+                      <span>{formatMetric(post.savedCount || 0)} saves</span>
                     </div>
                   </div>
 
@@ -2286,7 +2387,7 @@ export function CampusHomeShell({
                         }}
                         className={`fc-reaction-shell${reactionTrayPostId === post.id ? " is-open" : ""}`}
                       >
-                        <button
+                        <motion.button
                           type="button"
                           className={`fc-action-btn is-reaction-btn${hasViewerReaction ? ` reaction-${reactionMeta.tone} is-active` : ""}`}
                           disabled={engagement.loadingPostId === post.id}
@@ -2298,9 +2399,11 @@ export function CampusHomeShell({
                           onPointerLeave={handleReactionButtonPointerCancel}
                           onContextMenu={(event) => event.preventDefault()}
                           onClick={() => handleReactionButtonClick(post)}
+                          whileTap={{ scale: 0.68 }}
+                          transition={{ type: "spring", stiffness: 600, damping: 18 }}
                         >
                           <span className="fc-action-symbol" aria-hidden="true">{reactionMeta.symbol}</span>
-                        </button>
+                        </motion.button>
 
                         <div className="fc-reaction-tray" role="menu" aria-label="Choose a reaction">
                           {POST_REACTION_OPTIONS.map((option) => (
@@ -2318,42 +2421,50 @@ export function CampusHomeShell({
                         </div>
                       </div>
 
-                      <button
+                      <motion.button
                         type="button"
                         className="fc-action-btn"
                         onClick={() => openPostComments(post)}
+                        whileTap={{ scale: 0.72 }}
+                        transition={{ type: "spring", stiffness: 500, damping: 18 }}
                       >
                         <CommentIcon />
-                      </button>
+                      </motion.button>
 
-                      <button
+                      <motion.button
                         type="button"
                         className="fc-action-btn"
                         onClick={() => handleSharePost(post)}
+                        whileTap={{ scale: 0.72 }}
+                        transition={{ type: "spring", stiffness: 500, damping: 18 }}
                       >
                         <ShareIcon />
-                      </button>
+                      </motion.button>
                     </div>
 
                     <div className="fc-actions-group is-right">
-                      <button
+                      <motion.button
                         type="button"
                         className="fc-action-btn"
                         disabled={repostBusyPostId === post.id}
                         onClick={() => openRepostComposer(post)}
                         title="Repost"
+                        whileTap={{ scale: 0.72 }}
+                        transition={{ type: "spring", stiffness: 500, damping: 18 }}
                       >
                         <RepostIcon />
-                      </button>
-                      <button
+                      </motion.button>
+                      <motion.button
                         type="button"
                         className={`fc-action-btn${post.isSaved ? " is-active is-save-active" : ""}`}
                         disabled={saveBusyPostId === post.id}
                         onClick={() => void handleTogglePostSave(post)}
                         title="Save"
+                        whileTap={{ scale: 0.72 }}
+                        transition={{ type: "spring", stiffness: 500, damping: 18 }}
                       >
                         <BookmarkIcon />
-                      </button>
+                      </motion.button>
                     </div>
                   </div>
 
@@ -2485,6 +2596,23 @@ export function CampusHomeShell({
           </div>
         </div>
       </aside>
+
+      <AnimatePresence>
+        {isFabVisible && !lightboxPost ? (
+          <motion.button
+            initial={{ scale: 0.78, opacity: 0, y: 12 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.78, opacity: 0, y: 12 }}
+            type="button"
+            className={`vyb-campus-post-fab${activePublishTask ? " is-publishing" : ""}`}
+            style={{ "--vyb-publish-progress": `${activePublishProgress * 360}deg` } as CSSProperties}
+            onClick={() => navigateWithOrigin(createPostHref)}
+            aria-label={activePublishTask ? `Publishing ${Math.round(activePublishProgress * 100)} percent` : "Create post"}
+          >
+            <AddPostIcon />
+          </motion.button>
+        ) : null}
+      </AnimatePresence>
 
       <CampusMobileNavigation navItems={navItems} />
 
