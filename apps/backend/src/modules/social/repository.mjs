@@ -78,7 +78,8 @@ const defaultFallbackStore = {
   follows: [],
   postSaves: [],
   userBlocks: [],
-  recommendationFeedback: []
+  recommendationFeedback: [],
+  feedChangeEvents: []
 };
 
 let fallbackStoreCache = null;
@@ -148,6 +149,9 @@ async function ensureFallbackStore() {
   fallbackStoreCache.userBlocks = Array.isArray(fallbackStoreCache.userBlocks) ? fallbackStoreCache.userBlocks : [];
   fallbackStoreCache.recommendationFeedback = Array.isArray(fallbackStoreCache.recommendationFeedback)
     ? fallbackStoreCache.recommendationFeedback
+    : [];
+  fallbackStoreCache.feedChangeEvents = Array.isArray(fallbackStoreCache.feedChangeEvents)
+    ? fallbackStoreCache.feedChangeEvents
     : [];
 
   return fallbackStoreCache;
@@ -917,6 +921,45 @@ const UPDATE_POST_MUTATION = `
   }
 `;
 
+const CREATE_FEED_CHANGE_EVENT_MUTATION = `
+  mutation CreateFeedChangeEvent(
+    $id: UUID!
+    $eventKey: String!
+    $tenantId: UUID!
+    $entityType: String!
+    $entityId: UUID!
+    $eventType: String!
+    $actorUserId: UUID
+    $expiresAt: Timestamp!
+  ) {
+    feedChangeEvent_insert(
+      data: {
+        id: $id
+        eventKey: $eventKey
+        tenantId: $tenantId
+        entityType: $entityType
+        entityId: $entityId
+        eventType: $eventType
+        actorUserId: $actorUserId
+        createdAt_expr: "request.time"
+        expiresAt: $expiresAt
+      }
+    ) { id createdAt }
+  }
+`;
+
+const LIST_FEED_CHANGE_EVENTS_QUERY = `
+  query ListFeedChangeEvents($tenantId: UUID!, $limit: Int!) {
+    feedChangeEvents(
+      where: { tenantId: { eq: $tenantId } }
+      orderBy: [{ createdAt: DESC }]
+      limit: $limit
+    ) {
+      id eventKey entityType entityId eventType actorUserId createdAt expiresAt
+    }
+  }
+`;
+
 function getSocialDc() {
   return getFirebaseDataConnect(socialConnectorConfig);
 }
@@ -974,6 +1017,129 @@ function isBeforePostCursor(item, cursor) {
   }
 
   return String(item.id) < cursor.id;
+}
+
+function parseFeedChangeCursor(value) {
+  if (typeof value !== "string" || !value.trim()) {
+    return null;
+  }
+
+  try {
+    const decoded = JSON.parse(Buffer.from(value.trim(), "base64url").toString("utf8"));
+    const createdAtMs = new Date(decoded.createdAt).getTime();
+    if (!Number.isFinite(createdAtMs) || typeof decoded.id !== "string") {
+      return null;
+    }
+    return { createdAtMs, id: decoded.id };
+  } catch {
+    return null;
+  }
+}
+
+function isAfterFeedChangeCursor(item, cursor) {
+  if (!cursor) {
+    return true;
+  }
+  const createdAtMs = new Date(item.createdAt).getTime();
+  if (!Number.isFinite(createdAtMs)) {
+    return false;
+  }
+  return createdAtMs > cursor.createdAtMs || (createdAtMs === cursor.createdAtMs && String(item.id) > cursor.id);
+}
+
+function buildFeedChangeCursor(item) {
+  if (!item?.id || !item?.createdAt) {
+    return null;
+  }
+  return Buffer.from(JSON.stringify({ id: item.id, createdAt: toIsoString(item.createdAt) }), "utf8").toString("base64url");
+}
+
+async function recordFeedChange({ tenantId, entityType = "post", entityId, eventType, actorUserId = null }) {
+  if (!tenantId || !entityId || !eventType) {
+    return null;
+  }
+
+  const id = randomUUID();
+  const createdAt = new Date().toISOString();
+  const event = {
+    id,
+    eventKey: id,
+    tenantId,
+    entityType,
+    entityId,
+    eventType,
+    actorUserId,
+    createdAt,
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+  };
+
+  try {
+    const response = await getSocialDc().executeGraphql(CREATE_FEED_CHANGE_EVENT_MUTATION, {
+      operationName: "CreateFeedChangeEvent",
+      variables: event
+    });
+    return { ...event, createdAt: response.data?.feedChangeEvent_insert?.createdAt ?? createdAt };
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) {
+      console.warn("[social/repository] feed-change-event write skipped", {
+        tenantId,
+        entityType,
+        entityId,
+        eventType,
+        message: error instanceof Error ? error.message : String(error)
+      });
+      return null;
+    }
+
+    const store = await ensureFallbackStore();
+    store.feedChangeEvents = [event, ...store.feedChangeEvents].slice(0, 1000);
+    await persistFallbackStore();
+    return event;
+  }
+}
+
+export async function listFeedChanges({ tenantId, after = null, limit = 100 }) {
+  const parsedCursor = parseFeedChangeCursor(after);
+  const cappedLimit = Math.min(200, Math.max(1, Number(limit) || 100));
+  const scanLimit = Math.min(1000, Math.max(cappedLimit * 5, 250));
+  let rows;
+
+  try {
+    const response = await getSocialDc().executeGraphqlRead(LIST_FEED_CHANGE_EVENTS_QUERY, {
+      operationName: "ListFeedChangeEvents",
+      variables: { tenantId, limit: scanLimit }
+    });
+    rows = Array.isArray(response.data?.feedChangeEvents) ? response.data.feedChangeEvents : [];
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) {
+      throw error;
+    }
+    const store = await ensureFallbackStore();
+    rows = store.feedChangeEvents.filter((item) => item.tenantId === tenantId);
+  }
+
+  const now = Date.now();
+  const ordered = rows
+    .filter((item) => new Date(item.expiresAt).getTime() > now)
+    .sort((left, right) => {
+      const timeDelta = new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
+      return timeDelta || String(left.id).localeCompare(String(right.id));
+    });
+  const changes = ordered.filter((item) => isAfterFeedChangeCursor(item, parsedCursor));
+  const limited = changes.slice(0, cappedLimit);
+  const newest = ordered.at(-1) ?? null;
+
+  return {
+    items: limited.map((item) => ({
+      entityType: item.entityType,
+      entityId: item.entityId,
+      eventType: item.eventType,
+      occurredAt: toIsoString(item.createdAt)
+    })),
+    highWater: newest ? buildFeedChangeCursor(newest) : after,
+    nextCursor: limited.length === cappedLimit ? buildFeedChangeCursor(limited.at(-1)) : null,
+    resetRequired: Boolean(parsedCursor && ordered.length >= scanLimit && changes.length >= scanLimit)
+  };
 }
 
 function isActiveStory(story) {
@@ -2907,6 +3073,13 @@ export async function createPost(payload) {
     await createPostMediaRows(id, buildPostMediaRows({ payload, media, mediaAssets: durableMediaAssets }));
   }
 
+  await recordFeedChange({
+    tenantId: payload.tenantId,
+    entityId: id,
+    eventType: "post.created",
+    actorUserId: payload.userId
+  });
+
   return mapPostRecord(
     postRecord,
     null,
@@ -3387,6 +3560,8 @@ export async function deletePost(postId, tenantId) {
     purgeKey: postId
   });
 
+  await recordFeedChange({ tenantId, entityId: postId, eventType: "post.deleted" });
+
   return {
     postId,
     deleted: true,
@@ -3522,6 +3697,13 @@ export async function updatePost(postId, payload, { tenantId = null, viewerMembe
       location: payload.location ?? null,
       allowAnonymousComments: payload.allowAnonymousComments !== false
     }
+  });
+
+  await recordFeedChange({
+    tenantId,
+    entityId: postId,
+    eventType: "post.updated",
+    actorUserId: viewerUserId
   });
 
   return findPostById(postId, { tenantId, viewerMembershipId, viewerUserId });

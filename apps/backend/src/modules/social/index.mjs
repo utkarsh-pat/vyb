@@ -40,6 +40,7 @@ import {
   isUserBlocked,
   listBlockedProfiles,
   listCommentsByPost,
+  listFeedChanges,
   listProfileConnections,
   listMutualConnections,
   listPostReactions,
@@ -737,9 +738,49 @@ function filterVisiblePostsForViewer(live, posts) {
   return posts.filter((post) => canAccessCommunityPost(live, post));
 }
 
+// Feed-change cursors are intentionally content-free, but an entity id is
+// still private information. Recheck the current relationship and audience
+// before returning a change: a previously-visible post may have been moved to
+// Followers/Community scope or its author may now be blocked.
+async function filterFeedChangesForViewer({ changes, live, tenantId, viewerUserId }) {
+  const visible = [];
+  for (const change of changes) {
+    if (change.entityType !== "post") {
+      continue;
+    }
+
+    const post = await findPostRecordById(change.entityId, { tenantId });
+    if (!post || !canAccessCommunityPost(live, post)) {
+      continue;
+    }
+    if (post.authorUserId && await isUserBlocked({
+      tenantId,
+      firstUserId: viewerUserId,
+      secondUserId: post.authorUserId
+    })) {
+      continue;
+    }
+    if (
+      post.visibility === "followers" &&
+      post.authorUserId &&
+      post.authorUserId !== viewerUserId &&
+      !(await isFollowing({
+        tenantId,
+        followerUserId: viewerUserId,
+        followingUserId: post.authorUserId
+      }))
+    ) {
+      continue;
+    }
+    visible.push(change);
+  }
+  return visible;
+}
+
 function isSocialRoutePath(pathname) {
   return (
     pathname === "/v1/feed" ||
+    pathname === "/v1/feed/changes" ||
     pathname === "/v1/vibes" ||
     pathname === "/v1/social-media/upload" ||
     pathname === "/v1/analytics/events" ||
@@ -1226,6 +1267,37 @@ export async function handleSocialRoute({ request, response, url, context }) {
       items: pageItems.map(buildFeedPayload),
       nextCursor: items.length > limit && lastItem ? buildPostCursor(lastItem) : null
     });
+    return true;
+  }
+
+  if (request.method === "GET" && url.pathname === "/v1/feed/changes") {
+    const tenantId = resolveTenantScope({
+      requestedTenantId: url.searchParams.get("tenantId"),
+      resolvedTenantId,
+      routeLabel: "feed-changes"
+    });
+    const limit = parseLimit(url.searchParams.get("limit"), 100);
+    if (!requireNonEmptyString(tenantId)) {
+      sendError(response, 400, "INVALID_TENANT", "tenantId is required.");
+      return true;
+    }
+    if (limit === null) {
+      sendError(response, 400, "INVALID_LIMIT", "limit must be an integer between 1 and 50.");
+      return true;
+    }
+
+    const result = await listFeedChanges({
+      tenantId,
+      after: url.searchParams.get("after"),
+      limit
+    });
+    const items = await filterFeedChangesForViewer({
+      changes: result.items,
+      live: resolved.live,
+      tenantId,
+      viewerUserId: resolvedUserId
+    });
+    sendJson(response, 200, { ...result, items }, { "cache-control": "private, no-store" });
     return true;
   }
 

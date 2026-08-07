@@ -49,9 +49,11 @@ leak, and suggestion refresh never returns ineligible users.
 
 Implementation checkpoint (2026-08-07): persisted block records,
 follow/following/mutuals lookups, social-feed filtering, PWA block controls,
-and the backend mutuals API are implemented. Block enforcement is not yet
-universal: Chat, Marketplace, Notifications, Events, Games, and share-card
-resolution must use the same policy before launch.
+and the backend mutuals API are implemented. Primary Chat inbox/read,
+direct-conversation creation, send, and realtime admission now reject blocked
+pairs. Block enforcement is not yet universal: Marketplace, Notifications,
+Events, Games, search, share-card resolution, and remaining secondary Chat
+actions must use the same policy before launch.
 
 ### FC-2 - Audience enforcement and live feed delta
 
@@ -64,6 +66,13 @@ resolution must use the same policy before launch.
 
 Exit: a second account publishes while the first account stays open; the first
 account updates without manual refresh and converges after an offline/reconnect test.
+
+Implementation checkpoint (2026-08-07): post create/update/delete writes now
+record a durable 24-hour `FeedChangeEvent`; `GET /v1/feed/changes` provides a
+bounded opaque cursor and rechecks current tenant, audience, follow, community,
+and block eligibility before returning an entity id. Clients do not yet consume
+this endpoint, and the record is not a transactional outbox or shared realtime
+fanout; those remain required before this batch can exit.
 
 ### FC-3 - Universal actionable sharing
 

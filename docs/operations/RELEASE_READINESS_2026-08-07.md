@@ -7,7 +7,8 @@
   traffic. Minimum instances remain zero, concurrency remains 80, and CPU
   throttling remains enabled to preserve pilot cost efficiency.
 - Firebase Data Connect: Social schema and connector include the M0 measurement
-  tables, block records, and recommendation-feedback persistence.
+  tables, block records, recommendation-feedback persistence, and durable
+  tenant-scoped feed-change records.
 - Cloud Scheduler: `vyb-analytics-rollup`, `*/15 * * * *` in `Asia/Kolkata`,
   invokes the protected internal rollup. The deployment-day manual trigger
   returned HTTP 200.
@@ -22,8 +23,12 @@
 - PWA and Android send bounded, idempotent content-measurement batches.
 - Android social overflow supports author insights and non-author
   `Not interested`; legacy `public` audience is rendered as **Campus**.
-- Social graph storage includes blocks and mutual relationship lookups; current
-  Social surfaces filter blocked accounts.
+- Social graph storage includes blocks and mutual relationship lookups; Social
+  surfaces and the primary Chat read/create/send/realtime paths reject blocked
+  pairs.
+- The backend exposes a bounded, cursor-based, audience- and block-filtered
+  `GET /v1/feed/changes` reconciliation endpoint. No Android/PWA poller or
+  cross-instance fanout consumes it yet.
 
 ## Verification performed
 
@@ -39,11 +44,13 @@
 1. Run and retain evidence for the two-account, two-tenant production canary:
    audience permissions, duplicate events, author exclusion, one rollup row,
    delete/privacy purge, and block matrix.
-2. Use a single cross-module block policy in Chat, Marketplace, Notifications,
-   Events, Games, search, and share-card resolution. Current Social-only
-   coverage is not a complete privacy boundary.
-3. Implement durable feed-delta/outbox and managed/shared realtime fanout;
-   process-local WebSocket hints do not recover safely across instances.
+2. Extend the shared block policy beyond Social and the primary Chat paths to
+   Marketplace, Notifications, Events, Games, search, and share-card
+   resolution. It is not yet a complete cross-product privacy boundary.
+3. Wire Android/PWA to the durable feed-change reconciliation endpoint, add a
+   transactional outbox plus managed/shared realtime fanout, and verify cache
+   purges. Process-local WebSocket hints do not recover safely across
+   instances.
 4. Finish universal encrypted entity cards and canonical deep links for post,
    vibe, event, game, listing, and profile sharing.
 5. Add shared Android/PWA measurement fixtures, creator aggregate UI, an

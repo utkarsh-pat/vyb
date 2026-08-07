@@ -171,6 +171,28 @@ type UserBlock
   deletedAt: Timestamp @col(name: "deleted_at")
 }
 
+# Small, durable invalidation records for feed reconciliation. The row never
+# contains post bodies or media; clients re-fetch the authoritative entity.
+# A bounded retention job can delete expired rows without affecting posts.
+type FeedChangeEvent
+  @table(
+    name: "feed_change_events"
+    singular: "feedChangeEvent"
+    plural: "feedChangeEvents"
+    key: ["id"]
+  )
+  @index(fields: ["tenantId", "createdAt"], order: [ASC, DESC]) {
+  id: UUID! @default(expr: "uuidV4()")
+  eventKey: String! @col(name: "event_key") @unique
+  tenant: Tenant!
+  entityType: String! @col(name: "entity_type")
+  entityId: UUID! @col(name: "entity_id")
+  eventType: String! @col(name: "event_type")
+  actorUserId: UUID @col(name: "actor_user_id")
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  expiresAt: Timestamp! @col(name: "expires_at")
+}
+
 # Cross-device privacy preference. When disabled the ingestion API becomes a
 # no-op and existing pseudonymous viewer ledgers can be purged on request.
 type ContentMeasurementPreference

@@ -158,6 +158,11 @@ export interface CreateUserActivityVariables {
   metadataJson?: unknown | null;
 }
 
+export interface FeedChangeEvent_Key {
+  id: UUIDString;
+  __typename?: 'FeedChangeEvent_Key';
+}
+
 export interface Follow_Key {
   id: UUIDString;
   __typename?: 'Follow_Key';

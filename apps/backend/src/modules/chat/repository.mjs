@@ -2,6 +2,7 @@ import { randomInt, randomUUID } from "node:crypto";
 import { getFirebaseDataConnect } from "../../../../../packages/config/src/index.mjs";
 import { getR2Bucket } from "../../lib/r2-bucket.mjs";
 import { getProfileByUserId, getProfileByUsername, listProfilesByUserIds } from "../identity/profile-repository.mjs";
+import { isUserBlocked } from "../social/repository.mjs";
 import { trackActivity } from "../moderation/repository.mjs";
 import { getChatPresenceSnapshot } from "./presence-store.mjs";
 import {
@@ -2189,7 +2190,16 @@ async function resolveConversationAccess(viewer, conversationId) {
 }
 
 export async function canAccessChatConversation(viewer, conversationId) {
-  return Boolean(await resolveConversationAccess(viewer, conversationId));
+  const access = await resolveConversationAccess(viewer, conversationId);
+  if (!access) {
+    return false;
+  }
+
+  return !(await isUserBlocked({
+    tenantId: viewer.tenantId,
+    firstUserId: viewer.userId,
+    secondUserId: access.peerParticipant.userId
+  }));
 }
 
 export async function upsertChatIdentity(viewer, payload) {
@@ -2854,7 +2864,20 @@ export async function listChatInbox(viewer) {
     });
   }
 
-  const peerUserIds = normalizeIdList(accessItems.map(({ peerParticipant }) => peerParticipant.userId));
+  const visibleAccessItems = (
+    await Promise.all(
+      accessItems.map(async (access) => {
+        const blocked = await isUserBlocked({
+          tenantId: viewer.tenantId,
+          firstUserId: viewer.userId,
+          secondUserId: access.peerParticipant.userId
+        });
+        return blocked ? null : access;
+      })
+    )
+  ).filter(Boolean);
+
+  const peerUserIds = normalizeIdList(visibleAccessItems.map(({ peerParticipant }) => peerParticipant.userId));
   const [peerProfiles, identityMap, privacyEntries, messageSummaryMap] = await Promise.all([
     listProfilesByUserIds(viewer.tenantId, peerUserIds).catch((error) => {
       console.warn("[chat] inbox_profile_batch_skipped", {
@@ -2874,13 +2897,13 @@ export async function listChatInbox(viewer) {
         })
       ])
     ),
-    buildInboxMessageSummaryMap(accessItems, hiddenMessageIds)
+    buildInboxMessageSummaryMap(visibleAccessItems, hiddenMessageIds)
   ]);
   const profileMap = new Map(peerProfiles.map((profile) => [profile.userId, profile]));
   const privacySettingsMap = new Map(privacyEntries);
 
   const previewResults = await Promise.allSettled(
-    accessItems.map((access) =>
+    visibleAccessItems.map((access) =>
       buildConversationPreview(
         viewer,
         access.conversation,
@@ -2904,7 +2927,7 @@ export async function listChatInbox(viewer) {
     console.warn("[chat] inbox_preview_skipped", {
       tenantId: viewer.tenantId,
       userId: viewer.userId,
-      conversationId: accessItems[index]?.conversation.id ?? null,
+      conversationId: visibleAccessItems[index]?.conversation.id ?? null,
       message: result.reason instanceof Error ? result.reason.message : "Unknown inbox preview failure"
     });
     return [];
@@ -2937,6 +2960,16 @@ export async function createOrGetDirectConversation(viewer, input) {
 
   if (recipientProfile.userId === viewer.userId) {
     throw new ChatSecurityError(400, "SELF_CHAT_NOT_ALLOWED", "You cannot open a direct chat with yourself.");
+  }
+
+  if (
+    await isUserBlocked({
+      tenantId: viewer.tenantId,
+      firstUserId: viewer.userId,
+      secondUserId: recipientProfile.userId
+    })
+  ) {
+    throw new ChatSecurityError(403, "RELATIONSHIP_BLOCKED", "This chat is unavailable.");
   }
 
   const conversationKey = buildConversationKey(viewer.userId, recipientProfile.userId);
@@ -3071,6 +3104,16 @@ export async function getChatConversation(viewer, conversationId) {
     return null;
   }
 
+  if (
+    await isUserBlocked({
+      tenantId: viewer.tenantId,
+      firstUserId: viewer.userId,
+      secondUserId: access.peerParticipant.userId
+    })
+  ) {
+    return null;
+  }
+
   const [viewerIdentity, peerProfile, peerIdentity, rawMessages, rawReactions, hiddenState, peerPrivacySettings] = await Promise.all([
     getChatIdentityByUser({
       tenantId: viewer.tenantId,
@@ -3149,6 +3192,16 @@ export async function sendChatMessage(viewer, conversationId, payload) {
       viewerMembershipId: viewer.membershipId
     });
     throw new Error("We could not find that conversation.");
+  }
+
+  if (
+    await isUserBlocked({
+      tenantId: viewer.tenantId,
+      firstUserId: viewer.userId,
+      secondUserId: access.peerParticipant.userId
+    })
+  ) {
+    throw new ChatSecurityError(403, "RELATIONSHIP_BLOCKED", "This chat is unavailable.");
   }
 
   const viewerIdentity = await getChatIdentityByUser({
