@@ -404,7 +404,7 @@ function getConnectionAuth(auth, clientId) {
   };
 }
 
-function isSystemPublicRoomCode(roomId) {
+function isSystemPublicRoomAlias(roomId) {
   return roomId === SYSTEM_PUBLIC_ROOM_CODE || roomId === "PUBLIC" || roomId === "VYB";
 }
 
@@ -511,10 +511,11 @@ function createRoom(auth, rawSettings) {
   return room;
 }
 
-function createSystemPublicRoom(tenantId) {
+function createSystemPublicRoom(tenantId, publicRoomIndex = 1) {
+  const roomId = publicRoomIndex === 1 ? SYSTEM_PUBLIC_ROOM_CODE : `VYBPUB${publicRoomIndex}`;
   const room = {
-    roomId: SYSTEM_PUBLIC_ROOM_CODE,
-    displayName: SYSTEM_PUBLIC_ROOM_NAME,
+    roomId,
+    displayName: publicRoomIndex === 1 ? SYSTEM_PUBLIC_ROOM_NAME : `${SYSTEM_PUBLIC_ROOM_NAME} ${publicRoomIndex}`,
     tenantId,
     status: "LOBBY",
     settings: {
@@ -526,6 +527,7 @@ function createSystemPublicRoom(tenantId) {
     },
     hostMembershipId: SYSTEM_HOST_MEMBERSHIP_ID,
     systemPublic: true,
+    publicRoomIndex,
     players: new Map(),
     invitedUserIds: new Set(),
     order: [],
@@ -558,7 +560,7 @@ function createSystemPublicRoom(tenantId) {
     kind: "system",
     membershipId: null,
     displayName: "Scribble",
-    body: "vyb-public is open for your college."
+    body: `${room.displayName} is open for your college.`
   });
 
   setRoom(room);
@@ -580,6 +582,24 @@ function ensureSystemPublicRoom(tenantId) {
   }
 
   return createSystemPublicRoom(tenantId);
+}
+
+function getSystemPublicRooms(tenantId) {
+  return [...rooms.values()]
+    .filter((room) => room.tenantId === tenantId && room.systemPublic)
+    .sort((left, right) => (left.publicRoomIndex ?? 1) - (right.publicRoomIndex ?? 1));
+}
+
+function ensureAvailableSystemPublicRoom(tenantId) {
+  ensureSystemPublicRoom(tenantId);
+  const publicRooms = getSystemPublicRooms(tenantId);
+  const openRoom = publicRooms.find((room) => getConnectedMembershipIds(room).length < room.settings.maxPlayers);
+  if (openRoom) {
+    return openRoom;
+  }
+
+  const nextIndex = Math.max(...publicRooms.map((room) => room.publicRoomIndex ?? 1), 0) + 1;
+  return createSystemPublicRoom(tenantId, nextIndex);
 }
 
 function toPlayer(auth, connected = true) {
@@ -1003,7 +1023,7 @@ function buildPublicRoomSummary(room) {
 }
 
 function buildCatalogPayload(tenantId) {
-  ensureSystemPublicRoom(tenantId);
+  ensureAvailableSystemPublicRoom(tenantId);
 
   return {
     rooms: [...rooms.values()]
@@ -1838,7 +1858,9 @@ function handleJoinRoom(ws, auth, roomId) {
     return;
   }
 
-  const room = isSystemPublicRoomCode(normalizedRoomId) ? ensureSystemPublicRoom(auth.tenantId) : getRoom(auth.tenantId, normalizedRoomId);
+  // The public alias always routes to the first room with a free seat. Direct room
+  // codes still join that exact room so invited/private-room behaviour is unchanged.
+  const room = isSystemPublicRoomAlias(normalizedRoomId) ? ensureAvailableSystemPublicRoom(auth.tenantId) : getRoom(auth.tenantId, normalizedRoomId);
   if (!room || room.tenantId !== auth.tenantId) {
     scribbleLog("room.join.rejected", {
       reason: "room-not-found",
@@ -1861,6 +1883,12 @@ function handleJoinRoom(ws, auth, roomId) {
     }, "warn");
     sendError(ws, "ROOM_FULL", "This Scribble room is full.");
     return;
+  }
+
+  // When this was the twelfth player, prepare the next public room before the
+  // catalog update. New joiners never have to wait for a room to be made.
+  if (room.systemPublic) {
+    ensureAvailableSystemPublicRoom(auth.tenantId);
   }
 
   addSocketToRoom(room, ws, auth);

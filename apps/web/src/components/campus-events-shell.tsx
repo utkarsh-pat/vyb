@@ -1025,9 +1025,37 @@ export function CampusEventsShell({
       id: "color-sort",
       title: "Color Sort",
       subtitle: "Relaxing Solo",
-      badge: "Soon",
+      badge: "Play",
       icon: "C",
-      isActive: false
+      isActive: true,
+      href: "/hub/gameshub/color-sort"
+    },
+    {
+      id: "chess",
+      title: "Chess",
+      subtitle: "Classic local board",
+      badge: "Play",
+      icon: "♞",
+      isActive: true,
+      href: "/hub/gameshub/chess"
+    },
+    {
+      id: "ludo",
+      title: "Ludo",
+      subtitle: "2–4 local players",
+      badge: "Play",
+      icon: "L",
+      isActive: true,
+      href: "/hub/gameshub/ludo"
+    },
+    {
+      id: "word-puzzle",
+      title: "Word Puzzle",
+      subtitle: "Daily word challenge",
+      badge: "Play",
+      icon: "W",
+      isActive: true,
+      href: "/hub/gameshub/word-puzzle"
     },
     {
       id: "more",
