@@ -3,7 +3,7 @@
 ## What is deployed
 
 - Google Cloud project: `vybnet`; backend region: `asia-south1`.
-- Cloud Run service: `vyb-backend`, revision `vyb-backend-00018-bvd`, 100% of
+- Cloud Run service: `vyb-backend`, revision `vyb-backend-00019-ksk`, 100% of
   traffic. Minimum instances remain zero, concurrency remains 80, and CPU
   throttling remains enabled to preserve pilot cost efficiency.
 - Firebase Data Connect: Social schema and connector include the M0 measurement
