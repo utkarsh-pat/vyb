@@ -39,14 +39,6 @@ steps:
       - push
       - asia-south1-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_SERVICE}:$COMMIT_SHA
 
-  - name: gcr.io/cloud-builders/docker
-    id: push-build-cache
-    entrypoint: bash
-    args:
-      - -ceu
-      - |
-        docker push "asia-south1-docker.pkg.dev/$PROJECT_ID/${_AR_REPO}/${_SERVICE}:build-cache" || true
-
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
     id: deploy-cloud-run
     entrypoint: gcloud
