@@ -8,7 +8,7 @@ import social.vyb.app.data.network.requireIdToken
 class VybApiRepository {
     private val api: ApiService = VybNetwork.create(readTimeoutSeconds = 15)
 
-    suspend fun loadHomeFeed(): HomeFeedResult {
+    suspend fun loadHomeFeed(cursor: String? = null): HomeFeedResult {
         val user = FirebaseAuth.getInstance().currentUser
             ?: error("Your session expired. Please sign in again.")
         val token = bootstrapBackendSession(user)
@@ -17,7 +17,7 @@ class VybApiRepository {
         check(me.membershipSummary.verificationStatus == "verified") {
             "Your campus membership is not verified yet."
         }
-        val feed = api.feed(bearer, me.membershipSummary.tenantId)
+        val feed = api.feed(bearer, me.membershipSummary.tenantId, cursor = cursor)
         return HomeFeedResult(me, feed)
     }
 

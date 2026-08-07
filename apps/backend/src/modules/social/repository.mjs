@@ -11,18 +11,22 @@ import {
   connectorConfig as socialConnectorConfig,
   createComment as createCommentMutation,
   createFollow as createFollowMutation,
+  createUserBlock as createUserBlockMutation,
   createPostSave as createPostSaveMutation,
   createReaction as createReactionMutation,
   createStory as createStoryMutation,
   createStoryReaction as createStoryReactionMutation,
   getFollowByKey as getFollowByKeyQuery,
+  getRecommendationFeedbackByKey as getRecommendationFeedbackByKeyQuery,
   getReactionByKey as getReactionByKeyQuery,
   getStoryById as getStoryByIdQuery,
   getStoryReactionByKey as getStoryReactionByKeyQuery,
+  getUserBlockByKey as getUserBlockByKeyQuery,
   listCommentsByPost as listCommentsByPostQuery,
   listCommentsByTenant as listCommentsByTenantQuery,
   listFollowersByUser as listFollowersByUserQuery,
   listFollowingByUser as listFollowingByUserQuery,
+  listRecommendationFeedbackByUser as listRecommendationFeedbackByUserQuery,
   listActivePostSavesByPost as listActivePostSavesByPostQuery,
   listActivePostSavesByTenant as listActivePostSavesByTenantQuery,
   listActivePostSavesByUserAndPost as listActivePostSavesByUserAndPostQuery,
@@ -31,11 +35,15 @@ import {
   listStoriesByTenant as listStoriesByTenantQuery,
   listStoryReactionsByStory as listStoryReactionsByStoryQuery,
   listStoryReactionsByTenant as listStoryReactionsByTenantQuery,
+  listUserBlocksByTenant as listUserBlocksByTenantQuery,
+  activateUserBlock as activateUserBlockMutation,
   softDeleteFollow as softDeleteFollowMutation,
+  softDeleteUserBlock as softDeleteUserBlockMutation,
   softDeletePostSave as softDeletePostSaveMutation,
-  softDeletePost as softDeletePostMutation,
+  softDeletePostWithPurge as softDeletePostMutation,
   updateReaction as updateReactionMutation,
-  updateStoryReaction as updateStoryReactionMutation
+  updateStoryReaction as updateStoryReactionMutation,
+  upsertRecommendationFeedback as upsertRecommendationFeedbackMutation
 } from "../../../../../packages/dataconnect/social-admin-sdk/esm/index.esm.js";
 import { listProfilesByUserIds } from "../identity/profile-repository.mjs";
 
@@ -68,7 +76,9 @@ const defaultFallbackStore = {
   reactions: [],
   stories: [],
   follows: [],
-  postSaves: []
+  postSaves: [],
+  userBlocks: [],
+  recommendationFeedback: []
 };
 
 let fallbackStoreCache = null;
@@ -135,6 +145,10 @@ async function ensureFallbackStore() {
   fallbackStoreCache.stories = Array.isArray(fallbackStoreCache.stories) ? fallbackStoreCache.stories : [];
   fallbackStoreCache.follows = Array.isArray(fallbackStoreCache.follows) ? fallbackStoreCache.follows : [];
   fallbackStoreCache.postSaves = Array.isArray(fallbackStoreCache.postSaves) ? fallbackStoreCache.postSaves : [];
+  fallbackStoreCache.userBlocks = Array.isArray(fallbackStoreCache.userBlocks) ? fallbackStoreCache.userBlocks : [];
+  fallbackStoreCache.recommendationFeedback = Array.isArray(fallbackStoreCache.recommendationFeedback)
+    ? fallbackStoreCache.recommendationFeedback
+    : [];
 
   return fallbackStoreCache;
 }
@@ -1261,6 +1275,14 @@ function buildFollowKey(followerUserId, followingUserId) {
   return `${followerUserId}:${followingUserId}`;
 }
 
+function buildUserBlockKey(blockerUserId, blockedUserId) {
+  return `${blockerUserId}:${blockedUserId}`;
+}
+
+function buildRecommendationFeedbackKey(userId, postId) {
+  return `${userId}:${postId}`;
+}
+
 function buildReactionKey(postId, membershipId) {
   return `${postId}:${membershipId}`;
 }
@@ -2168,6 +2190,9 @@ async function filterPostsByVisibility(
   { tenantId, viewerUserId = null, viewerCommunityIds = [] }
 ) {
   const communityIds = new Set(viewerCommunityIds.filter(Boolean));
+  const blockedUserIds = viewerUserId
+    ? await getBlockedUserIds({ tenantId, userId: viewerUserId })
+    : new Set();
   const hasFollowersOnlyPosts = posts.some((item) => item.visibility === "followers");
   let followedUserIds = new Set();
 
@@ -2181,6 +2206,10 @@ async function filterPostsByVisibility(
   }
 
   return posts.filter((item) => {
+    if (blockedUserIds.has(item.authorUserId)) {
+      return false;
+    }
+
     if (viewerUserId && item.authorUserId === viewerUserId) {
       return true;
     }
@@ -2230,8 +2259,13 @@ async function listFallbackPosts({
     viewerUserId: viewerIdentity?.viewerUserId ?? null,
     viewerCommunityIds: communityId ? [...viewerCommunityIds, communityId] : viewerCommunityIds
   });
+  const hiddenPostIds = await getHiddenRecommendationPostIds({
+    tenantId,
+    userId: viewerIdentity?.viewerUserId ?? null
+  });
 
   return visiblePosts
+    .filter((item) => !hiddenPostIds.has(item.id))
     .slice(0, limit)
     .map((item) => ({
       ...item,
@@ -2323,24 +2357,14 @@ export async function listPosts({
       .filter((item) => !isBlockedByAdminControls(item, adminStore, viewerUserId))
       .filter((item) => (includeAnonymous ? true : !item.isAnonymous))
       .filter((item) => isBeforePostCursor(item, parsedCursor));
+    const hiddenPostIds = await getHiddenRecommendationPostIds({ tenantId, userId: viewerUserId });
     const filtered = (await filterPostsByVisibility(candidates, {
       tenantId,
       viewerUserId,
       viewerCommunityIds: communityId ? [...viewerCommunityIds, communityId] : viewerCommunityIds
-    })).slice(0, limit);
+    })).filter((item) => !hiddenPostIds.has(item.id)).slice(0, limit);
 
-    if (filtered.length === 0) {
-      return listFallbackPosts({
-        tenantId,
-        communityId,
-        limit,
-        placement: normalizedPlacement,
-        userId,
-        includeAnonymous,
-        viewerIdentity,
-        viewerCommunityIds
-      });
-    }
+    if (filtered.length === 0) return [];
 
     const profileMap = await buildProfileByUserIdMap(
       tenantId,
@@ -3354,14 +3378,32 @@ export async function deleteComment(commentId, { tenantId = null, postId = null 
   };
 }
 
-export async function deletePost(postId) {
+export async function deletePost(postId, tenantId) {
+  const purgeRequestId = randomUUID();
   await softDeletePostMutation(getSocialDc(), {
-    id: postId
+    id: postId,
+    tenantId,
+    purgeRequestId,
+    purgeKey: postId
   });
 
   return {
     postId,
-    deleted: true
+    deleted: true,
+    purgeRequestId
+  };
+}
+
+function normalizeFallbackUserBlockRecord(item) {
+  return {
+    id: item.id,
+    blockKey: item.blockKey ?? `${item.blockerUserId}:${item.blockedUserId}`,
+    tenantId: item.tenantId ?? "tenant-demo",
+    blockerUserId: item.blockerUserId,
+    blockedUserId: item.blockedUserId,
+    createdAt: item.createdAt ?? new Date().toISOString(),
+    updatedAt: item.updatedAt ?? item.createdAt ?? new Date().toISOString(),
+    deletedAt: item.deletedAt ?? null
   };
 }
 
@@ -3724,8 +3766,188 @@ export async function markStorySeen({ storyId, membershipId }) {
   };
 }
 
+async function listActiveUserBlocksByTenant(tenantId) {
+  try {
+    const response = await listUserBlocksByTenantQuery(getSocialDc(), {
+      tenantId,
+      limit: TENANT_SCAN_LIMIT
+    });
+    return Array.isArray(response.data.userBlocks) ? response.data.userBlocks : [];
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) {
+      throw error;
+    }
+    const store = await ensureFallbackStore();
+    return store.userBlocks
+      .map(normalizeFallbackUserBlockRecord)
+      .filter((item) => item.tenantId === tenantId && !item.deletedAt);
+  }
+}
+
+export async function getBlockedUserIds({ tenantId, userId }) {
+  if (!tenantId || !userId) {
+    return new Set();
+  }
+  const rows = await listActiveUserBlocksByTenant(tenantId);
+  const blocked = new Set();
+  for (const row of rows) {
+    if (row.blockerUserId === userId) blocked.add(row.blockedUserId);
+    if (row.blockedUserId === userId) blocked.add(row.blockerUserId);
+  }
+  return blocked;
+}
+
+export async function isUserBlocked({ tenantId, firstUserId, secondUserId }) {
+  if (!firstUserId || !secondUserId || firstUserId === secondUserId) {
+    return false;
+  }
+  const blocked = await getBlockedUserIds({ tenantId, userId: firstUserId });
+  return blocked.has(secondUserId);
+}
+
+export async function blockUser({ tenantId, blockerUserId, blockedUserId }) {
+  if (!tenantId || !blockerUserId || !blockedUserId || blockerUserId === blockedUserId) {
+    return false;
+  }
+
+  const blockKey = buildUserBlockKey(blockerUserId, blockedUserId);
+  try {
+    const existing = await getUserBlockByKeyQuery(getSocialDc(), { blockKey });
+    const current = existing.data.userBlocks[0] ?? null;
+    if (!current) {
+      await createUserBlockMutation(getSocialDc(), {
+        id: randomUUID(),
+        blockKey,
+        tenantId,
+        blockerUserId,
+        blockedUserId
+      });
+    } else if (current.deletedAt) {
+      await activateUserBlockMutation(getSocialDc(), { id: current.id });
+    }
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) {
+      throw error;
+    }
+    const store = await ensureFallbackStore();
+    const now = new Date().toISOString();
+    const existing = store.userBlocks
+      .map(normalizeFallbackUserBlockRecord)
+      .find((item) => item.blockKey === blockKey);
+    if (existing) {
+      const target = store.userBlocks.find((item) => item.id === existing.id);
+      if (target) {
+        target.deletedAt = null;
+        target.updatedAt = now;
+      }
+    } else {
+      store.userBlocks.push({
+        id: randomUUID(), blockKey, tenantId, blockerUserId, blockedUserId,
+        createdAt: now, updatedAt: now, deletedAt: null
+      });
+    }
+    await persistFallbackStore();
+  }
+
+  // Follow edges are removed in both directions. Even if one delete races or
+  // temporarily fails, every read path still enforces the active block first.
+  await Promise.allSettled([
+    unfollowUser({ tenantId, followerUserId: blockerUserId, followingUserId: blockedUserId }),
+    unfollowUser({ tenantId, followerUserId: blockedUserId, followingUserId: blockerUserId })
+  ]);
+  return true;
+}
+
+export async function unblockUser({ tenantId, blockerUserId, blockedUserId }) {
+  const blockKey = buildUserBlockKey(blockerUserId, blockedUserId);
+  try {
+    const existing = await getUserBlockByKeyQuery(getSocialDc(), { blockKey });
+    const current = existing.data.userBlocks[0] ?? null;
+    if (!current || current.deletedAt) return false;
+    await softDeleteUserBlockMutation(getSocialDc(), { id: current.id });
+    return true;
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) throw error;
+    const store = await ensureFallbackStore();
+    const current = store.userBlocks
+      .map(normalizeFallbackUserBlockRecord)
+      .find((item) => item.blockKey === blockKey && !item.deletedAt);
+    if (!current) return false;
+    const target = store.userBlocks.find((item) => item.id === current.id);
+    if (target) {
+      target.deletedAt = new Date().toISOString();
+      target.updatedAt = target.deletedAt;
+      await persistFallbackStore();
+    }
+    return true;
+  }
+}
+
+export async function listBlockedProfiles({ tenantId, blockerUserId, limit = 50 }) {
+  const rows = (await listActiveUserBlocksByTenant(tenantId))
+    .filter((item) => item.blockerUserId === blockerUserId)
+    .slice(0, Math.max(1, Math.min(Number(limit) || 50, 50)));
+  const profiles = await buildProfileByUserIdMap(tenantId, rows.map((item) => item.blockedUserId));
+  return rows.map((item) => profiles.get(item.blockedUserId)).filter(Boolean).map((profile) => ({
+    userId: profile.userId,
+    username: profile.username,
+    displayName: profile.fullName,
+    avatarUrl: profile.avatarUrl ?? null
+  }));
+}
+
+export async function setRecommendationFeedback({ tenantId, userId, postId, action }) {
+  const feedbackKey = buildRecommendationFeedbackKey(userId, postId);
+  let id = randomUUID();
+  try {
+    const existing = await getRecommendationFeedbackByKeyQuery(getSocialDc(), { feedbackKey });
+    id = existing.data.recommendationFeedbackRecords[0]?.id ?? id;
+    await upsertRecommendationFeedbackMutation(getSocialDc(), {
+      id, feedbackKey, tenantId, postId, userId, action
+    });
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) throw error;
+    const store = await ensureFallbackStore();
+    const now = new Date().toISOString();
+    const current = store.recommendationFeedback.find((item) => item.feedbackKey === feedbackKey);
+    if (current) {
+      current.action = action;
+      current.deletedAt = null;
+      current.updatedAt = now;
+    } else {
+      store.recommendationFeedback.push({ id, feedbackKey, tenantId, postId, userId, action, createdAt: now, updatedAt: now });
+    }
+    await persistFallbackStore();
+  }
+  return { postId, action };
+}
+
+export async function getHiddenRecommendationPostIds({ tenantId, userId }) {
+  if (!userId) return new Set();
+  try {
+    const response = await listRecommendationFeedbackByUserQuery(getSocialDc(), {
+      tenantId, userId, limit: TENANT_SCAN_LIMIT
+    });
+    return new Set(
+      response.data.recommendationFeedbackRecords
+        .filter((item) => item.action === "not_interested")
+        .map((item) => item.postId)
+    );
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) throw error;
+    const store = await ensureFallbackStore();
+    return new Set(store.recommendationFeedback
+      .filter((item) => item.tenantId === tenantId && item.userId === userId && !item.deletedAt && item.action === "not_interested")
+      .map((item) => item.postId));
+  }
+}
+
 export async function followUser({ tenantId, followerUserId, followingUserId }) {
   if (followerUserId === followingUserId) {
+    return false;
+  }
+
+  if (await isUserBlocked({ tenantId, firstUserId: followerUserId, secondUserId: followingUserId })) {
     return false;
   }
 
@@ -3822,6 +4044,9 @@ export async function unfollowUser({ tenantId, followerUserId, followingUserId }
 }
 
 export async function isFollowing({ tenantId, followerUserId, followingUserId }) {
+  if (await isUserBlocked({ tenantId, firstUserId: followerUserId, secondUserId: followingUserId })) {
+    return false;
+  }
   const followKey = buildFollowKey(followerUserId, followingUserId);
   try {
     const existing = await getFollowByKeyQuery(getSocialDc(), { followKey });
@@ -3877,7 +4102,10 @@ export async function listProfileConnections({ tenantId, profileUserId, viewerUs
       .slice(0, normalizedLimit);
   }
 
-  const connectedUserIds = follows.map((item) => (scope === "followers" ? item.followerUserId : item.followingUserId));
+  const blockedUserIds = await getBlockedUserIds({ tenantId, userId: viewerUserId });
+  const connectedUserIds = follows
+    .map((item) => (scope === "followers" ? item.followerUserId : item.followingUserId))
+    .filter((userId) => !blockedUserIds.has(userId));
   if (connectedUserIds.length === 0) {
     return [];
   }
@@ -3909,6 +4137,34 @@ export async function listProfileConnections({ tenantId, profileUserId, viewerUs
               })
       }))
   );
+}
+
+export async function listMutualConnections({ tenantId, profileUserId, viewerUserId, limit = 50 }) {
+  if (!viewerUserId || viewerUserId === profileUserId) return [];
+  const normalizedLimit = Math.max(1, Math.min(Number(limit) || 50, 50));
+  const follows = await listFollowsByTenantForStats(tenantId);
+  const viewerFollowing = new Set(
+    follows.filter((item) => item.followerUserId === viewerUserId).map((item) => item.followingUserId)
+  );
+  const profileFollowers = new Set(
+    follows.filter((item) => item.followingUserId === profileUserId).map((item) => item.followerUserId)
+  );
+  const blockedUserIds = await getBlockedUserIds({ tenantId, userId: viewerUserId });
+  const mutualIds = [...viewerFollowing]
+    .filter((userId) => profileFollowers.has(userId) && !blockedUserIds.has(userId))
+    .slice(0, normalizedLimit);
+  const profileMap = await buildProfileByUserIdMap(tenantId, mutualIds);
+  return mutualIds.map((userId) => profileMap.get(userId)).filter(Boolean).map((profile) => ({
+    userId: profile.userId,
+    username: profile.username,
+    displayName: profile.fullName,
+    avatarUrl: profile.avatarUrl ?? null,
+    collegeName: profile.collegeName,
+    course: profile.course,
+    stream: profile.stream,
+    isViewer: false,
+    isFollowing: true
+  }));
 }
 
 export async function getFollowStats({ tenantId, userId }) {

@@ -192,6 +192,7 @@ interface ApiService {
     suspend fun feed(
         @Header("Authorization") bearerToken: String,
         @Query("tenantId") tenantId: String,
-        @Query("limit") limit: Int = 24
+        @Query("limit") limit: Int = 24,
+        @Query("cursor") cursor: String? = null
     ): FeedEnvelope
 }

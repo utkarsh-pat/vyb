@@ -301,3 +301,318 @@ function softDeletePost(dcOrVarsOrOptions, varsOrOptions, options) {
 }
 exports.softDeletePost = softDeletePost;
 
+function listUserBlocksByTenant(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('ListUserBlocksByTenant', inputVars, inputOpts);
+}
+exports.listUserBlocksByTenant = listUserBlocksByTenant;
+
+function getUserBlockByKey(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('GetUserBlockByKey', inputVars, inputOpts);
+}
+exports.getUserBlockByKey = getUserBlockByKey;
+
+function createUserBlock(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('CreateUserBlock', inputVars, inputOpts);
+}
+exports.createUserBlock = createUserBlock;
+
+function activateUserBlock(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('ActivateUserBlock', inputVars, inputOpts);
+}
+exports.activateUserBlock = activateUserBlock;
+
+function softDeleteUserBlock(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('SoftDeleteUserBlock', inputVars, inputOpts);
+}
+exports.softDeleteUserBlock = softDeleteUserBlock;
+
+function getContentMeasurementPreference(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('GetContentMeasurementPreference', inputVars, inputOpts);
+}
+exports.getContentMeasurementPreference = getContentMeasurementPreference;
+
+function upsertContentMeasurementPreference(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('UpsertContentMeasurementPreference', inputVars, inputOpts);
+}
+exports.upsertContentMeasurementPreference = upsertContentMeasurementPreference;
+
+function listRecommendationFeedbackByUser(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('ListRecommendationFeedbackByUser', inputVars, inputOpts);
+}
+exports.listRecommendationFeedbackByUser = listRecommendationFeedbackByUser;
+
+function getRecommendationFeedbackByKey(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('GetRecommendationFeedbackByKey', inputVars, inputOpts);
+}
+exports.getRecommendationFeedbackByKey = getRecommendationFeedbackByKey;
+
+function upsertRecommendationFeedback(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('UpsertRecommendationFeedback', inputVars, inputOpts);
+}
+exports.upsertRecommendationFeedback = upsertRecommendationFeedback;
+
+function softDeletePostWithPurge(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('SoftDeletePostWithPurge', inputVars, inputOpts);
+}
+exports.softDeletePostWithPurge = softDeletePostWithPurge;
+
+function getContentEventByKey(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('GetContentEventByKey', inputVars, inputOpts);
+}
+exports.getContentEventByKey = getContentEventByKey;
+
+function listRecentContentEventsForViewer(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('ListRecentContentEventsForViewer', inputVars, inputOpts);
+}
+exports.listRecentContentEventsForViewer = listRecentContentEventsForViewer;
+
+function createContentEvent(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('CreateContentEvent', inputVars, inputOpts);
+}
+exports.createContentEvent = createContentEvent;
+
+function listUnrolledContentEvents(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('ListUnrolledContentEvents', inputVars, inputOpts);
+}
+exports.listUnrolledContentEvents = listUnrolledContentEvents;
+
+function listContentEventsByPostWindow(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('ListContentEventsByPostWindow', inputVars, inputOpts);
+}
+exports.listContentEventsByPostWindow = listContentEventsByPostWindow;
+
+function markContentEventRolledUp(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('MarkContentEventRolledUp', inputVars, inputOpts);
+}
+exports.markContentEventRolledUp = markContentEventRolledUp;
+
+function getContentDailyInsightByKey(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('GetContentDailyInsightByKey', inputVars, inputOpts);
+}
+exports.getContentDailyInsightByKey = getContentDailyInsightByKey;
+
+function createContentDailyInsight(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('CreateContentDailyInsight', inputVars, inputOpts);
+}
+exports.createContentDailyInsight = createContentDailyInsight;
+
+function updateContentDailyInsight(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('UpdateContentDailyInsight', inputVars, inputOpts);
+}
+exports.updateContentDailyInsight = updateContentDailyInsight;
+
+function getContentUniqueViewerDayByKey(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('GetContentUniqueViewerDayByKey', inputVars, inputOpts);
+}
+exports.getContentUniqueViewerDayByKey = getContentUniqueViewerDayByKey;
+
+function createContentUniqueViewerDay(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('CreateContentUniqueViewerDay', inputVars, inputOpts);
+}
+exports.createContentUniqueViewerDay = createContentUniqueViewerDay;
+
+function updateContentUniqueViewerDay(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('UpdateContentUniqueViewerDay', inputVars, inputOpts);
+}
+exports.updateContentUniqueViewerDay = updateContentUniqueViewerDay;
+
+function getContentUniqueViewerByKey(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('GetContentUniqueViewerByKey', inputVars, inputOpts);
+}
+exports.getContentUniqueViewerByKey = getContentUniqueViewerByKey;
+
+function createContentUniqueViewer(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('CreateContentUniqueViewer', inputVars, inputOpts);
+}
+exports.createContentUniqueViewer = createContentUniqueViewer;
+
+function updateContentUniqueViewer(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('UpdateContentUniqueViewer', inputVars, inputOpts);
+}
+exports.updateContentUniqueViewer = updateContentUniqueViewer;
+
+function listContentDailyInsightsByPost(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('ListContentDailyInsightsByPost', inputVars, inputOpts);
+}
+exports.listContentDailyInsightsByPost = listContentDailyInsightsByPost;
+
+function listContentUniqueViewerDaysByPost(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('ListContentUniqueViewerDaysByPost', inputVars, inputOpts);
+}
+exports.listContentUniqueViewerDaysByPost = listContentUniqueViewerDaysByPost;
+
+function listContentUniqueViewersByPost(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('ListContentUniqueViewersByPost', inputVars, inputOpts);
+}
+exports.listContentUniqueViewersByPost = listContentUniqueViewersByPost;
+
+function listContentUniqueViewersByPostSince(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('ListContentUniqueViewersByPostSince', inputVars, inputOpts);
+}
+exports.listContentUniqueViewersByPostSince = listContentUniqueViewersByPostSince;
+
+function listExpiredContentEvents(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('ListExpiredContentEvents', inputVars, inputOpts);
+}
+exports.listExpiredContentEvents = listExpiredContentEvents;
+
+function deleteContentEvent(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('DeleteContentEvent', inputVars, inputOpts);
+}
+exports.deleteContentEvent = deleteContentEvent;
+
+function listExpiredContentUniqueViewerDays(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('ListExpiredContentUniqueViewerDays', inputVars, inputOpts);
+}
+exports.listExpiredContentUniqueViewerDays = listExpiredContentUniqueViewerDays;
+
+function deleteContentUniqueViewerDay(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('DeleteContentUniqueViewerDay', inputVars, inputOpts);
+}
+exports.deleteContentUniqueViewerDay = deleteContentUniqueViewerDay;
+
+function listContentEventIdsByPost(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('ListContentEventIdsByPost', inputVars, inputOpts);
+}
+exports.listContentEventIdsByPost = listContentEventIdsByPost;
+
+function listContentEventIdsByViewerKey(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('ListContentEventIdsByViewerKey', inputVars, inputOpts);
+}
+exports.listContentEventIdsByViewerKey = listContentEventIdsByViewerKey;
+
+function listContentUniqueViewerDayIdsByViewerKey(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('ListContentUniqueViewerDayIdsByViewerKey', inputVars, inputOpts);
+}
+exports.listContentUniqueViewerDayIdsByViewerKey = listContentUniqueViewerDayIdsByViewerKey;
+
+function listContentUniqueViewerIdsByViewerKey(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('ListContentUniqueViewerIdsByViewerKey', inputVars, inputOpts);
+}
+exports.listContentUniqueViewerIdsByViewerKey = listContentUniqueViewerIdsByViewerKey;
+
+function listContentUniqueViewerDayIdsByPost(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('ListContentUniqueViewerDayIdsByPost', inputVars, inputOpts);
+}
+exports.listContentUniqueViewerDayIdsByPost = listContentUniqueViewerDayIdsByPost;
+
+function listContentUniqueViewerIdsByPost(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('ListContentUniqueViewerIdsByPost', inputVars, inputOpts);
+}
+exports.listContentUniqueViewerIdsByPost = listContentUniqueViewerIdsByPost;
+
+function listContentDailyInsightIdsByPost(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('ListContentDailyInsightIdsByPost', inputVars, inputOpts);
+}
+exports.listContentDailyInsightIdsByPost = listContentDailyInsightIdsByPost;
+
+function deleteContentUniqueViewer(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('DeleteContentUniqueViewer', inputVars, inputOpts);
+}
+exports.deleteContentUniqueViewer = deleteContentUniqueViewer;
+
+function deleteContentDailyInsight(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('DeleteContentDailyInsight', inputVars, inputOpts);
+}
+exports.deleteContentDailyInsight = deleteContentDailyInsight;
+
+function listReadyContentPurgeRequests(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeQuery('ListReadyContentPurgeRequests', inputVars, inputOpts);
+}
+exports.listReadyContentPurgeRequests = listReadyContentPurgeRequests;
+
+function deleteContentPurgeRequest(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('DeleteContentPurgeRequest', inputVars, inputOpts);
+}
+exports.deleteContentPurgeRequest = deleteContentPurgeRequest;
+

@@ -38,3 +38,20 @@ test("partial R2 credentials never report media ready", () => {
   assert.equal(result.checks.r2Media, false);
   assert.deepEqual(result.degradedFeatures, ["r2-media", "signed-games"]);
 });
+
+test("production fails closed without analytics and internal-job secrets", () => {
+  const result = evaluateRuntimeReadiness({ NODE_ENV: "production", FIREBASE_PROJECT_ID: "vybnet" });
+  assert.equal(result.ready, false);
+  assert.deepEqual(result.missingRequired, ["analytics-viewer-key", "internal-jobs-key"]);
+});
+
+test("production rejects short internal-job secrets", () => {
+  const result = evaluateRuntimeReadiness({
+    NODE_ENV: "production",
+    FIREBASE_PROJECT_ID: "vybnet",
+    VYB_ANALYTICS_VIEWER_KEY_SECRET: "analytics-key-longer-than-24-characters",
+    VYB_INTERNAL_API_KEY: "too-short"
+  });
+  assert.equal(result.ready, false);
+  assert.deepEqual(result.missingRequired, ["internal-jobs-key"]);
+});

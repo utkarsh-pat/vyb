@@ -814,3 +814,602 @@ mutation SoftDeletePost($id: UUID!) @auth(level: NO_ACCESS) @transaction {
     }
   )
 }
+
+query ListUserBlocksByTenant($tenantId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  userBlocks(
+    where: { tenantId: { eq: $tenantId }, deletedAt: { isNull: true } }
+    orderBy: [{ createdAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    blockKey
+    tenantId
+    blockerUserId
+    blockedUserId
+    createdAt
+    updatedAt
+  }
+}
+
+query GetUserBlockByKey($blockKey: String!) @auth(level: NO_ACCESS) {
+  userBlocks(where: { blockKey: { eq: $blockKey } }, limit: 1) {
+    id
+    blockKey
+    tenantId
+    blockerUserId
+    blockedUserId
+    createdAt
+    updatedAt
+    deletedAt
+  }
+}
+
+mutation CreateUserBlock(
+  $id: UUID!
+  $blockKey: String!
+  $tenantId: UUID!
+  $blockerUserId: UUID!
+  $blockedUserId: UUID!
+) @auth(level: NO_ACCESS) @transaction {
+  userBlock_insert(
+    data: {
+      id: $id
+      blockKey: $blockKey
+      tenantId: $tenantId
+      blockerUserId: $blockerUserId
+      blockedUserId: $blockedUserId
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation ActivateUserBlock($id: UUID!) @auth(level: NO_ACCESS) @transaction {
+  userBlock_update(
+    key: { id: $id }
+    data: { deletedAt: null, updatedAt_expr: "request.time" }
+  )
+}
+
+mutation SoftDeleteUserBlock($id: UUID!) @auth(level: NO_ACCESS) @transaction {
+  userBlock_update(
+    key: { id: $id }
+    data: { deletedAt_expr: "request.time", updatedAt_expr: "request.time" }
+  )
+}
+
+query GetContentMeasurementPreference($preferenceKey: String!) @auth(level: NO_ACCESS) {
+  contentMeasurementPreferences(where: { preferenceKey: { eq: $preferenceKey } }, limit: 1) {
+    id
+    preferenceKey
+    tenantId
+    userId
+    measurementEnabled
+  }
+}
+
+mutation UpsertContentMeasurementPreference(
+  $id: UUID!
+  $preferenceKey: String!
+  $tenantId: UUID!
+  $userId: UUID!
+  $measurementEnabled: Boolean!
+) @auth(level: NO_ACCESS) @transaction {
+  contentMeasurementPreference_upsert(
+    data: {
+      id: $id
+      preferenceKey: $preferenceKey
+      tenantId: $tenantId
+      userId: $userId
+      measurementEnabled: $measurementEnabled
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+query ListRecommendationFeedbackByUser($tenantId: UUID!, $userId: UUID!, $limit: Int!)
+  @auth(level: NO_ACCESS) {
+  recommendationFeedbackRecords(
+    where: {
+      tenantId: { eq: $tenantId }
+      userId: { eq: $userId }
+      deletedAt: { isNull: true }
+    }
+    orderBy: [{ updatedAt: DESC }]
+    limit: $limit
+  ) {
+    id
+    feedbackKey
+    postId
+    action
+    updatedAt
+  }
+}
+
+query GetRecommendationFeedbackByKey($feedbackKey: String!) @auth(level: NO_ACCESS) {
+  recommendationFeedbackRecords(where: { feedbackKey: { eq: $feedbackKey } }, limit: 1) {
+    id
+    feedbackKey
+    tenantId
+    postId
+    userId
+    action
+    deletedAt
+  }
+}
+
+mutation UpsertRecommendationFeedback(
+  $id: UUID!
+  $feedbackKey: String!
+  $tenantId: UUID!
+  $postId: UUID!
+  $userId: UUID!
+  $action: String!
+) @auth(level: NO_ACCESS) @transaction {
+  recommendationFeedback_upsert(
+    data: {
+      id: $id
+      feedbackKey: $feedbackKey
+      tenantId: $tenantId
+      postId: $postId
+      userId: $userId
+      action: $action
+      deletedAt: null
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation SoftDeletePostWithPurge(
+  $id: UUID!
+  $tenantId: UUID!
+  $purgeRequestId: UUID!
+  $purgeKey: String!
+) @auth(level: NO_ACCESS) @transaction {
+  post_update(
+    key: { id: $id }
+    data: {
+      status: "removed"
+      deletedAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+  contentPurgeRequest_insert(
+    data: {
+      id: $purgeRequestId
+      purgeKey: $purgeKey
+      tenantId: $tenantId
+      postId: $id
+      requestedAt_expr: "request.time"
+    }
+  )
+}
+
+# Content measurement operations are backend-admin only. Clients never receive a
+# Data Connect token for these NO_ACCESS operations.
+query GetContentEventByKey($eventKey: String!) @auth(level: NO_ACCESS) {
+  contentEvents(where: { eventKey: { eq: $eventKey } }, limit: 1) {
+    id
+    eventKey
+  }
+}
+
+query ListRecentContentEventsForViewer(
+  $postId: UUID!
+  $viewerKey: String!
+  $eventType: String!
+  $from: Timestamp!
+  $limit: Int!
+) @auth(level: NO_ACCESS) {
+  contentEvents(
+    where: {
+      postId: { eq: $postId }
+      viewerKey: { eq: $viewerKey }
+      eventType: { eq: $eventType }
+      occurredAt: { ge: $from }
+    }
+    orderBy: [{ occurredAt: DESC }]
+    limit: $limit
+  ) {
+    id
+  }
+}
+
+mutation CreateContentEvent(
+  $id: UUID!
+  $eventKey: String!
+  $tenantId: UUID!
+  $postId: UUID!
+  $viewerKey: String!
+  $sessionKey: String!
+  $eventType: String!
+  $source: String!
+  $visibleMs: Int!
+  $watchMs: Int!
+  $progressBasisPoints: Int!
+  $occurredAt: Timestamp!
+  $expiresAt: Timestamp!
+) @auth(level: NO_ACCESS) @transaction {
+  contentEvent_insert(
+    data: {
+      id: $id
+      eventKey: $eventKey
+      tenantId: $tenantId
+      postId: $postId
+      viewerKey: $viewerKey
+      sessionKey: $sessionKey
+      eventType: $eventType
+      source: $source
+      visibleMs: $visibleMs
+      watchMs: $watchMs
+      progressBasisPoints: $progressBasisPoints
+      occurredAt: $occurredAt
+      expiresAt: $expiresAt
+      receivedAt_expr: "request.time"
+    }
+  )
+}
+
+query ListUnrolledContentEvents($limit: Int!) @auth(level: NO_ACCESS) {
+  contentEvents(
+    where: { rolledUpAt: { isNull: true } }
+    orderBy: [{ receivedAt: ASC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    postId
+    viewerKey
+    eventType
+    visibleMs
+    watchMs
+    progressBasisPoints
+    occurredAt
+  }
+}
+
+query ListContentEventsByPostWindow(
+  $postId: UUID!
+  $from: Timestamp!
+  $until: Timestamp!
+  $limit: Int!
+) @auth(level: NO_ACCESS) {
+  contentEvents(
+    where: {
+      postId: { eq: $postId }
+      occurredAt: { ge: $from, lt: $until }
+    }
+    orderBy: [{ occurredAt: ASC }]
+    limit: $limit
+  ) {
+    id
+    tenantId
+    postId
+    viewerKey
+    eventType
+    visibleMs
+    watchMs
+    progressBasisPoints
+    occurredAt
+  }
+}
+
+mutation MarkContentEventRolledUp($id: UUID!) @auth(level: NO_ACCESS) @transaction {
+  contentEvent_update(key: { id: $id }, data: { rolledUpAt_expr: "request.time" })
+}
+
+query GetContentDailyInsightByKey($insightKey: String!) @auth(level: NO_ACCESS) {
+  contentDailyInsights(where: { insightKey: { eq: $insightKey } }, limit: 1) {
+    id
+    insightKey
+    tenantId
+    postId
+    insightDate
+    impressionCount
+    qualifiedViewCount
+    uniqueReachCount
+    videoPlayCount
+    videoViewCount
+    replayCount
+    watchMsTotal
+    completionCount
+    carouselSlideCount
+  }
+}
+
+mutation CreateContentDailyInsight(
+  $id: UUID!
+  $insightKey: String!
+  $tenantId: UUID!
+  $postId: UUID!
+  $insightDate: Date!
+  $impressionCount: Int!
+  $qualifiedViewCount: Int!
+  $uniqueReachCount: Int!
+  $videoPlayCount: Int!
+  $videoViewCount: Int!
+  $replayCount: Int!
+  $watchMsTotal: Int64!
+  $completionCount: Int!
+  $carouselSlideCount: Int!
+) @auth(level: NO_ACCESS) @transaction {
+  contentDailyInsight_insert(
+    data: {
+      id: $id
+      insightKey: $insightKey
+      tenantId: $tenantId
+      postId: $postId
+      insightDate: $insightDate
+      impressionCount: $impressionCount
+      qualifiedViewCount: $qualifiedViewCount
+      uniqueReachCount: $uniqueReachCount
+      videoPlayCount: $videoPlayCount
+      videoViewCount: $videoViewCount
+      replayCount: $replayCount
+      watchMsTotal: $watchMsTotal
+      completionCount: $completionCount
+      carouselSlideCount: $carouselSlideCount
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation UpdateContentDailyInsight(
+  $id: UUID!
+  $impressionCount: Int!
+  $qualifiedViewCount: Int!
+  $uniqueReachCount: Int!
+  $videoPlayCount: Int!
+  $videoViewCount: Int!
+  $replayCount: Int!
+  $watchMsTotal: Int64!
+  $completionCount: Int!
+  $carouselSlideCount: Int!
+) @auth(level: NO_ACCESS) @transaction {
+  contentDailyInsight_update(
+    key: { id: $id }
+    data: {
+      impressionCount: $impressionCount
+      qualifiedViewCount: $qualifiedViewCount
+      uniqueReachCount: $uniqueReachCount
+      videoPlayCount: $videoPlayCount
+      videoViewCount: $videoViewCount
+      replayCount: $replayCount
+      watchMsTotal: $watchMsTotal
+      completionCount: $completionCount
+      carouselSlideCount: $carouselSlideCount
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+query GetContentUniqueViewerDayByKey($uniqueKey: String!) @auth(level: NO_ACCESS) {
+  contentUniqueViewerDays(where: { uniqueKey: { eq: $uniqueKey } }, limit: 1) {
+    id
+    qualifiedViewCount
+  }
+}
+
+mutation CreateContentUniqueViewerDay(
+  $id: UUID!
+  $uniqueKey: String!
+  $tenantId: UUID!
+  $postId: UUID!
+  $viewerKey: String!
+  $viewDate: Date!
+  $viewedAt: Timestamp!
+  $expiresAt: Timestamp!
+) @auth(level: NO_ACCESS) @transaction {
+  contentUniqueViewerDay_insert(
+    data: {
+      id: $id
+      uniqueKey: $uniqueKey
+      tenantId: $tenantId
+      postId: $postId
+      viewerKey: $viewerKey
+      viewDate: $viewDate
+      firstViewedAt: $viewedAt
+      lastViewedAt: $viewedAt
+      qualifiedViewCount: 1
+      expiresAt: $expiresAt
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation UpdateContentUniqueViewerDay($id: UUID!, $qualifiedViewCount: Int!, $viewedAt: Timestamp!)
+  @auth(level: NO_ACCESS) @transaction {
+  contentUniqueViewerDay_update(
+    key: { id: $id }
+    data: {
+      qualifiedViewCount: $qualifiedViewCount
+      lastViewedAt: $viewedAt
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+query GetContentUniqueViewerByKey($uniqueKey: String!) @auth(level: NO_ACCESS) {
+  contentUniqueViewers(where: { uniqueKey: { eq: $uniqueKey } }, limit: 1) {
+    id
+    qualifiedViewCount
+    lastViewedAt
+  }
+}
+
+mutation CreateContentUniqueViewer(
+  $id: UUID!
+  $uniqueKey: String!
+  $tenantId: UUID!
+  $postId: UUID!
+  $viewerKey: String!
+  $viewedAt: Timestamp!
+) @auth(level: NO_ACCESS) @transaction {
+  contentUniqueViewer_insert(
+    data: {
+      id: $id
+      uniqueKey: $uniqueKey
+      tenantId: $tenantId
+      postId: $postId
+      viewerKey: $viewerKey
+      firstViewedAt: $viewedAt
+      lastViewedAt: $viewedAt
+      qualifiedViewCount: 1
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation UpdateContentUniqueViewer($id: UUID!, $qualifiedViewCount: Int!, $viewedAt: Timestamp!)
+  @auth(level: NO_ACCESS) @transaction {
+  contentUniqueViewer_update(
+    key: { id: $id }
+    data: {
+      qualifiedViewCount: $qualifiedViewCount
+      lastViewedAt: $viewedAt
+      updatedAt_expr: "request.time"
+    }
+  )
+}
+
+query ListContentDailyInsightsByPost($postId: UUID!, $since: Date!, $limit: Int!)
+  @auth(level: NO_ACCESS) {
+  contentDailyInsights(
+    where: { postId: { eq: $postId }, insightDate: { ge: $since } }
+    orderBy: [{ insightDate: ASC }]
+    limit: $limit
+  ) {
+    insightDate
+    impressionCount
+    qualifiedViewCount
+    uniqueReachCount
+    videoPlayCount
+    videoViewCount
+    replayCount
+    watchMsTotal
+    completionCount
+    carouselSlideCount
+  }
+}
+
+query ListContentUniqueViewerDaysByPost($postId: UUID!, $since: Date!, $limit: Int!)
+  @auth(level: NO_ACCESS) {
+  contentUniqueViewerDays(
+    where: { postId: { eq: $postId }, viewDate: { ge: $since } }
+    limit: $limit
+  ) {
+    viewerKey
+  }
+}
+
+query ListContentUniqueViewersByPost($postId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  contentUniqueViewers(where: { postId: { eq: $postId } }, limit: $limit) {
+    viewerKey
+  }
+}
+
+query ListContentUniqueViewersByPostSince($postId: UUID!, $since: Timestamp!, $limit: Int!)
+  @auth(level: NO_ACCESS) {
+  contentUniqueViewers(
+    where: { postId: { eq: $postId }, lastViewedAt: { ge: $since } }
+    limit: $limit
+  ) {
+    viewerKey
+  }
+}
+
+query ListExpiredContentEvents($before: Timestamp!, $limit: Int!) @auth(level: NO_ACCESS) {
+  contentEvents(
+    where: { expiresAt: { le: $before }, rolledUpAt: { isNull: false } }
+    orderBy: [{ expiresAt: ASC }]
+    limit: $limit
+  ) {
+    id
+  }
+}
+
+mutation DeleteContentEvent($id: UUID!) @auth(level: NO_ACCESS) @transaction {
+  contentEvent_delete(key: { id: $id })
+}
+
+query ListExpiredContentUniqueViewerDays($before: Timestamp!, $limit: Int!) @auth(level: NO_ACCESS) {
+  contentUniqueViewerDays(
+    where: { expiresAt: { le: $before } }
+    orderBy: [{ expiresAt: ASC }]
+    limit: $limit
+  ) {
+    id
+  }
+}
+
+mutation DeleteContentUniqueViewerDay($id: UUID!) @auth(level: NO_ACCESS) @transaction {
+  contentUniqueViewerDay_delete(key: { id: $id })
+}
+
+query ListContentEventIdsByPost($postId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  contentEvents(where: { postId: { eq: $postId } }, limit: $limit) {
+    id
+  }
+}
+
+query ListContentEventIdsByViewerKey($viewerKey: String!, $limit: Int!) @auth(level: NO_ACCESS) {
+  contentEvents(where: { viewerKey: { eq: $viewerKey } }, limit: $limit) {
+    id
+  }
+}
+
+query ListContentUniqueViewerDayIdsByViewerKey($viewerKey: String!, $limit: Int!) @auth(level: NO_ACCESS) {
+  contentUniqueViewerDays(where: { viewerKey: { eq: $viewerKey } }, limit: $limit) {
+    id
+  }
+}
+
+query ListContentUniqueViewerIdsByViewerKey($viewerKey: String!, $limit: Int!) @auth(level: NO_ACCESS) {
+  contentUniqueViewers(where: { viewerKey: { eq: $viewerKey } }, limit: $limit) {
+    id
+  }
+}
+
+query ListContentUniqueViewerDayIdsByPost($postId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  contentUniqueViewerDays(where: { postId: { eq: $postId } }, limit: $limit) {
+    id
+  }
+}
+
+query ListContentUniqueViewerIdsByPost($postId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  contentUniqueViewers(where: { postId: { eq: $postId } }, limit: $limit) {
+    id
+  }
+}
+
+query ListContentDailyInsightIdsByPost($postId: UUID!, $limit: Int!) @auth(level: NO_ACCESS) {
+  contentDailyInsights(where: { postId: { eq: $postId } }, limit: $limit) {
+    id
+  }
+}
+
+mutation DeleteContentUniqueViewer($id: UUID!) @auth(level: NO_ACCESS) @transaction {
+  contentUniqueViewer_delete(key: { id: $id })
+}
+
+mutation DeleteContentDailyInsight($id: UUID!) @auth(level: NO_ACCESS) @transaction {
+  contentDailyInsight_delete(key: { id: $id })
+}
+
+query ListReadyContentPurgeRequests($before: Timestamp!, $limit: Int!) @auth(level: NO_ACCESS) {
+  contentPurgeRequests(
+    where: { requestedAt: { le: $before } }
+    orderBy: [{ requestedAt: ASC }]
+    limit: $limit
+  ) {
+    id
+    postId
+  }
+}
+
+mutation DeleteContentPurgeRequest($id: UUID!) @auth(level: NO_ACCESS) @transaction {
+  contentPurgeRequest_delete(key: { id: $id })
+}

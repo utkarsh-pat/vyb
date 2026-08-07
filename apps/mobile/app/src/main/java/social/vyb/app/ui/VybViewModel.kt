@@ -88,6 +88,7 @@ class VybViewModel : ViewModel() {
                         userId = result.me.user.id,
                         college = "Your campus",
                         feed = result.feed.items.map(::toFeedPost),
+                        feedNextCursor = result.feed.nextCursor,
                         feedLoading = false,
                         feedError = null
                     )
@@ -97,6 +98,31 @@ class VybViewModel : ViewModel() {
                         feedLoading = false,
                         feedError = error.localizedMessage
                             ?: "Could not load your campus feed."
+                    )
+                }
+        }
+    }
+
+    fun loadMoreHomeFeed() {
+        val cursor = state.feedNextCursor ?: return
+        if (!state.isAuthenticated || state.feedLoading || state.feedLoadingMore) return
+        state = state.copy(feedLoadingMore = true, feedError = null)
+        viewModelScope.launch {
+            runCatching { apiRepository.loadHomeFeed(cursor) }
+                .onSuccess { result ->
+                    val existingIds = state.feed.asSequence().map { it.id }.toHashSet()
+                    val additions = result.feed.items.map(::toFeedPost).filter { existingIds.add(it.id) }
+                    state = state.copy(
+                        feed = state.feed + additions,
+                        feedNextCursor = result.feed.nextCursor,
+                        feedLoadingMore = false,
+                        feedError = null
+                    )
+                }
+                .onFailure { error ->
+                    state = state.copy(
+                        feedLoadingMore = false,
+                        feedError = error.localizedMessage ?: "Could not load more campus posts."
                     )
                 }
         }
@@ -215,7 +241,9 @@ class VybViewModel : ViewModel() {
                         college = result.profile.collegeName,
                         displayName = result.profile.profile?.fullName ?: state.displayName,
                         feed = home?.feed?.items?.map(::toFeedPost) ?: emptyList(),
+                        feedNextCursor = home?.feed?.nextCursor,
                         feedLoading = false,
+                        feedLoadingMore = false,
                         feedError = null
                     )
                 }

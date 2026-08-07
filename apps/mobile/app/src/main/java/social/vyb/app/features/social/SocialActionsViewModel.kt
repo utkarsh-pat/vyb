@@ -162,6 +162,22 @@ class SocialActionsViewModel(
         }
     }
 
+    fun loadContentInsights(postId: String, range: String = "7d") {
+        runPostMutation(postId, "Could not load creator insights.") {
+            val metrics = repository.contentInsights(postId, range).metrics
+            "${range.uppercase()} · ${metrics.reach} reached · ${metrics.views} views · " +
+                "${metrics.impressions} impressions · ${metrics.watchSeconds}s watch time"
+        }
+    }
+
+    fun hideRecommendation(postId: String, onHidden: () -> Unit = {}) {
+        runPostMutation(postId, "Could not update recommendations.") {
+            repository.hideRecommendation(postId)
+            onHidden()
+            "We’ll show fewer posts like this."
+        }
+    }
+
     fun loadComments(postId: String, force: Boolean = false) {
         val current = state.commentThreads[postId] ?: CommentThreadState()
         if (current.loading || (current.loaded && !force)) return

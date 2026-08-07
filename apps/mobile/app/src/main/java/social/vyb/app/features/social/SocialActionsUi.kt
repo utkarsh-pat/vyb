@@ -965,6 +965,8 @@ fun PostOverflowActions(
     onSearch: (() -> Unit)? = null,
     onCreateVibe: (() -> Unit)? = null,
     onRefresh: (() -> Unit)? = null,
+    onViewInsights: (() -> Unit)? = null,
+    onNotInterested: (() -> Unit)? = null,
     onRepost: (quote: String, placement: String) -> Unit,
     onUpdate: (title: String, body: String) -> Unit,
     onDelete: () -> Unit,
@@ -1045,6 +1047,12 @@ fun PostOverflowActions(
                         menuOpen = false
                     }) { Text("Repost") }
                     if (isOwner) {
+                        onViewInsights?.let { viewInsights ->
+                            TextButton(onClick = {
+                                viewInsights()
+                                menuOpen = false
+                            }) { Text("View creator insights") }
+                        }
                         TextButton(onClick = {
                             dialog = "edit"
                             menuOpen = false
@@ -1054,6 +1062,12 @@ fun PostOverflowActions(
                             menuOpen = false
                         }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
                     } else {
+                        onNotInterested?.let { hide ->
+                            TextButton(onClick = {
+                                hide()
+                                menuOpen = false
+                            }) { Text("Not interested") }
+                        }
                         TextButton(onClick = {
                             dialog = "report"
                             menuOpen = false

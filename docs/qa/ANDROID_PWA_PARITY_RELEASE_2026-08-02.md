@@ -88,6 +88,21 @@ run also uploaded its debug APK and verification reports.
 
 ## Next Work, in Priority Order
 
+### P0 - Content measurement and private creator insights
+
+Implement the shared event contract and fixtures from
+[ADR-006](../architecture/ADR_006_CONTENT_MEASUREMENT_AND_RECOMMENDATION.md),
+then ship server-validated batched ingestion, bounded SQL rollups, retention,
+and author-only insight APIs. Do not rank on raw client counters or expose
+viewer identities.
+
+### P0 - Recommendation controls and shadow scoring
+
+Keep Campus and Following chronological. Add recommendation reasons, `Show
+more`, `Show less`, `Not interested`, and reset, then run the authorization-first
+rules scorer in shadow mode. A `For You` lane remains behind its own cohort
+flag until trust, diversity, latency, and cost gates pass.
+
 ### P0 - Durable server-owned scheduling
 
 Current clients persist scheduled work locally and resume while the app/PWA is
@@ -136,7 +151,14 @@ where editing or moderation requires them, with documented retention.
 
 ## Product Recommendation
 
-The next area should be **release reliability**, not another large visible
-feature. Durable scheduling, observability, a safe dev-auth environment, and
-automated parity regression will protect the work already completed and reduce
-the cost of every later Marketplace, Chat, and campus expansion.
+The next area is **feature completion**, followed by Android/PWA parity and
+two-account/two-tenant end-to-end QA. The governing sequence is documented in
+[Feature Completion Roadmap](../product/FEATURE_COMPLETION_ROADMAP.md).
+
+The feature batches are the complete social graph (followers, following,
+mutuals, rotating suggestions, and block privacy),
+Campus/Followers/Community audience enforcement, automatic feed reconciliation,
+universal actionable share cards, content measurement and private creator
+insights, recommendation controls with shadow scoring, and server-owned
+scheduling. Release reliability, measured optimization, and staged release
+follow only after those visible contracts work end to end.

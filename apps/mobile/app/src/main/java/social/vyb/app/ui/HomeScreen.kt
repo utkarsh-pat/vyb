@@ -51,6 +51,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -89,6 +91,7 @@ import social.vyb.app.features.social.SocialAvatar
 import social.vyb.app.features.social.SocialPostLightbox
 import social.vyb.app.features.social.SocialShareSheet
 import social.vyb.app.features.social.PostCommunityOption
+import social.vyb.app.features.social.ContentMeasurementRepository
 import social.vyb.app.features.hub.CampusHubRepository
 import social.vyb.app.features.media.MediaComposerViewModel
 import social.vyb.app.features.stories.StoriesLane
@@ -101,6 +104,7 @@ fun HomeScreen(
     initialPostId: String? = null,
     onInitialPostConsumed: () -> Unit = {},
     onRefresh: () -> Unit,
+    onLoadMore: () -> Unit,
     onOpenSearch: () -> Unit,
     onOpenMessages: () -> Unit,
     onOpenNotifications: () -> Unit,
@@ -153,6 +157,18 @@ fun HomeScreen(
             previousOffset = offset
         }
     }
+    LaunchedEffect(feedListState, state.feed.size, state.feedNextCursor) {
+        snapshotFlow { feedListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+            .collect { lastVisibleIndex ->
+                if (
+                    state.feedNextCursor != null &&
+                    !state.feedLoadingMore &&
+                    lastVisibleIndex >= state.feed.lastIndex - 3
+                ) {
+                    onLoadMore()
+                }
+            }
+    }
     var resolvedNotificationPost by remember { mutableStateOf<FeedPost?>(null) }
     BackHandler(
         enabled = fullPostId != null || commentsPostId != null ||
@@ -168,6 +184,8 @@ fun HomeScreen(
         }
     }
     val socialRepository = remember { SocialActionsRepository() }
+    val measurementRepository = remember { ContentMeasurementRepository() }
+    val measurementLifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(initialPostId, state.feed) {
         val requestedId = initialPostId ?: return@LaunchedEffect
         resolvedNotificationPost = state.feed.firstOrNull { it.id == requestedId }
@@ -323,6 +341,17 @@ fun HomeScreen(
             }
         }
         items(state.feed, key = { it.id }) { post ->
+            val measurementView = LocalView.current
+            var measurementVisible by remember(post.id) { mutableStateOf(false) }
+            LaunchedEffect(post.id, measurementVisible) {
+                if (!measurementVisible) return@LaunchedEffect
+                kotlinx.coroutines.delay(500)
+                if (!measurementLifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return@LaunchedEffect
+                measurementRepository.record(post.id, "impression", visibleMs = 500)
+                kotlinx.coroutines.delay(500)
+                if (!measurementLifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return@LaunchedEffect
+                measurementRepository.record(post.id, "qualified_view", visibleMs = 1000, flush = true)
+            }
             LaunchedEffect(
                 post.id,
                 post.likes,
@@ -339,6 +368,14 @@ fun HomeScreen(
                 )
             }
             with(sharedTransitionScope) {
+                Box(
+                    Modifier.onGloballyPositioned { coordinates ->
+                        val bounds = coordinates.boundsInWindow()
+                        val viewportBottom = measurementView.rootView.height.toFloat()
+                        val visibleHeight = (minOf(bounds.bottom, viewportBottom) - maxOf(bounds.top, 0f)).coerceAtLeast(0f)
+                        measurementVisible = bounds.height > 0f && visibleHeight / bounds.height >= .5f
+                    }
+                ) {
                 PostCard(
                     animatedVisibilityScope = feedAnimatedVisibilityScope,
                     post = post,
@@ -375,8 +412,15 @@ fun HomeScreen(
                     },
                     onDelete = { socialViewModel.deletePost(post.id, onRefresh) },
                     onReport = { reason -> socialViewModel.report("post", post.id, reason) },
+                    onViewInsights = {
+                        socialViewModel.loadContentInsights(post.id)
+                    },
+                    onNotInterested = {
+                        socialViewModel.hideRecommendation(post.id, onRefresh)
+                    },
                     compact = !layout.wide
                 )
+                }
             }
         }
         item { Spacer(Modifier.height(20.dp)) }
@@ -578,6 +622,13 @@ fun HomeScreen(
                             socialViewModel.deletePost(post.id) { fullPostId = null; onRefresh() }
                         },
                         onReport = { reason -> socialViewModel.report("post", post.id, reason) },
+                        onViewInsights = { socialViewModel.loadContentInsights(post.id) },
+                        onNotInterested = {
+                            socialViewModel.hideRecommendation(post.id) {
+                                fullPostId = null
+                                onRefresh()
+                            }
+                        },
                         onDismiss = { fullPostId = null }
                     )
                 }
@@ -657,6 +708,8 @@ private fun SharedTransitionScope.PostCard(
     onUpdate: (String, String) -> Unit,
     onDelete: () -> Unit,
     onReport: (String) -> Unit,
+    onViewInsights: () -> Unit,
+    onNotInterested: () -> Unit,
     expanded: Boolean = false,
     compact: Boolean = true
 ) {
@@ -693,6 +746,8 @@ private fun SharedTransitionScope.PostCard(
                     reactionMembers = reactionMembers,
                     onLoadReactionMembers = onOpenReactions,
                     onViewPost = onViewPost,
+                    onViewInsights = onViewInsights.takeIf { isOwner },
+                    onNotInterested = onNotInterested.takeUnless { isOwner },
                     onRepost = onRepost,
                     onUpdate = onUpdate,
                     onDelete = onDelete,

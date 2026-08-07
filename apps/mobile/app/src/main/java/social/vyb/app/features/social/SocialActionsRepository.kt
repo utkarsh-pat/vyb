@@ -45,6 +45,18 @@ class SocialActionsRepository(
     suspend fun toggleSave(postId: String): SaveResult =
         apiCall { api.toggleSave(bearerToken(), postId) }
 
+    suspend fun contentInsights(postId: String, range: String = "7d"): ContentInsightsEnvelope =
+        apiCall { api.contentInsights(bearerToken(), postId, range) }
+
+    suspend fun hideRecommendation(postId: String): RecommendationFeedbackResult =
+        apiCall {
+            api.setRecommendationFeedback(
+                bearerToken(),
+                postId,
+                RecommendationFeedbackBody()
+            )
+        }
+
     suspend fun listComments(postId: String): List<SocialComment> =
         apiCall { api.comments(bearerToken(), postId).items }
 

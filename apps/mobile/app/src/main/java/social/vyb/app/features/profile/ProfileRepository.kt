@@ -94,6 +94,18 @@ internal interface ProfileApi {
         @Header("Authorization") bearer: String,
         @Path("deviceId") deviceId: String
     ): RevokeTrustedDeviceResponse
+
+    @GET("v1/users/me/content-measurement")
+    suspend fun contentMeasurement(@Header("Authorization") bearer: String): ContentMeasurementEnvelope
+
+    @PUT("v1/users/me/content-measurement")
+    suspend fun updateContentMeasurement(
+        @Header("Authorization") bearer: String,
+        @Body body: UpdateContentMeasurementRequest
+    ): ContentMeasurementEnvelope
+
+    @DELETE("v1/users/me/content-measurement")
+    suspend fun eraseContentMeasurement(@Header("Authorization") bearer: String)
 }
 
 class ProfileRepository(
@@ -116,11 +128,15 @@ class ProfileRepository(
             runCatching { api.devices(bearer).items.filter { it.revokedAt == null } }
                 .getOrDefault(emptyList())
         }
+        val contentMeasurement = async {
+            runCatching { api.contentMeasurement(bearer).enabled }.getOrDefault(true)
+        }
         OwnProfileBundle(
             privateProfile = own,
             publicProfile = public.await(),
             privacy = privacy.await(),
-            devices = devices.await()
+            devices = devices.await(),
+            contentMeasurementEnabled = contentMeasurement.await()
         )
     }
 
@@ -172,6 +188,16 @@ class ProfileRepository(
 
     suspend fun revokeDevice(deviceId: String): List<TrustedDevice> =
         api.revokeDevice(auth.requireBearerToken(), deviceId).items.filter { it.revokedAt == null }
+
+    suspend fun setContentMeasurementEnabled(enabled: Boolean): Boolean =
+        api.updateContentMeasurement(
+            auth.requireBearerToken(),
+            UpdateContentMeasurementRequest(enabled)
+        ).enabled
+
+    suspend fun eraseContentMeasurement() {
+        api.eraseContentMeasurement(auth.requireBearerToken())
+    }
 
     suspend fun sendPasswordReset(): String {
         val user = auth.currentUser ?: error("Your session expired.")

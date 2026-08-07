@@ -97,8 +97,8 @@ enum class PostReach(
 ) {
     Public(
         wireValue = "public",
-        label = "Public",
-        description = "Anyone on Vyb can see this"
+        label = "Campus",
+        description = "Verified members of your campus can see this"
     ),
     FollowersOnly(
         wireValue = "followers",
@@ -223,6 +223,56 @@ internal data class ReportItem(
 
 @Serializable
 internal data class ReportEnvelope(val item: ReportItem)
+
+@Serializable
+internal data class ContentEventPayload(
+    val eventKey: String,
+    val postId: String,
+    val sessionKey: String,
+    val eventType: String,
+    val source: String = "android",
+    val visibleMs: Int = 0,
+    val watchMs: Int = 0,
+    val progressBasisPoints: Int = 0,
+    val occurredAt: String
+)
+
+@Serializable
+internal data class ContentEventBatch(val events: List<ContentEventPayload>)
+
+@Serializable
+internal data class ContentEventBatchResult(
+    val accepted: Int = 0,
+    val duplicates: Int = 0,
+    val retentionDays: Int = 0
+)
+
+@Serializable
+internal data class RecommendationFeedbackBody(val action: String = "not_interested")
+
+@Serializable
+data class RecommendationFeedbackResult(
+    val postId: String,
+    val action: String = "not_interested",
+    val hidden: Boolean = true
+)
+
+@Serializable
+data class ContentInsightMetrics(
+    val reach: Int = 0,
+    val views: Int = 0,
+    val impressions: Int = 0,
+    val watchSeconds: Int = 0,
+    val completionRate: Double = 0.0,
+    val carouselAdvanceRate: Double = 0.0
+)
+
+@Serializable
+data class ContentInsightsEnvelope(
+    val postId: String,
+    val range: String = "7d",
+    val metrics: ContentInsightMetrics = ContentInsightMetrics()
+)
 
 data class PostEngagementState(
     val reactionCount: Int = 0,

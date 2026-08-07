@@ -872,7 +872,21 @@ export function CampusProfileShell({
   }, [isOwnProfile]);
 
   useEffect(() => {
-    setBlockedAccounts(readStoredJson("vyb-profile-blocked", []));
+    let cancelled = false;
+    fetch("/api/blocks", { cache: "no-store" })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null) as { items?: Array<{ username?: string }> } | null;
+        if (!response.ok) throw new Error("Blocked accounts are unavailable.");
+        if (!cancelled) {
+          setBlockedAccounts((payload?.items ?? []).map((item) => item.username?.trim() ?? "").filter(Boolean));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setBlockedAccounts([]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -987,10 +1001,6 @@ export function CampusProfileShell({
     }
     window.localStorage.setItem("vyb-profile-privacy", JSON.stringify(privacyPrefs));
   }, [privacyPrefs, isOwnProfile]);
-
-  useEffect(() => {
-    window.localStorage.setItem("vyb-profile-blocked", JSON.stringify(blockedAccounts));
-  }, [blockedAccounts]);
 
   useEffect(() => {
     if (!isOwnProfile) {
@@ -1239,7 +1249,17 @@ export function CampusProfileShell({
     setPrivacyPrefs((current) => ({ ...current, [key]: !current[key] }));
   }
 
-  function addModerationEntry(kind: "blocked" | "muted") {
+  async function submitBlockState(value: string, blocked: boolean) {
+    const response = await fetch(`/api/blocks/${encodeURIComponent(value)}`, {
+      method: blocked ? "PUT" : "DELETE"
+    });
+    const payload = await response.json().catch(() => null) as { error?: { message?: string } } | null;
+    if (!response.ok) {
+      throw new Error(payload?.error?.message ?? "We could not update that blocked account.");
+    }
+  }
+
+  async function addModerationEntry(kind: "blocked" | "muted") {
     const rawValue = kind === "blocked" ? blockedDraft : mutedDraft;
     const value = sanitizeUsername(rawValue);
     if (!value) {
@@ -1247,9 +1267,14 @@ export function CampusProfileShell({
     }
 
     if (kind === "blocked") {
-      setBlockedAccounts((current) => Array.from(new Set([...current, value])));
-      setBlockedDraft("");
-      showSuccess(`@${value} added to blocked accounts.`);
+      try {
+        await submitBlockState(value, true);
+        setBlockedAccounts((current) => Array.from(new Set([...current, value])));
+        setBlockedDraft("");
+        showSuccess(`@${value} added to blocked accounts.`);
+      } catch (error) {
+        showError(error instanceof Error ? error.message : "We could not block that account.");
+      }
       return;
     }
 
@@ -1258,9 +1283,15 @@ export function CampusProfileShell({
     showSuccess(`@${value} added to muted accounts.`);
   }
 
-  function removeModerationEntry(kind: "blocked" | "muted", value: string) {
+  async function removeModerationEntry(kind: "blocked" | "muted", value: string) {
     if (kind === "blocked") {
-      setBlockedAccounts((current) => current.filter((item) => item !== value));
+      try {
+        await submitBlockState(value, false);
+        setBlockedAccounts((current) => current.filter((item) => item !== value));
+        showSuccess(`@${value} unblocked.`);
+      } catch (error) {
+        showError(error instanceof Error ? error.message : "We could not unblock that account.");
+      }
       return;
     }
     setMutedAccounts((current) => current.filter((item) => item !== value));
@@ -1566,6 +1597,7 @@ export function CampusProfileShell({
 
     try {
       if (alreadyBlocked) {
+        await submitBlockState(item.username, false);
         setBlockedAccounts((current) => current.filter((entry) => entry !== item.username));
         showSuccess(`@${item.username} removed from blocked accounts.`);
         return;
@@ -1590,8 +1622,9 @@ export function CampusProfileShell({
         }
       }
 
+      await submitBlockState(item.username, true);
       setBlockedAccounts((current) => Array.from(new Set([...current, item.username])));
-      showSuccess(`@${item.username} blocked on this device.`);
+      showSuccess(`@${item.username} blocked across your Vyb account.`);
     } catch (error) {
       setConnectionsSheet((current) => ({
         ...current,

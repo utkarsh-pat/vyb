@@ -80,6 +80,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -100,6 +101,8 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.core.graphics.toColorInt
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.serialization.decodeFromString
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -112,6 +115,7 @@ import social.vyb.app.ui.resolveRemoteMediaUrl
 import social.vyb.app.features.media.StoryCompositionCodec
 import social.vyb.app.features.media.StoryCompositionJson
 import social.vyb.app.features.social.CommentThreadState
+import social.vyb.app.features.social.ContentMeasurementRepository
 import social.vyb.app.features.social.SocialThreadSheet
 import social.vyb.app.features.social.PostEngagementState
 import social.vyb.app.features.social.PostOverflowActions
@@ -245,6 +249,7 @@ fun NativeVibesScreen(
     refreshSignal: Int = 0,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    val measurementRepository = remember { ContentMeasurementRepository() }
     val state by viewModel.vibes.collectAsStateWithLifecycle()
     val socialState = socialViewModel.state
     var commentsPostId by remember { mutableStateOf<String?>(null) }
@@ -340,6 +345,7 @@ fun NativeVibesScreen(
                     VibePage(
                         vibe = vibe,
                         isActive = pagerState.currentPage == page,
+                        measurementRepository = measurementRepository,
                         engagement = socialState.engagements[vibe.id] ?: PostEngagementState(),
                         commentCount = socialState.commentThreads[vibe.id]
                             ?.takeIf { it.loaded }
@@ -375,6 +381,10 @@ fun NativeVibesScreen(
                         },
                         onReport = { reason ->
                             socialViewModel.report("post", vibe.id, reason)
+                        },
+                        onViewInsights = { socialViewModel.loadContentInsights(vibe.id) },
+                        onNotInterested = {
+                            socialViewModel.hideRecommendation(vibe.id, viewModel::refreshVibes)
                         },
                         onSearch = onSearch,
                         onCreateVibe = onCreateVibe,
@@ -579,6 +589,7 @@ private fun StoryViewerDialog(
 private fun VibePage(
     vibe: VibeItem,
     isActive: Boolean,
+    measurementRepository: ContentMeasurementRepository,
     engagement: PostEngagementState,
     commentCount: Int,
     isOwner: Boolean,
@@ -592,6 +603,8 @@ private fun VibePage(
     onUpdate: (String, String) -> Unit,
     onDelete: () -> Unit,
     onReport: (String) -> Unit,
+    onViewInsights: () -> Unit,
+    onNotInterested: () -> Unit,
     onSearch: () -> Unit,
     onCreateVibe: () -> Unit,
     onRefresh: () -> Unit,
@@ -599,6 +612,7 @@ private fun VibePage(
     onOpenProfile: (String) -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val playbackPreferences = remember {
         context.getSharedPreferences("vibe_playback", Context.MODE_PRIVATE)
     }
@@ -612,6 +626,11 @@ private fun VibePage(
     var heartBurst by remember(vibe.id) { mutableStateOf(false) }
     var likesOpen by remember(vibe.id) { mutableStateOf(false) }
     var descriptionExpanded by remember(vibe.id) { mutableStateOf(false) }
+    var videoPlaySent by remember(vibe.id) { mutableStateOf(false) }
+    var videoViewSent by remember(vibe.id) { mutableStateOf(false) }
+    var videoCompleteSent by remember(vibe.id) { mutableStateOf(false) }
+    var watchedMs by remember(vibe.id) { mutableIntStateOf(0) }
+    var previousPositionMs by remember(vibe.id) { mutableIntStateOf(0) }
     val gestureScope = rememberCoroutineScope()
     // Swipe-to-profile state
     var swipeDeltaX by remember(vibe.id) { mutableFloatStateOf(0f) }
@@ -631,6 +650,25 @@ private fun VibePage(
     LaunchedEffect(vibe.id) {
         swipeDeltaX = 0f
         swipeConsumed = false
+    }
+    LaunchedEffect(vibe.id, isActive) {
+        if (!isActive) {
+            measurementRepository.flush()
+            return@LaunchedEffect
+        }
+        videoPlaySent = false
+        videoViewSent = false
+        videoCompleteSent = false
+        watchedMs = 0
+        previousPositionMs = 0
+        delay(500)
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            measurementRepository.record(vibe.id, "impression", visibleMs = 500)
+        }
+        delay(500)
+        if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            measurementRepository.record(vibe.id, "qualified_view", visibleMs = 1000, flush = true)
+        }
     }
     Box(
         Modifier
@@ -683,7 +721,46 @@ private fun VibePage(
                     muted = muted,
                     playbackRate = playbackRate,
                     showScrubber = true,
-                    onAudioAvailabilityChanged = { hasAudio = it }
+                    onAudioAvailabilityChanged = { hasAudio = it },
+                    onPlaybackProgress = { positionMs, durationMs ->
+                        if (!isActive || durationMs <= 0 ||
+                            !lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+                        ) return@NativeVideo
+                        if (!videoPlaySent) {
+                            videoPlaySent = true
+                            gestureScope.launch { measurementRepository.record(vibe.id, "video_play") }
+                        }
+                        val delta = positionMs - previousPositionMs
+                        if (delta in 1..1_500) watchedMs += delta
+                        if (previousPositionMs > durationMs * 8 / 10 && positionMs < durationMs / 5) {
+                            gestureScope.launch { measurementRepository.record(vibe.id, "video_replay") }
+                        }
+                        previousPositionMs = positionMs
+                        val progress = ((positionMs.toLong() * 10_000L) / durationMs).toInt().coerceIn(0, 10_000)
+                        if (!videoViewSent && (watchedMs >= 3_000 || progress >= 3_000)) {
+                            videoViewSent = true
+                            gestureScope.launch {
+                                measurementRepository.record(
+                                    vibe.id,
+                                    "video_view",
+                                    watchMs = maxOf(3_000, watchedMs),
+                                    progressBasisPoints = progress
+                                )
+                            }
+                        }
+                        if (!videoCompleteSent && progress >= 9_500) {
+                            videoCompleteSent = true
+                            gestureScope.launch {
+                                measurementRepository.record(
+                                    vibe.id,
+                                    "video_complete",
+                                    watchMs = watchedMs,
+                                    progressBasisPoints = progress,
+                                    flush = true
+                                )
+                            }
+                        }
+                    }
                 )
             }
             else -> RemoteImage(mediaUrl, Modifier.fillMaxSize(), ContentScale.Fit)
@@ -896,6 +973,8 @@ private fun VibePage(
                     onSearch = onSearch,
                     onCreateVibe = onCreateVibe,
                     onRefresh = onRefresh,
+                    onViewInsights = onViewInsights.takeIf { isOwner },
+                    onNotInterested = onNotInterested.takeUnless { isOwner },
                     onRepost = onRepost,
                     onUpdate = onUpdate,
                     onDelete = onDelete,
@@ -1153,7 +1232,8 @@ private fun NativeVideo(
     muted: Boolean = false,
     playbackRate: Float = 1f,
     showScrubber: Boolean = true,
-    onAudioAvailabilityChanged: (Boolean) -> Unit = {}
+    onAudioAvailabilityChanged: (Boolean) -> Unit = {},
+    onPlaybackProgress: (positionMs: Int, durationMs: Int) -> Unit = { _, _ -> }
 ) {
     val resolvedUrl = remember(url) { resolveRemoteMediaUrl(url) }
     var prepared by remember(resolvedUrl) { mutableStateOf(false) }
@@ -1164,12 +1244,14 @@ private fun NativeVideo(
     var durationMs by remember(resolvedUrl) { mutableIntStateOf(0) }
     var isScrubbing by remember { mutableStateOf(false) }
     var scrubFraction by remember { mutableFloatStateOf(0f) }
+    val currentPlaybackProgress by rememberUpdatedState(onPlaybackProgress)
     // Poll playback position every 300ms
     LaunchedEffect(prepared, isActive) {
         while (prepared && isActive) {
             activePlayer?.let {
                 positionMs = runCatching { it.currentPosition }.getOrDefault(0)
                 durationMs = runCatching { it.duration }.getOrDefault(0)
+                currentPlaybackProgress(positionMs, durationMs)
             }
             delay(300)
         }

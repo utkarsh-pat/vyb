@@ -1,7 +1,7 @@
 # Vyb Software Requirements Specification
 
 Owner: Product and Architecture
-Last Updated: 2026-07-28
+Last Updated: 2026-08-02
 Status: Marketplace-first MVP baseline
 Change Summary: Aligned requirements with native Android, Firebase SQL Connect, R2 media, Marketplace in MVP, Stories deferred, and a two-to-three-university rollout.
 
@@ -52,6 +52,31 @@ The MVP shall serve the responsive web/PWA and native Android clients through on
 - `SOC-006`: Video/Vibes shall require a tenant feature flag, media capacity, and stricter limits.
 - `SOC-007`: Stories and story music shall be disabled for the initial public launch.
 - `SOC-008`: Social realtime shall be a delivery/invalidation hint; PostgreSQL shall remain durable truth.
+- `SOC-009`: Followers, following, and mutual connections shall be cursor-paginated and computed by the backend without downloading a user's full graph.
+- `SOC-010`: Follow, unfollow, and block shall be idempotent; blocking shall remove both-direction follow edges and be enforced across discovery, content, chat, Marketplace contact, notifications, and sharing.
+- `SOC-011`: People suggestions shall exclude self, existing follows, either block direction, inactive/incomplete profiles, and cross-tenant profiles; refresh shall rotate a bounded rules-based candidate set.
+- `SOC-012`: Published post audiences shall be Campus, Followers, or Community. The legacy `public` value shall mean verified Campus access and shall never grant unauthenticated internet access.
+- `SOC-013`: Feed clients shall receive versioned invalidation hints and reconcile from a durable change cursor on reconnect, foreground, or sequence gap without requiring repeated manual refresh.
+- `SOC-014`: While a reader is away from the top, new posts shall be offered through a non-disruptive new-post indicator instead of moving the current reading position.
+- `SOC-015`: Reposts, forwards, deep links, and media resolution shall not widen the source post's audience.
+- `SOC-016`: Campus and Following feeds shall remain reverse chronological in the MVP; any personalized `For You` ordering shall be a separately labeled, remotely gated lane.
+- `SOC-017`: Recommendation eligibility shall enforce tenant, audience, community, either-direction block, moderation, deletion, media-readiness, and fatigue rules before scoring.
+- `SOC-018`: Users shall be able to inspect a recommendation reason and provide `Show more`, `Show less`, and `Not interested` feedback without losing access to chronological feeds.
+- `SOC-019`: Recommendation scoring shall use normalized quality and satisfaction signals, recency, affinity, diversity, and negative feedback rather than raw popularity alone.
+- `SOC-020`: The system shall provide a recommendation reset and shall not automatically restore blocked or hidden content.
+
+### 3.3.1 Content measurement and creator insights
+
+- `ANA-001`: Android and web/PWA shall emit the same versioned definitions for impression, qualified view, video play/view, reach, dwell/watch time, completion, engagement, and negative feedback.
+- `ANA-002`: A video view shall require at least two continuous playback seconds while at least 50% of the player is visible and the client is foregrounded.
+- `ANA-003`: Reach shall be a unique eligible-viewer aggregate and shall exclude author self-use, test/admin traffic, crawlers, blocked/unauthorized access, and duplicate retries.
+- `ANA-004`: Content events shall be batched, bounded, idempotent, authenticated, tenant-validated, and free of post text, media bytes, private messages, and contact information.
+- `ANA-005`: Raw content events shall have bounded retention and shall be reduced into hourly/daily aggregates through idempotent backend-owned jobs.
+- `ANA-006`: Authors shall receive private content and creator insights for views, reach, interactions, profile/follow attribution, video retention, and carousel slide drop-off.
+- `ANA-007`: Insight APIs shall never expose an individual viewer list and shall suppress cohort breakdowns below 100 unique eligible accounts.
+- `ANA-008`: Public raw view counts shall remain disabled for MVP; private insights shall clearly identify delayed or estimated metrics.
+- `ANA-009`: Audience response shall separate positive actions, consumption, fast skips/hides, and safety feedback; optional language sentiment shall never be a sole moderation or ranking decision.
+- `ANA-010`: Firebase Analytics may measure product funnels, but creator insight and recommendation truth shall use the canonical server-validated content-event pipeline.
 
 ### 3.4 Marketplace
 
@@ -77,6 +102,8 @@ The MVP shall serve the responsive web/PWA and native Android clients through on
 - `CHAT-006`: Marketplace contact shall create or reuse a direct conversation through the Chat module.
 - `CHAT-007`: Block, report, read state, reaction, typing, and presence controls shall be supported within approved privacy limits.
 - `CHAT-008`: Group chat and unreviewed multi-device key recovery are deferred.
+- `CHAT-009`: Internal entity sharing shall use an encrypted versioned reference and a permission-aware resolver rather than an irrevocable copied content snapshot.
+- `CHAT-010`: Chat shall render actionable Post, Vibe, Event, Game, Marketplace, and Profile cards and fail closed when the entity becomes deleted, blocked, moderated, expired, sold, or unauthorized.
 
 ### 3.6 Resources and events
 
@@ -86,6 +113,9 @@ The MVP shall serve the responsive web/PWA and native Android clients through on
 - `EVT-001`: Events may launch behind a tenant flag after relational persistence is complete.
 - `EVT-002`: Events shall support interest, registration, or application modes without platform payment collection.
 - `EVT-003`: Host-only registration review/export shall be authorized and audited.
+- `SHR-001`: Shareable entities shall expose one canonical authenticated card model and HTTPS deep link across Android and PWA.
+- `SHR-002`: External shares of campus-scoped content shall expose only generic branded metadata before authentication and authorization.
+- `SHR-003`: Card actions shall be entity-aware: open/react/comment, register/save, play, contact seller, or follow only when currently allowed.
 
 ### 3.7 Media
 
@@ -183,6 +213,11 @@ Openverse and story composition dependencies are not launch-critical while Stori
 - two test users in different tenants cannot discover, fetch, contact, or infer each other’s tenant content;
 - onboarding and profile work on web and Android;
 - feed, comments, reactions, resources, chat, notifications, and reports work against the canonical database;
+- followers, following, mutuals, suggestions, block enforcement, post audiences, and live feed reconciliation pass two-account and two-tenant tests;
+- Post, Vibe, Event, Game, Marketplace, and Profile cards share internally and externally without widening access;
+- content measurement passes foreground, visibility, duration, deduplication, self-view, authorization, deletion, and retention fixtures on Android and PWA;
+- creator insights are private, privacy-thresholded, and reconcile to durable aggregates;
+- chronological Campus/Following feeds remain available while any `For You` experiment passes trust, diversity, cost, and latency guardrails;
 - Marketplace browse/create/save/contact/sold/report works with moderation and no private-contact leak;
 - direct media upload works without proxying file bytes through the normal API;
 - Stories are disabled and video is controlled by tenant allowlist;
@@ -197,7 +232,7 @@ Openverse and story composition dependencies are not launch-critical while Stori
 - Kafka or Kubernetes;
 - sharding;
 - full-text search service;
-- recommendation ML;
+- recommendation ML (explainable rules-based discovery is allowed);
 - money movement;
 - open cross-campus network;
 - public anonymous content;

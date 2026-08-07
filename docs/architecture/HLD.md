@@ -1,7 +1,7 @@
 # Vyb Marketplace MVP — High-Level Design
 
 Status: approved target architecture
-Last updated: 2026-07-30
+Last updated: 2026-08-02
 Production owner: `ceoutkarshpatel@gmail.com`
 Google/Firebase project: `vybnet` (`850600134378`)
 GitHub repository: `utkarsh-pat/vyb`
@@ -14,7 +14,10 @@ GitHub repository: `utkarsh-pat/vyb`
 - Keep one canonical transactional database, one backend runtime, and one media store.
 - Enforce tenant isolation, moderation, auditability, and reversible releases.
 
-Stories, long video, payments, wallet, escrow, anonymous posting, group chat, live streaming, and recommendation ML are outside the initial public launch.
+Stories, long video, payments, wallet, escrow, anonymous posting, group chat,
+live streaming, and recommendation ML are outside the initial public launch.
+Private creator insights and explainable rules-based discovery are in scope;
+personalized ordering is isolated to a remotely gated `For You` lane.
 
 ## 2. Production topology
 
@@ -28,7 +31,13 @@ flowchart LR
   API --> R2["Cloudflare R2: user media"]
   API --> TASKS["Cloud Tasks"]
   TASKS --> API
+  API --> RT["Versioned realtime hints"]
+  RT --> U
   API --> FCM["FCM / Remote Config / Crashlytics"]
+  U --> EVENTS["Batched content measurement"]
+  EVENTS --> API
+  API --> ROLLUP["Data Connect event + rollup tables"]
+  ROLLUP --> INSIGHTS["Private creator insights / rules scorer"]
   API --> SM["Secret Manager"]
 ```
 
@@ -43,7 +52,12 @@ flowchart LR
 | Android | Native Kotlin/Compose | Release API base URL is `https://api.vybnet.app/`. |
 | Media | Cloudflare R2 | Clients use signed upload intent; SQL stores object metadata, not bytes. |
 | Async | PostgreSQL outbox + Cloud Tasks | At-least-once delivery; every handler is idempotent. |
-| Realtime | Cloud Run WebSocket where needed; FCM offline | Core writes remain durable without realtime availability. Android targets Firebase Installation IDs; legacy registration tokens are migration-only. |
+| Realtime | Versioned Cloud Run WebSocket hints plus durable SQL/outbox reconciliation; FCM offline | Core writes remain durable without realtime availability. Missed events recover from a high-water cursor; process-local fanout is not sufficient for multi-instance production. |
+| Social graph/privacy | SQL follow and block edges behind backend policy | Block is enforced across every module and both-direction follows are removed transactionally. |
+| Sharing | Encrypted entity references plus one authorized card resolver | Internal/external shares never widen Campus, Followers, or Community access. |
+| Measurement | Server-validated, batched content events plus bounded SQL rollups | Views, unique reach, watch/dwell, engagement, and negative feedback have one Android/PWA contract; raw events expire after rollup. |
+| Recommendation | Chronological Campus/Following plus gated rules-based `For You` | Eligibility and trust filters run before scoring; ML is deferred and users retain transparent chronological lanes. |
+| Creator insights | Author-only aggregate APIs | No viewer lists; small cohorts are suppressed and metrics may be delayed/estimated. |
 | Feature control | Firebase Remote Config | Stories/video/payments remain off at launch. |
 | Observability | Cloud Logging/Monitoring + Crashlytics | Structured logs, request IDs, budget and SLO alerts. |
 
@@ -57,10 +71,16 @@ Firestore is not a fallback database for canonical entities. If retained, it is 
 - Add automated backups before external beta. Enable PITR before any paid transaction or university-wide dependency.
 - Upgrade database memory before adding API instances when CPU, memory, connection, or p95-query thresholds are breached.
 - Use cursor pagination, tenant-leading indexes, bounded result sets, and client/CDN caching.
+- Batch 20-50 content events or flush every 15-30 seconds; bulk insert through
+  backend-only Data Connect operations and roll up every 5-15 minutes.
+- Retain raw content events for at most 14 days after durable aggregation;
+  enable BigQuery export only for an approved experiment/query with retention
+  and budget alarms.
 
 ## 5. Security boundaries
 
 - Resolve tenant, membership, and role from trusted SQL records; never trust client-supplied tenant IDs.
+- Resolve post audience and either direction of user blocks for every content, chat, Marketplace, notification, and share-card read or mutation.
 - Require explicit Data Connect authorization and keep generated Admin SDKs server-only.
 - Store secrets in Secret Manager or provider-managed encrypted environment variables.
 - Never deploy service-account JSON; Cloud Run uses service identity.

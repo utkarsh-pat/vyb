@@ -95,9 +95,19 @@ internal data class RevokeTrustedDeviceResponse(
     val items: List<TrustedDevice> = emptyList()
 )
 
+@Serializable
+internal data class ContentMeasurementEnvelope(
+    val enabled: Boolean = true,
+    val updatedAt: String? = null
+)
+
+@Serializable
+internal data class UpdateContentMeasurementRequest(val enabled: Boolean)
+
 data class OwnProfileBundle(
     val privateProfile: ProfileEnvelope,
     val publicProfile: PublicProfileResponse,
     val privacy: ChatPrivacySettings,
-    val devices: List<TrustedDevice>
+    val devices: List<TrustedDevice>,
+    val contentMeasurementEnabled: Boolean = true
 )

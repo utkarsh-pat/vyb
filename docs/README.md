@@ -10,22 +10,23 @@ Status: Marketplace-first MVP documentation set
 2. [System Low Level Design](./architecture/LLD.md)
 3. [Software Requirements Specification](./product/SRS.md)
 4. [Master Plan](./product/MASTER_PLAN.md)
-5. [MVP Phased Rollout](./product/MVP_PHASED_ROLLOUT.md)
-6. [Capacity and Cost Model](./operations/CAPACITY_AND_COST_MODEL.md)
-7. [Google Cloud Cost Audit](./operations/GOOGLE_CLOUD_COST_AUDIT_2026-07-28.md)
-8. [MVP Launch Runbook](./operations/MVP_LAUNCH_RUNBOOK.md)
-9. [Firebase Migration Verification](./operations/FIREBASE_MIGRATION_VERIFICATION_2026-07-29.md)
-10. [Fresh Production Ownership](./operations/FRESH_ACCOUNT_OWNERSHIP.md)
-11. [Production Infrastructure Specification](./operations/PRODUCTION_INFRASTRUCTURE_SPEC.md)
-12. [Fresh Stack Deployment Verification](./operations/FRESH_STACK_DEPLOYMENT_VERIFICATION_2026-07-29.md)
-13. [Backend Runtime and Cost Guardrails](./operations/BACKEND_RUNTIME_GUARDRAILS.md)
-14. [Android/Web Quality and Parity Audit](./qa/QUALITY_PARITY_AUDIT_2026-07-30.md)
-15. [Android Release Runbook](./process/ANDROID_RELEASE_RUNBOOK.md)
-16. [Client Platform Strategy](./architecture/CLIENT_PLATFORM_STRATEGY.md)
-17. relevant module LLD under `lld/phase-1`;
-18. matching API contract, query review, and ADR;
-19. [Complete System Test Cases](./qa/SYSTEM_TEST_CASES.md).
-20. [Android and PWA Parity Release Review](./qa/ANDROID_PWA_PARITY_RELEASE_2026-08-02.md).
+5. [Feature Completion Roadmap](./product/FEATURE_COMPLETION_ROADMAP.md)
+6. [MVP Phased Rollout](./product/MVP_PHASED_ROLLOUT.md)
+7. [Capacity and Cost Model](./operations/CAPACITY_AND_COST_MODEL.md)
+8. [Google Cloud Cost Audit](./operations/GOOGLE_CLOUD_COST_AUDIT_2026-07-28.md)
+9. [MVP Launch Runbook](./operations/MVP_LAUNCH_RUNBOOK.md)
+10. [Firebase Migration Verification](./operations/FIREBASE_MIGRATION_VERIFICATION_2026-07-29.md)
+11. [Fresh Production Ownership](./operations/FRESH_ACCOUNT_OWNERSHIP.md)
+12. [Production Infrastructure Specification](./operations/PRODUCTION_INFRASTRUCTURE_SPEC.md)
+13. [Fresh Stack Deployment Verification](./operations/FRESH_STACK_DEPLOYMENT_VERIFICATION_2026-07-29.md)
+14. [Backend Runtime and Cost Guardrails](./operations/BACKEND_RUNTIME_GUARDRAILS.md)
+15. [Android/Web Quality and Parity Audit](./qa/QUALITY_PARITY_AUDIT_2026-07-30.md)
+16. [Android Release Runbook](./process/ANDROID_RELEASE_RUNBOOK.md)
+17. [Client Platform Strategy](./architecture/CLIENT_PLATFORM_STRATEGY.md)
+18. relevant module LLD under `lld/phase-1`;
+19. matching API contract, query review, and ADR;
+20. [Complete System Test Cases](./qa/SYSTEM_TEST_CASES.md).
+21. [Android and PWA Parity Release Review](./qa/ANDROID_PWA_PARITY_RELEASE_2026-08-02.md).
 
 ## Architecture Decisions
 
@@ -33,6 +34,8 @@ Status: Marketplace-first MVP documentation set
 - [ADR-002: Story Music](./architecture/ADR_002_STORY_MUSIC_SEARCH_AND_CLIENT_EXPORT.md) — implementation retained, launch deferred
 - [ADR-003: Chat Realtime and E2EE](./architecture/ADR_003_PHASE1_CHAT_REALTIME_AND_E2EE.md)
 - [ADR-004: MVP Data and Media Topology](./architecture/ADR_004_MVP_DATA_AND_MEDIA_TOPOLOGY.md)
+- [ADR-005: Social Graph, Feed Freshness, and Share Cards](./architecture/ADR_005_SOCIAL_GRAPH_FEED_FRESHNESS_AND_SHARE_CARDS.md)
+- [ADR-006: Content Measurement, Creator Insights, and Recommendation Control](./architecture/ADR_006_CONTENT_MEASUREMENT_AND_RECOMMENDATION.md)
 
 ## Phase 1 LLDs
 

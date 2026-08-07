@@ -1,7 +1,7 @@
 # Vyb Master Plan
 
 Owner: Product and Engineering
-Last Updated: 2026-07-28
+Last Updated: 2026-08-02
 Status: Marketplace-first MVP execution plan
 
 ## 1. Product Thesis
@@ -112,19 +112,20 @@ Deferred:
 
 ## 5. Build Order
 
-1. architecture/SRS/LLD approval;
-2. fresh Data Connect/Cloud SQL provisioning and seed tooling;
-3. auth/tenant/RLS hardening;
-4. direct media upload and storage adapter;
-5. Marketplace V2 application layer and schema;
-6. chat/contact integration;
-7. outbox, notifications, rate limits, idempotency;
-8. moderation/admin;
-9. web/Android compatibility and feature flags;
-10. backup/load/security/incident tests;
-11. first-campus rollout;
-12. second-campus tenant isolation;
-13. 20,000–30,000-user gate.
+1. finish intended product features and server ownership;
+2. complete Android/PWA UI, behavior, and API parity;
+3. pass two-account, two-tenant, real-device end-to-end QA;
+4. harden backend reliability, durable scheduling, fanout, outbox, and observability;
+5. optimize measured SQL, Cloud Run, media, and client hot paths;
+6. complete backup/load/security/rollback and release regression gates;
+7. run first-campus rollout;
+8. pass second-campus tenant isolation;
+9. pass the 20,000–30,000-user gate.
+
+The detailed feature batches, including social graph, block privacy, live feed
+reconciliation, universal sharing, content measurement, private creator
+insights, recommendation controls, and server-owned scheduling, are governed by the
+[Feature Completion Roadmap](./FEATURE_COMPLETION_ROADMAP.md).
 
 ## 6. Milestones
 
@@ -201,6 +202,7 @@ Deferred:
 - [HLD](../architecture/HLD.md)
 - [System LLD](../architecture/LLD.md)
 - [SRS](./SRS.md)
+- [Feature Completion Roadmap](./FEATURE_COMPLETION_ROADMAP.md)
 - [MVP Phased Rollout](./MVP_PHASED_ROLLOUT.md)
 - [Marketplace LLD](../lld/phase-1/MARKETPLACE_SERVICE_LLD.md)
 - [Capacity and Cost Model](../operations/CAPACITY_AND_COST_MODEL.md)

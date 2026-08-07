@@ -438,6 +438,7 @@ export interface SocialProfileStats {
 export interface UserSearchItem extends PublicProfileSummary {
   isFollowing: boolean;
   stats: SocialProfileStats;
+  suggestionReason?: string;
 }
 
 export interface UserSearchResponse {
@@ -452,8 +453,44 @@ export interface ProfileConnectionItem extends PublicProfileSummary {
 
 export interface ProfileConnectionsResponse {
   profileUsername: string;
-  scope: "followers" | "following";
+  scope: "followers" | "following" | "mutuals";
   items: ProfileConnectionItem[];
+}
+
+export interface BlockedProfileItem {
+  userId: string;
+  username: string;
+  displayName: string;
+  avatarUrl?: string | null;
+}
+
+export interface BlockedProfilesResponse {
+  items: BlockedProfileItem[];
+}
+
+export interface ContentMeasurementPreferenceResponse {
+  measurementEnabled: boolean;
+  updatedAt?: string | null;
+  purged?: {
+    contentEvents: number;
+    uniqueViewerDays: number;
+    uniqueViewers: number;
+  };
+}
+
+export interface ContentInsightResponse {
+  range: "24h" | "7d" | "30d" | "lifetime";
+  views: number;
+  reach: number;
+  impressionCount: number;
+  qualifiedViewCount: number;
+  videoPlayCount: number;
+  videoViewCount: number;
+  replayCount: number;
+  watchMsTotal: number;
+  completionCount: number;
+  carouselSlideCount: number;
+  daily: Array<Record<string, string | number | null>>;
 }
 
 export interface PublicProfileResponse {

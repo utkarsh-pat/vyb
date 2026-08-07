@@ -1,6 +1,7 @@
 import "server-only";
 import type {
   ActivityListResponse,
+  BlockedProfilesResponse,
   ApproveChatDevicePairingRequest,
   ApproveChatDevicePairingResponse,
   ClaimChatDevicePairingResponse,
@@ -14,6 +15,8 @@ import type {
   CreateChatConversationResponse,
   ClientShellResponse,
   CommentReactionResponse,
+  ContentInsightResponse,
+  ContentMeasurementPreferenceResponse,
   CommentListResponse,
   CreateReportRequest,
   CreateReportResponse,
@@ -656,7 +659,7 @@ export async function bootstrapViewerSession(payload: SessionBootstrapRequest) {
 
 export async function getCampusFeed(
   viewer: DevSession,
-  options?: { authorUserId?: string; communityId?: string; limit?: number }
+  options?: { authorUserId?: string; communityId?: string; limit?: number; cursor?: string | null }
 ) {
   const params = new URLSearchParams({
     tenantId: viewer.tenantId,
@@ -669,6 +672,10 @@ export async function getCampusFeed(
 
   if (options?.communityId) {
     params.set("communityId", options.communityId);
+  }
+
+  if (options?.cursor?.trim()) {
+    params.set("cursor", options.cursor.trim());
   }
 
   return fetchBackendJson<FeedListResponse>(`/v1/feed?${params.toString()}`, viewer);
@@ -735,7 +742,7 @@ export async function getCampusUserProfile(viewer: DevSession, username: string)
 export async function getCampusUserConnections(
   viewer: DevSession,
   username: string,
-  scope: "followers" | "following",
+  scope: "followers" | "following" | "mutuals",
   limit = 50
 ) {
   const params = new URLSearchParams({
@@ -745,6 +752,30 @@ export async function getCampusUserConnections(
 
   return fetchBackendJson<ProfileConnectionsResponse>(
     `/v1/users/${encodeURIComponent(username)}/${scope}?${params.toString()}`,
+    viewer
+  );
+}
+
+export async function getBlockedCampusUsers(viewer: DevSession, limit = 50) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  return fetchBackendJson<BlockedProfilesResponse>(`/v1/users/blocked?${params.toString()}`, viewer);
+}
+
+export async function getContentMeasurementPreference(viewer: DevSession) {
+  return fetchBackendJson<ContentMeasurementPreferenceResponse>(
+    "/v1/users/me/content-measurement",
+    viewer
+  );
+}
+
+export async function getPostInsights(
+  viewer: DevSession,
+  postId: string,
+  range: ContentInsightResponse["range"] = "7d"
+) {
+  const params = new URLSearchParams({ range });
+  return fetchBackendJson<ContentInsightResponse>(
+    `/v1/posts/${encodeURIComponent(postId)}/insights?${params.toString()}`,
     viewer
   );
 }

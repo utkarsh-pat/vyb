@@ -1,4 +1,4 @@
-import { readJson, sendError, sendJson } from "../../lib/http.mjs";
+import { readJson, RequestBodyTooLargeError, sendError, sendJson } from "../../lib/http.mjs";
 import {
   getProfileByUsername,
   getProfileByUserId,
@@ -12,6 +12,15 @@ import { resolveLiveContext } from "../shared/viewer-context.mjs";
 import { persistSocialMediaAsset, persistSocialMediaStream } from "./media-storage.mjs";
 import { emitSocialRealtimeEvent } from "./realtime-hub.mjs";
 import {
+  getContentInsights,
+  getContentMeasurementPreferenceForUser,
+  ingestContentEvents,
+  purgeContentMeasurementForPost,
+  purgeContentMeasurementForViewer,
+  setContentMeasurementPreferenceForUser
+} from "./analytics-repository.mjs";
+import {
+  blockUser,
   createComment,
   createPost,
   createStory,
@@ -24,18 +33,24 @@ import {
   findStoryById,
   followUser,
   getFollowStats,
+  getBlockedUserIds,
   getUserSocialStatsMap,
   getViewerFollowingUserIds,
   isFollowing,
+  isUserBlocked,
+  listBlockedProfiles,
   listCommentsByPost,
   listProfileConnections,
+  listMutualConnections,
   listPostReactions,
   listPosts,
   listPostsByUser,
   listSavedPosts,
   listStories,
   markStorySeen,
+  setRecommendationFeedback,
   togglePostSave,
+  unblockUser,
   unfollowUser,
   updateComment,
   updatePost,
@@ -57,7 +72,22 @@ const MAX_SOCIAL_VIDEO_BYTES = 40 * 1024 * 1024;
 const MAX_VIBE_VIDEO_BYTES = 40 * 1024 * 1024;
 const MAX_STORY_COMPOSITION_BYTES = 64 * 1024;
 const MAX_POST_MEDIA_ITEMS = 8;
+const MAX_ANALYTICS_BATCH_ITEMS = 20;
+const MAX_ANALYTICS_BODY_BYTES = 32 * 1024;
+const allowedContentEventTypes = new Set([
+  "impression", "qualified_view", "video_play", "video_view",
+  "video_replay", "video_complete", "carousel_slide"
+]);
+const allowedContentEventSources = new Set(["web", "android"]);
 const SOCIAL_RATE_LIMIT_RULES = [
+  {
+    id: "content-measurement",
+    methods: new Set(["POST"]),
+    pattern: /^\/v1\/analytics\/events$/u,
+    max: 4,
+    windowMs: 60_000,
+    message: "Content measurement is arriving too quickly."
+  },
   {
     id: "post-create",
     methods: new Set(["POST"]),
@@ -123,6 +153,39 @@ globalThis.__vybSocialRateLimitState = socialRateLimitState;
 
 function requireNonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+export function normalizeContentEvent(value) {
+  if (!value || typeof value !== "object") return null;
+  const eventKey = typeof value.eventKey === "string" ? value.eventKey.trim() : "";
+  const postId = typeof value.postId === "string" ? value.postId.trim() : "";
+  const sessionKey = typeof value.sessionKey === "string" ? value.sessionKey.trim() : "";
+  const eventType = typeof value.eventType === "string" ? value.eventType.trim() : "";
+  const source = typeof value.source === "string" ? value.source.trim() : "";
+  const visibleMs = Math.max(0, Math.min(21_600_000, Number(value.visibleMs ?? 0)));
+  const watchMs = Math.max(0, Math.min(21_600_000, Number(value.watchMs ?? 0)));
+  const progressBasisPoints = Math.max(0, Math.min(10_000, Number(value.progressBasisPoints ?? 0)));
+  const occurred = new Date(value.occurredAt);
+  const now = Date.now();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(eventKey) ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(postId) ||
+      !/^[A-Za-z0-9_-]{8,96}$/u.test(sessionKey) || !allowedContentEventTypes.has(eventType) ||
+      !allowedContentEventSources.has(source) || !Number.isFinite(occurred.getTime()) ||
+      occurred.getTime() < now - 86_400_000 || occurred.getTime() > now + 300_000 ||
+      !Number.isFinite(visibleMs) || !Number.isFinite(watchMs) || !Number.isFinite(progressBasisPoints)) {
+    return null;
+  }
+  if ((eventType === "impression" && visibleMs < 500) ||
+      (eventType === "qualified_view" && visibleMs < 1000) ||
+      (eventType === "video_view" && watchMs < 3000 && progressBasisPoints < 3000) ||
+      (eventType === "video_complete" && progressBasisPoints < 9500)) {
+    return null;
+  }
+  return {
+    eventKey, postId, sessionKey, eventType, source,
+    visibleMs: Math.trunc(visibleMs), watchMs: Math.trunc(watchMs),
+    progressBasisPoints: Math.trunc(progressBasisPoints), occurredAt: occurred.toISOString()
+  };
 }
 
 export function isValidSocialUploadMimeType(intent, mimeType) {
@@ -679,6 +742,7 @@ function isSocialRoutePath(pathname) {
     pathname === "/v1/feed" ||
     pathname === "/v1/vibes" ||
     pathname === "/v1/social-media/upload" ||
+    pathname === "/v1/analytics/events" ||
     pathname === "/v1/posts" ||
     pathname === "/v1/stories" ||
     pathname === "/v1/users/search" ||
@@ -850,6 +914,8 @@ async function buildUserSearchItems({ tenantId, viewerUserId, query, limit }) {
     });
   }
 
+  const blockedUserIds = await getBlockedUserIds({ tenantId, userId: viewerUserId });
+  profiles = profiles.filter((profile) => !blockedUserIds.has(profile.userId));
   const metricsMap = await getUserSocialStatsMap({
     tenantId,
     userIds: profiles.map((profile) => profile.userId),
@@ -865,7 +931,7 @@ async function buildSuggestedUserItems({ tenantId, viewerUserId, limit }) {
   try {
     profiles = await listRecentProfilesByTenant({
       tenantId,
-      limit,
+      limit: Math.min(50, Math.max(limit * 3, limit)),
       excludedUserId: viewerUserId
     });
   } catch (error) {
@@ -879,13 +945,27 @@ async function buildSuggestedUserItems({ tenantId, viewerUserId, limit }) {
     });
   }
 
+  const blockedUserIds = await getBlockedUserIds({ tenantId, userId: viewerUserId });
+  profiles = profiles.filter((profile) => !blockedUserIds.has(profile.userId));
   const metricsMap = await getUserSocialStatsMap({
     tenantId,
     userIds: profiles.map((profile) => profile.userId),
     viewerUserId
   });
 
-  return profiles.map((profile) => buildUserSearchResponseItem(profile, metricsMap.get(profile.userId)));
+  return profiles
+    .map((profile) => buildUserSearchResponseItem(profile, metricsMap.get(profile.userId)))
+    .sort((left, right) => {
+      if (left.isFollowing !== right.isFollowing) return left.isFollowing ? 1 : -1;
+      const leftScore = left.stats.followers * 3 + left.stats.posts;
+      const rightScore = right.stats.followers * 3 + right.stats.posts;
+      return rightScore - leftScore || left.username.localeCompare(right.username);
+    })
+    .slice(0, limit)
+    .map((item) => ({
+      ...item,
+      suggestionReason: item.stats.followers > 0 ? "Popular in your campus" : "New in your campus"
+    }));
 }
 
 async function logSocialActivity({
@@ -964,6 +1044,136 @@ export async function handleSocialRoute({ request, response, url, context }) {
     return true;
   }
 
+  if (request.method === "POST" && url.pathname === "/v1/analytics/events") {
+    let payload;
+    try {
+      payload = await readJson(request, { maxBytes: MAX_ANALYTICS_BODY_BYTES });
+    } catch (error) {
+      if (error instanceof RequestBodyTooLargeError) {
+        sendError(response, 413, "PAYLOAD_TOO_LARGE", "Analytics batches must be 32 KB or smaller.");
+        return true;
+      }
+      throw error;
+    }
+    if (!payload || !Array.isArray(payload.events) || payload.events.length < 1 || payload.events.length > MAX_ANALYTICS_BATCH_ITEMS) {
+      sendError(response, 400, "INVALID_ANALYTICS_BATCH", "events must contain between 1 and 20 items.");
+      return true;
+    }
+    const events = payload.events.map(normalizeContentEvent);
+    if (events.some((event) => event === null)) {
+      sendError(response, 400, "INVALID_ANALYTICS_EVENT", "An analytics event failed validation or its qualification threshold.");
+      return true;
+    }
+    const postById = new Map();
+    for (const postId of new Set(events.map((event) => event.postId))) {
+      const post = await findPostRecordById(postId, { tenantId: resolvedTenantId });
+      if (!post || post.status !== "published" || post.deletedAt ||
+          !(await requirePostAccess(response, resolved.live, post, "measure", resolvedTenantId, resolvedUserId))) {
+        if (!post || post.status !== "published" || post.deletedAt) {
+          sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
+        }
+        return true;
+      }
+      postById.set(postId, post);
+    }
+    const eligibleEvents = events.filter((event) => postById.get(event.postId)?.authorUserId !== resolvedUserId);
+    const selfExcluded = events.length - eligibleEvents.length;
+    const result = eligibleEvents.length > 0
+      ? await ingestContentEvents({ tenantId: resolvedTenantId, viewerUserId: resolvedUserId, events: eligibleEvents })
+      : { accepted: 0, duplicates: 0, throttled: 0, retentionDays: Number(process.env.VYB_ANALYTICS_RAW_RETENTION_DAYS ?? 14) };
+    sendJson(response, 202, { ...result, selfExcluded }, { "cache-control": "no-store" });
+    return true;
+  }
+
+  const insightMatch = request.method === "GET" ? url.pathname.match(/^\/v1\/posts\/([^/]+)\/insights$/u) : null;
+  if (insightMatch) {
+    const record = await findPostRecordById(insightMatch[1], { tenantId: resolvedTenantId });
+    if (!record) {
+      sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
+      return true;
+    }
+    if (record.authorUserId !== resolvedUserId) {
+      sendError(response, 403, "FORBIDDEN_INSIGHTS", "Only the post author can view these insights.");
+      return true;
+    }
+    const range = url.searchParams.get("range") ?? "7d";
+    if (!["24h", "7d", "30d", "lifetime"].includes(range)) {
+      sendError(response, 400, "INVALID_INSIGHT_RANGE", "range must be 24h, 7d, 30d, or lifetime.");
+      return true;
+    }
+    sendJson(response, 200, await getContentInsights({ postId: record.id, range }), { "cache-control": "private, no-store" });
+    return true;
+  }
+
+  if (url.pathname === "/v1/users/me/content-measurement") {
+    if (request.method === "GET") {
+      const preference = await getContentMeasurementPreferenceForUser({
+        tenantId: resolvedTenantId,
+        userId: resolvedUserId
+      });
+      sendJson(response, 200, preference, { "cache-control": "private, no-store" });
+      return true;
+    }
+    if (request.method === "PUT") {
+      const payload = await readJson(request);
+      if (!payload || typeof payload.measurementEnabled !== "boolean") {
+        sendError(response, 400, "INVALID_MEASUREMENT_PREFERENCE", "measurementEnabled must be a boolean.");
+        return true;
+      }
+      const preference = await setContentMeasurementPreferenceForUser({
+        tenantId: resolvedTenantId,
+        userId: resolvedUserId,
+        measurementEnabled: payload.measurementEnabled
+      });
+      sendJson(response, 200, preference, { "cache-control": "private, no-store" });
+      return true;
+    }
+    if (request.method === "DELETE") {
+      await setContentMeasurementPreferenceForUser({
+        tenantId: resolvedTenantId,
+        userId: resolvedUserId,
+        measurementEnabled: false
+      });
+      const purged = await purgeContentMeasurementForViewer({
+        tenantId: resolvedTenantId,
+        userId: resolvedUserId
+      });
+      sendJson(response, 200, { measurementEnabled: false, purged }, { "cache-control": "private, no-store" });
+      return true;
+    }
+    sendError(response, 405, "METHOD_NOT_ALLOWED", "Use GET, PUT, or DELETE.", null, { allow: "GET, PUT, DELETE" });
+    return true;
+  }
+
+  const recommendationFeedbackMatch =
+    request.method === "PUT" || request.method === "DELETE"
+      ? url.pathname.match(/^\/v1\/posts\/([^/]+)\/recommendation$/u)
+      : null;
+  if (recommendationFeedbackMatch) {
+    const post = await findPostRecordById(recommendationFeedbackMatch[1], { tenantId: resolvedTenantId });
+    if (!post || !(await requirePostAccess(response, resolved.live, post, "update recommendations", resolvedTenantId, resolvedUserId))) {
+      if (!post) sendError(response, 404, "POST_NOT_FOUND", "Post not found.");
+      return true;
+    }
+    let action = "show_more";
+    if (request.method === "PUT") {
+      const payload = await readJson(request);
+      action = payload?.action;
+      if (action !== "not_interested" && action !== "show_more") {
+        sendError(response, 400, "INVALID_RECOMMENDATION_ACTION", "action must be not_interested or show_more.");
+        return true;
+      }
+    }
+    const result = await setRecommendationFeedback({
+      tenantId: resolvedTenantId,
+      userId: resolvedUserId,
+      postId: post.id,
+      action
+    });
+    sendJson(response, 200, result, { "cache-control": "private, no-store" });
+    return true;
+  }
+
   if (request.method === "GET" && url.pathname === "/v1/feed") {
     const tenantId = resolveTenantScope({
       requestedTenantId: url.searchParams.get("tenantId"),
@@ -973,6 +1183,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
     const communityId = normalizeOptionalString(url.searchParams.get("communityId"));
     const authorUserId = url.searchParams.get("authorUserId");
     const limit = parseLimit(url.searchParams.get("limit"));
+    const cursor = url.searchParams.get("cursor");
 
     if (!requireNonEmptyString(tenantId)) {
       sendError(response, 400, "INVALID_TENANT", "tenantId is required.");
@@ -997,20 +1208,23 @@ export async function handleSocialRoute({ request, response, url, context }) {
     const items = await listPosts({
       tenantId,
       communityId,
-      limit,
+      limit: limit + 1,
       placement: "feed",
       userId: authorUserId ?? null,
       viewerMembershipId: resolvedMembershipId,
       viewerUserId: resolvedUserId,
       viewerCommunityIds: getLiveCommunityIds(resolved.live, tenantId),
+      cursor,
       firebaseIdToken: context.actor.firebaseIdToken ?? null
     });
+    const pageItems = items.slice(0, limit);
+    const lastItem = pageItems[pageItems.length - 1] ?? null;
 
     sendJson(response, 200, {
       tenantId,
       communityId,
-      items: items.map(buildFeedPayload),
-      nextCursor: null
+      items: pageItems.map(buildFeedPayload),
+      nextCursor: items.length > limit && lastItem ? buildPostCursor(lastItem) : null
     });
     return true;
   }
@@ -1305,14 +1519,19 @@ export async function handleSocialRoute({ request, response, url, context }) {
       }
     });
 
-    emitSocialRealtimeEvent({
-      tenantId: item.tenantId,
-      type: "social.post.created",
-      payload: {
-        item: buildRealtimeFeedPayload(item)
-      },
-      excludeMembershipId: getRealtimeActorMembershipId(resolvedMembershipId, context)
-    });
+    // Tenant-wide sockets do not carry follower/community authorization
+    // claims. Restricted posts therefore wait for an authorized delta fetch
+    // instead of being broadcast and filtered only in the client.
+    if (item.visibility === "public") {
+      emitSocialRealtimeEvent({
+        tenantId: item.tenantId,
+        type: "social.post.created",
+        payload: {
+          item: buildRealtimeFeedPayload(item)
+        },
+        excludeMembershipId: getRealtimeActorMembershipId(resolvedMembershipId, context)
+      });
+    }
 
     sendJson(response, 201, {
       item: buildFeedPayload(item)
@@ -1520,8 +1739,18 @@ export async function handleSocialRoute({ request, response, url, context }) {
     return true;
   }
 
+  if (request.method === "GET" && url.pathname === "/v1/users/blocked") {
+    const items = await listBlockedProfiles({
+      tenantId: resolvedTenantId,
+      blockerUserId: resolvedUserId,
+      limit: parseLimit(url.searchParams.get("limit"), 50) ?? 50
+    });
+    sendJson(response, 200, { items }, { "cache-control": "private, no-store" });
+    return true;
+  }
+
   const profileConnectionsMatch =
-    request.method === "GET" ? url.pathname.match(/^\/v1\/users\/([^/]+)\/(followers|following)$/) : null;
+    request.method === "GET" ? url.pathname.match(/^\/v1\/users\/([^/]+)\/(followers|following|mutuals)$/) : null;
   if (profileConnectionsMatch) {
     const tenantId = resolveTenantScope({
       requestedTenantId: url.searchParams.get("tenantId"),
@@ -1551,13 +1780,20 @@ export async function handleSocialRoute({ request, response, url, context }) {
       return true;
     }
 
-    const items = await listProfileConnections({
-      tenantId,
-      profileUserId: profile.userId,
-      viewerUserId: resolvedUserId,
-      scope,
-      limit
-    });
+    const items = scope === "mutuals"
+      ? await listMutualConnections({
+          tenantId,
+          profileUserId: profile.userId,
+          viewerUserId: resolvedUserId,
+          limit
+        })
+      : await listProfileConnections({
+          tenantId,
+          profileUserId: profile.userId,
+          viewerUserId: resolvedUserId,
+          scope,
+          limit
+        });
 
     sendJson(response, 200, {
       profileUsername: profile.username,
@@ -1585,6 +1821,10 @@ export async function handleSocialRoute({ request, response, url, context }) {
     });
 
     if (!profile) {
+      sendError(response, 404, "USER_NOT_FOUND", "That campus profile was not found.");
+      return true;
+    }
+    if (await isUserBlocked({ tenantId, firstUserId: resolvedUserId, secondUserId: profile.userId })) {
       sendError(response, 404, "USER_NOT_FOUND", "That campus profile was not found.");
       return true;
     }
@@ -1672,6 +1912,11 @@ export async function handleSocialRoute({ request, response, url, context }) {
       return true;
     }
 
+    if (await isUserBlocked({ tenantId, firstUserId: resolvedUserId, secondUserId: target.userId })) {
+      sendError(response, 409, "RELATIONSHIP_BLOCKED", "Unblock this account before changing the follow state.");
+      return true;
+    }
+
     if (request.method === "PUT") {
       await followUser({
         tenantId,
@@ -1721,6 +1966,41 @@ export async function handleSocialRoute({ request, response, url, context }) {
         following: followStats.following
       }
     });
+    return true;
+  }
+
+  const blockMatch =
+    request.method === "PUT" || request.method === "DELETE"
+      ? url.pathname.match(/^\/v1\/users\/([^/]+)\/block$/u)
+      : null;
+  if (blockMatch) {
+    const tenantId = resolveTenantScope({
+      requestedTenantId: url.searchParams.get("tenantId"),
+      resolvedTenantId,
+      routeLabel: "block"
+    });
+    const target = await getProfileByUsername({
+      tenantId,
+      username: decodeURIComponent(blockMatch[1])
+    });
+    if (!target || target.userId === resolvedUserId) {
+      sendError(response, 404, "USER_NOT_FOUND", "That campus profile was not found.");
+      return true;
+    }
+    if (request.method === "PUT") {
+      await blockUser({ tenantId, blockerUserId: resolvedUserId, blockedUserId: target.userId });
+    } else {
+      await unblockUser({ tenantId, blockerUserId: resolvedUserId, blockedUserId: target.userId });
+    }
+    await logSocialActivity({
+      tenantId,
+      membershipId: resolvedMembershipId,
+      activityType: request.method === "PUT" ? "user.blocked" : "user.unblocked",
+      entityType: "user",
+      entityId: target.userId,
+      metadata: { username: target.username }
+    });
+    sendJson(response, 200, { username: target.username, isBlocked: request.method === "PUT" });
     return true;
   }
 
@@ -1952,14 +2232,16 @@ export async function handleSocialRoute({ request, response, url, context }) {
       }
     });
 
-    emitSocialRealtimeEvent({
-      tenantId: item.tenantId,
-      type: "social.post.created",
-      payload: {
-        item: buildRealtimeFeedPayload(item)
-      },
-      excludeMembershipId: getRealtimeActorMembershipId(resolvedMembershipId, context)
-    });
+    if (item.visibility === "public") {
+      emitSocialRealtimeEvent({
+        tenantId: item.tenantId,
+        type: "social.post.created",
+        payload: {
+          item: buildRealtimeFeedPayload(item)
+        },
+        excludeMembershipId: getRealtimeActorMembershipId(resolvedMembershipId, context)
+      });
+    }
 
     sendJson(response, 201, { item: buildFeedPayload(item) });
     return true;
@@ -1983,7 +2265,10 @@ export async function handleSocialRoute({ request, response, url, context }) {
       return true;
     }
 
-    const item = await deletePost(post.id);
+    const item = await deletePost(post.id, post.tenantId);
+    // Immediate best-effort cleanup; the durable deletion-transaction request
+    // remains for the delayed scheduler sweep that closes in-flight races.
+    await purgeContentMeasurementForPost(post.id);
 
     await logSocialActivity({
       tenantId: post.tenantId,

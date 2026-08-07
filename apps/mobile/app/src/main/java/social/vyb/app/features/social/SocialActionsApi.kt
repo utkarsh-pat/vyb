@@ -106,4 +106,24 @@ internal interface SocialActionsApi {
         @Header("Authorization") bearer: String,
         @Body body: ReportBody
     ): ReportEnvelope
+
+    @POST("v1/analytics/events")
+    suspend fun contentEvents(
+        @Header("Authorization") bearer: String,
+        @Body body: ContentEventBatch
+    ): ContentEventBatchResult
+
+    @GET("v1/posts/{postId}/insights")
+    suspend fun contentInsights(
+        @Header("Authorization") bearer: String,
+        @Path("postId") postId: String,
+        @Query("range") range: String = "7d"
+    ): ContentInsightsEnvelope
+
+    @PUT("v1/posts/{postId}/recommendation")
+    suspend fun setRecommendationFeedback(
+        @Header("Authorization") bearer: String,
+        @Path("postId") postId: String,
+        @Body body: RecommendationFeedbackBody
+    ): RecommendationFeedbackResult
 }

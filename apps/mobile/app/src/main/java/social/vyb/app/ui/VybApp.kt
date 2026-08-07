@@ -353,6 +353,7 @@ private fun VybAppContent(
                                 initialPostId = pendingPostId,
                                 onInitialPostConsumed = { pendingPostId = null },
                                 onRefresh = viewModel::refreshHomeFeed,
+                                onLoadMore = viewModel::loadMoreHomeFeed,
                                 onOpenSearch = { navController.navigate("search") },
                                 onOpenMessages = { navController.navigate("messages") },
                                 onOpenNotifications = { navController.navigate("notifications") },

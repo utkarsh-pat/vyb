@@ -76,6 +76,8 @@ fun SharedTransitionScope.SocialPostLightbox(
     onUpdate: (String, String) -> Unit,
     onDelete: () -> Unit,
     onReport: (String) -> Unit,
+    onViewInsights: () -> Unit,
+    onNotInterested: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val media = remember(post.id, post.media) {
@@ -202,6 +204,8 @@ fun SharedTransitionScope.SocialPostLightbox(
                         reactionMembers = reactionMembers,
                         onLoadReactionMembers = onOpenReactions,
                         onViewPost = null, // We are already viewing the post
+                        onViewInsights = onViewInsights.takeIf { isOwner },
+                        onNotInterested = onNotInterested.takeUnless { isOwner },
                         onRepost = onRepost,
                         onUpdate = onUpdate,
                         onDelete = onDelete,

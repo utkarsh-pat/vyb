@@ -47,5 +47,7 @@ data class VybUiState(
     val college: String = "Your campus",
     val feed: List<FeedPost> = emptyList(),
     val feedLoading: Boolean = false,
+    val feedLoadingMore: Boolean = false,
+    val feedNextCursor: String? = null,
     val feedError: String? = null
 )

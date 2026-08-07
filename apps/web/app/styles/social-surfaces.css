@@ -10825,6 +10825,50 @@ button.vyb-chat-privacy-choice-card:hover:not(:disabled) {
   gap: 1.25rem !important;
 }
 
+.vyb-post-insight-ranges {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.vyb-post-insight-ranges button {
+  min-height: 2.2rem;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 6%, transparent);
+  color: inherit;
+  cursor: pointer;
+}
+
+.vyb-post-insight-ranges button.is-active {
+  border-color: #22d3ee;
+  background: linear-gradient(120deg, rgba(99, 102, 241, 0.28), rgba(34, 211, 238, 0.22));
+}
+
+.vyb-post-insight-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.vyb-post-insight-grid > div {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.85rem;
+  border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+  border-radius: 0.9rem;
+  background: color-mix(in srgb, currentColor 5%, transparent);
+}
+
+.vyb-post-insight-grid strong {
+  font-size: 1.2rem;
+}
+
+.vyb-post-insight-grid span {
+  font-size: 0.75rem;
+  opacity: 0.68;
+}
+
 .modern-field textarea,
 .modern-field input {
   width: 100% !important;

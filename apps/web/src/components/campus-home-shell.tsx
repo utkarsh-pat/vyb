@@ -16,6 +16,8 @@ import { buildPrimaryCampusNav, CampusDesktopNavigation, CampusMobileNavigation 
 import { useSocialPostEngagement } from "./use-social-post-engagement";
 import { VybLogoLockup, VybLogoMark } from "./vyb-logo";
 import { MediaCarousel } from "./media-carousel";
+import { ContentViewTracker } from "./content-view-tracker";
+import { recordContentEvent } from "../lib/content-measurement";
 import { StoryCompositionFrame } from "./story-composition-frame";
 import {
   getBackgroundPublishTasks,
@@ -1446,6 +1448,28 @@ export function CampusHomeShell({
     }
   }
 
+  async function handleNotInterested(post: FeedCard) {
+    setActionBusy(true);
+    setActionMessage(null);
+    try {
+      const response = await fetch(`/api/posts/${encodeURIComponent(post.id)}/recommendation`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "not_interested" })
+      });
+      const payload = await response.json().catch(() => null) as { error?: { message?: string } } | null;
+      if (!response.ok) throw new Error(payload?.error?.message ?? "Could not update recommendations.");
+      engagement.removePost(post.id);
+      removeMirroredPost(post.id);
+      setActionPost(null);
+      setFlashMessage("This post will not be recommended again.");
+    } catch (error) {
+      setActionMessage(error instanceof Error ? error.message : "Could not update recommendations.");
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
   async function handleCopyPostLink(post: FeedCard) {
     try {
       await navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}#post-${post.id}`);
@@ -2275,7 +2299,7 @@ export function CampusHomeShell({
               const displayControls = getPostDisplayControls(storedCampusSettings, post, postDisplayPreferences[post.id]);
 
               return (
-              <div key={post.id} className="vyb-campus-feed-item">
+              <ContentViewTracker key={post.id} postId={post.id} className="vyb-campus-feed-item">
                 <article id={`post-${post.id}`} className={`fc-card${post.isAnonymous ? " fc-card--anonymous" : ""}`}>
                   {/* ── Header ── */}
                   <div className="fc-header">
@@ -2342,6 +2366,7 @@ export function CampusHomeShell({
                         onClick={() => void openPostLightbox(post)}
                         onDoubleTap={() => void handlePostReaction(post, "like", true)}
                         showHeartBurst={heartBurstPostId === post.id}
+                        onMeasurementEvent={(eventType, metrics) => recordContentEvent(post.id, eventType, metrics)}
                         heartBurstNode={
                           <span className="vyb-heart-pulse" aria-hidden="true">
                             <HeartIcon />
@@ -2506,7 +2531,7 @@ export function CampusHomeShell({
                     </div>
                   </section>
                 ) : null}
-              </div>
+              </ContentViewTracker>
               );
             })}
           </div>
@@ -2945,6 +2970,11 @@ export function CampusHomeShell({
         onCopyLink={() => {
           if (actionPost) {
             void handleCopyPostLink(actionPost);
+          }
+        }}
+        onNotInterested={() => {
+          if (actionPost) {
+            void handleNotInterested(actionPost);
           }
         }}
       />

@@ -89,10 +89,24 @@ export function sendError(response, statusCode, code, message, details = null, e
   );
 }
 
-export async function readTextBody(request) {
+export class RequestBodyTooLargeError extends Error {
+  constructor(maxBytes) {
+    super(`Request body exceeds the ${maxBytes} byte limit.`);
+    this.name = "RequestBodyTooLargeError";
+    this.maxBytes = maxBytes;
+  }
+}
+
+export async function readTextBody(request, { maxBytes = Number.POSITIVE_INFINITY } = {}) {
   const chunks = [];
+  let totalBytes = 0;
   for await (const chunk of request) {
-    chunks.push(chunk);
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    totalBytes += buffer.byteLength;
+    if (totalBytes > maxBytes) {
+      throw new RequestBodyTooLargeError(maxBytes);
+    }
+    chunks.push(buffer);
   }
 
   if (chunks.length === 0) {
@@ -102,8 +116,8 @@ export async function readTextBody(request) {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-export async function readJson(request) {
-  const body = await readTextBody(request);
+export async function readJson(request, options) {
+  const body = await readTextBody(request, options);
   if (!body) {
     return {};
   }

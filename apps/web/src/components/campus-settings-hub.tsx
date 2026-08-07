@@ -309,6 +309,8 @@ export function CampusSettingsHub({
   const [profileBusy, setProfileBusy] = useState(false);
   const [passwordBusy, setPasswordBusy] = useState(false);
   const [sessionBusy, setSessionBusy] = useState(false);
+  const [measurementEnabled, setMeasurementEnabled] = useState(true);
+  const [measurementBusy, setMeasurementBusy] = useState(false);
   const chatPrivacyLoadedRef = useRef(false);
   const lastSyncedChatPrivacyRef = useRef("");
 
@@ -400,6 +402,21 @@ export function CampusSettingsHub({
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/analytics/preferences", { cache: "no-store", credentials: "same-origin" })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null) as { measurementEnabled?: boolean } | null;
+        if (response.ok && !cancelled && typeof payload?.measurementEnabled === "boolean") {
+          setMeasurementEnabled(payload.measurementEnabled);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!chatPrivacyLoadedRef.current) {
       return;
     }
@@ -481,6 +498,48 @@ export function CampusSettingsHub({
       ...current,
       [key]: value
     }));
+  }
+
+  async function updateMeasurementPreference(nextEnabled: boolean) {
+    if (measurementBusy) return;
+    setMeasurementBusy(true);
+    try {
+      const response = await fetch("/api/analytics/preferences", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ measurementEnabled: nextEnabled }),
+        cache: "no-store",
+        credentials: "same-origin"
+      });
+      const payload = await response.json().catch(() => null) as { error?: { message?: string } } | null;
+      if (!response.ok) throw new Error(payload?.error?.message ?? "Could not update measurement privacy.");
+      setMeasurementEnabled(nextEnabled);
+      showFeedback("success", nextEnabled ? "Anonymous reach measurement enabled." : "Anonymous reach measurement disabled.");
+    } catch (error) {
+      showFeedback("error", error instanceof Error ? error.message : "Could not update measurement privacy.");
+    } finally {
+      setMeasurementBusy(false);
+    }
+  }
+
+  async function eraseMeasurementHistory() {
+    if (measurementBusy || !window.confirm("Disable measurement and remove your pseudonymous viewing history? Creator totals remain anonymous.")) return;
+    setMeasurementBusy(true);
+    try {
+      const response = await fetch("/api/analytics/preferences", {
+        method: "DELETE",
+        cache: "no-store",
+        credentials: "same-origin"
+      });
+      const payload = await response.json().catch(() => null) as { error?: { message?: string } } | null;
+      if (!response.ok) throw new Error(payload?.error?.message ?? "Could not erase measurement history.");
+      setMeasurementEnabled(false);
+      showFeedback("success", "Pseudonymous viewing history removed and measurement disabled.");
+    } catch (error) {
+      showFeedback("error", error instanceof Error ? error.message : "Could not erase measurement history.");
+    } finally {
+      setMeasurementBusy(false);
+    }
   }
 
   function buildProfileSyncPayload(options?: { avatarUrl?: string | null; socialLinks?: CampusSocialLinks }) {
@@ -1135,6 +1194,39 @@ export function CampusSettingsHub({
                             ))}
                           </select>
                         </div>
+                      </div>
+                    </section>
+
+                    <section className="vyb-settings-list-section">
+                      <span className="vyb-settings-list-section-title">Content Measurement Privacy</span>
+                      <div className="vyb-settings-list-section-group">
+                        <div className="vyb-settings-list-row">
+                          <div className="vyb-settings-list-row-info">
+                            <strong>Anonymous reach measurement</strong>
+                            <span>Helps creators understand reach using a tenant-scoped pseudonym, never your email or advertising ID.</span>
+                          </div>
+                          <label className="vyb-settings-list-toggle">
+                            <input
+                              type="checkbox"
+                              checked={measurementEnabled}
+                              disabled={measurementBusy}
+                              onChange={(event) => void updateMeasurementPreference(event.target.checked)}
+                            />
+                            <span className="vyb-settings-list-toggle-slider"></span>
+                          </label>
+                        </div>
+                        <button
+                          type="button"
+                          className="vyb-settings-list-row is-action is-button-row"
+                          disabled={measurementBusy}
+                          onClick={() => void eraseMeasurementHistory()}
+                        >
+                          <div className="vyb-settings-list-row-info">
+                            <strong>Erase my measurement history</strong>
+                            <span>Removes raw and unique-view ledgers associated with your current pseudonym.</span>
+                          </div>
+                          <span className="vyb-settings-list-inline-pill">{measurementBusy ? "Working..." : "Erase"}</span>
+                        </button>
                       </div>
                     </section>
                   </>

@@ -21,6 +21,8 @@ This is time-limited credit, not a permanent monthly subsidy. The design must re
 - 300–800 peak concurrent sessions.
 - 20–60 API requests per DAU per day after caching.
 - Stories and long video disabled; images compressed before upload.
+- Plan for 200,000-500,000 accepted content events/day at pilot maturity;
+  clients batch events instead of creating one request per impression/action.
 
 ## Cost-first baseline
 
@@ -53,6 +55,19 @@ The verified trial credit should cover the expected initial Google infrastructur
 - Retain the active container image plus the previous three; delete untagged images older than 14 days.
 - Exclude health checks from normal request logs and keep routine log retention at 14–30 days.
 - Use single-zone SQL for pilot; HA is an explicit business/SLO decision because it approximately doubles compute cost.
+- Batch 20-50 measurement events or flush every 15-30 seconds, cap request
+  bytes, and reject arbitrary payload fields.
+- Keep raw content events for no more than 14 days after rollup; keep bounded
+  hourly/daily aggregates and delete expired unique-viewer keys.
+- Run `POST /v1/internal/analytics/rollup` every 15 minutes with the internal
+  service key. It recomputes affected UTC-day totals before retention cleanup.
+- Start with `VYB_ANALYTICS_RAW_RETENTION_DAYS=14`; move to `7` only after 30
+  stable days, and use `3` only as a documented emergency lever. Keep the
+  analytics HMAC secret separate from session and internal-service secrets.
+- Keep Firebase Analytics BigQuery export off until an approved query or
+  experiment needs it; configure dataset expiry and a BigQuery budget first.
+- Alert on accepted/dropped events, ingestion bytes, rollup lag, raw-table
+  growth, duplicate rate, and cost per 1,000 accepted events.
 
 ## Upgrade triggers
 
@@ -65,3 +80,16 @@ Upgrade database memory before scaling API instances when any two persist for 15
 - lock waits affecting user-facing p95.
 
 Add PITR before paid transactions or broad university dependence. Add HA only when downtime cost justifies the fixed increase.
+
+## Measurement capacity gate
+
+Before a `For You` cohort is enabled, replay a representative 500,000-event day
+through the batched ingestion path. The gate passes only when:
+
+- ingestion adds no more than 100 ms to API p95 at expected concurrency;
+- rollup lag remains below 15 minutes;
+- database connections remain below 70% and no event insert blocks a
+  user-facing transaction;
+- raw data retention converges instead of growing without bound;
+- the monthly forecast stays inside the active budget and can be disabled via
+  Remote Config without affecting core feed reads.

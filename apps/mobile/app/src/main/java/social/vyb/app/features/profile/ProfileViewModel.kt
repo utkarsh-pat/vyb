@@ -105,6 +105,7 @@ data class ProfileUiState(
     val privateProfile: ProfileRecord? = null,
     val publicProfile: PublicProfileResponse? = null,
     val privacy: ChatPrivacySettings = ChatPrivacySettings(),
+    val contentMeasurementEnabled: Boolean = true,
     val devices: List<TrustedDevice> = emptyList(),
     val panel: ProfilePanel = ProfilePanel.Overview,
     val activeTab: String = "posts",
@@ -163,6 +164,7 @@ class ProfileViewModel(
                             publicProfile = bundle.publicProfile,
                             privacy = bundle.privacy,
                             devices = bundle.devices,
+                            contentMeasurementEnabled = bundle.contentMeasurementEnabled,
                             editDraft = ProfileEditDraft.from(profile),
                             error = null
                         )
@@ -322,6 +324,38 @@ class ProfileViewModel(
                     }
                 }
                 .onFailure { fail(it, "Privacy settings could not be saved.") }
+        }
+    }
+
+    fun setContentMeasurementEnabled(enabled: Boolean) {
+        if (_state.value.busy) return
+        viewModelScope.launch {
+            _state.update { it.copy(busy = true, error = null, notice = null) }
+            runCatching { repository.setContentMeasurementEnabled(enabled) }
+                .onSuccess { persisted ->
+                    _state.update {
+                        it.copy(
+                            contentMeasurementEnabled = persisted,
+                            busy = false,
+                            notice = if (persisted) "Creator measurement enabled." else "Creator measurement paused."
+                        )
+                    }
+                }
+                .onFailure { fail(it, "Measurement preference could not be saved.") }
+        }
+    }
+
+    fun eraseContentMeasurement() {
+        if (_state.value.busy) return
+        viewModelScope.launch {
+            _state.update { it.copy(busy = true, error = null, notice = null) }
+            runCatching { repository.eraseContentMeasurement() }
+                .onSuccess {
+                    _state.update {
+                        it.copy(busy = false, notice = "Your raw measurement history was erased.")
+                    }
+                }
+                .onFailure { fail(it, "Measurement history could not be erased.") }
         }
     }
 

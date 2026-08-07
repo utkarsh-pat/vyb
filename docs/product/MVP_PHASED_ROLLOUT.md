@@ -1,12 +1,12 @@
 # Marketplace-first MVP Phased Rollout
 
-Last updated: 2026-07-29
+Last updated: 2026-08-02
 
 ## Launch scope
 
-Included: verified university login, profile, campus communities, text/image feed, Marketplace browse/create/edit/save/contact/sold/report, one-to-one chat, resources, notifications, moderation, analytics, remote kill switches, web/PWA, and Android.
+Included: verified university login, profile, campus communities, text/image feed, followers/following/mutuals, people suggestions, user blocking, Campus/Followers/Community post audiences, automatic feed reconciliation, actionable share cards, private creator insights, explicit recommendation controls, Marketplace browse/create/edit/save/contact/sold/report, one-to-one chat, resources, notifications, moderation, analytics, remote kill switches, web/PWA, and Android.
 
-Excluded: Stories, long video, payments/escrow, shipping, cross-campus public trading, live streaming, recommendation ML, anonymous posting, group chat, and complex gamification.
+Excluded: Stories, long video, payments/escrow, shipping, cross-campus public trading, live streaming, recommendation ML, default personalized ordering of the Campus/Following feeds, anonymous posting, group chat, and complex gamification.
 
 Production starts with an empty canonical database. Legacy test data is not a launch dependency.
 
@@ -23,6 +23,7 @@ Production starts with an empty canonical database. Legacy test data is not a la
 
 ## Technical launch order
 
+0. Complete and verify all batches in [Feature Completion Roadmap](./FEATURE_COMPLETION_ROADMAP.md); reliability, optimization, and release work begins only after its parity/E2E gate.
 1. Verify ownership, billing, credits, project IDs, GitHub repository, and local backup record.
 2. Create Firebase web and Android apps; configure Auth providers and authorized domains.
 3. Provision Data Connect/Cloud SQL in `asia-south1`; compile and deploy schema/connectors.
@@ -45,6 +46,31 @@ Production starts with an empty canonical database. Legacy test data is not a la
 - R2 upload intent, object read, deletion, quota, and orphan cleanup are observable.
 - Abuse limits, block/report, prohibited categories, and moderation tools are enabled.
 - No payment collection; in-person exchange safety guidance is shown.
+
+## Social and sharing acceptance gates
+
+- Followers, following, mutuals, rotating suggestions, and counts reconcile on Android and PWA.
+- Block is enforced server-side across search, profiles, feeds, Vibes, communities, chat, Marketplace contact, notifications, and sharing; unblock restores no relationship automatically.
+- Campus, Followers, and Community audiences pass two-account and two-tenant read/write tests.
+- Open clients learn about eligible new posts without repeated manual refresh and recover missed changes after reconnect.
+- New content does not move the reading position; a new-post indicator is used while scrolled.
+- Post, Vibe, Event, Game, Marketplace, and Profile cards open the correct authorized action internally and through canonical external links.
+- Revoked/deleted/blocked cards and unauthenticated previews leak no protected content.
+
+## Measurement and recommendation acceptance gates
+
+- Android and PWA agree on impression, qualified-view, video-view, reach,
+  watch/completion, engagement, and negative-feedback fixtures.
+- Background/offscreen activity, duplicate retries, author self-use, test/admin
+  traffic, blocks, and unauthorized scope never inflate reach or ranking.
+- Private creator insights reconcile to durable rollups and do not expose
+  viewer identities or cohorts below 100 unique accounts.
+- Campus and Following remain chronological throughout launch.
+- `For You` begins in shadow mode, then one allowlisted-campus 5% cohort; it may
+  expand to 25%, 50%, and 100% only when hide/report/block rate, diversity,
+  new-creator exposure, latency, errors, and cost stay inside approved bounds.
+- Remote Config independently disables non-essential collection, creator
+  insights, recommendation feedback, and `For You` without breaking feed reads.
 
 ## Rollback
 

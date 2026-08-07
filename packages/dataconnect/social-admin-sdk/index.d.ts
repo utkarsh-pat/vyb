@@ -8,6 +8,14 @@ export type Int64String = string;
 export type DateString = string;
 
 
+export interface ActivateUserBlockData {
+  userBlock_update?: UserBlock_Key | null;
+}
+
+export interface ActivateUserBlockVariables {
+  id: UUIDString;
+}
+
 export interface AuditLog_Key {
   id: UUIDString;
   __typename?: 'AuditLog_Key';
@@ -73,6 +81,36 @@ export interface ConnectSession_Key {
   __typename?: 'ConnectSession_Key';
 }
 
+export interface ContentDailyInsight_Key {
+  id: UUIDString;
+  __typename?: 'ContentDailyInsight_Key';
+}
+
+export interface ContentEvent_Key {
+  id: UUIDString;
+  __typename?: 'ContentEvent_Key';
+}
+
+export interface ContentMeasurementPreference_Key {
+  id: UUIDString;
+  __typename?: 'ContentMeasurementPreference_Key';
+}
+
+export interface ContentPurgeRequest_Key {
+  id: UUIDString;
+  __typename?: 'ContentPurgeRequest_Key';
+}
+
+export interface ContentUniqueViewerDay_Key {
+  id: UUIDString;
+  __typename?: 'ContentUniqueViewerDay_Key';
+}
+
+export interface ContentUniqueViewer_Key {
+  id: UUIDString;
+  __typename?: 'ContentUniqueViewer_Key';
+}
+
 export interface Course_Key {
   id: UUIDString;
   __typename?: 'Course_Key';
@@ -108,6 +146,75 @@ export interface CreateCommentVariables {
   mediaType?: string | null;
   mediaMimeType?: string | null;
   mediaSizeBytes?: Int64String | null;
+}
+
+export interface CreateContentDailyInsightData {
+  contentDailyInsight_insert: ContentDailyInsight_Key;
+}
+
+export interface CreateContentDailyInsightVariables {
+  id: UUIDString;
+  insightKey: string;
+  tenantId: UUIDString;
+  postId: UUIDString;
+  insightDate: DateString;
+  impressionCount: number;
+  qualifiedViewCount: number;
+  uniqueReachCount: number;
+  videoPlayCount: number;
+  videoViewCount: number;
+  replayCount: number;
+  watchMsTotal: Int64String;
+  completionCount: number;
+  carouselSlideCount: number;
+}
+
+export interface CreateContentEventData {
+  contentEvent_insert: ContentEvent_Key;
+}
+
+export interface CreateContentEventVariables {
+  id: UUIDString;
+  eventKey: string;
+  tenantId: UUIDString;
+  postId: UUIDString;
+  viewerKey: string;
+  sessionKey: string;
+  eventType: string;
+  source: string;
+  visibleMs: number;
+  watchMs: number;
+  progressBasisPoints: number;
+  occurredAt: TimestampString;
+  expiresAt: TimestampString;
+}
+
+export interface CreateContentUniqueViewerData {
+  contentUniqueViewer_insert: ContentUniqueViewer_Key;
+}
+
+export interface CreateContentUniqueViewerDayData {
+  contentUniqueViewerDay_insert: ContentUniqueViewerDay_Key;
+}
+
+export interface CreateContentUniqueViewerDayVariables {
+  id: UUIDString;
+  uniqueKey: string;
+  tenantId: UUIDString;
+  postId: UUIDString;
+  viewerKey: string;
+  viewDate: DateString;
+  viewedAt: TimestampString;
+  expiresAt: TimestampString;
+}
+
+export interface CreateContentUniqueViewerVariables {
+  id: UUIDString;
+  uniqueKey: string;
+  tenantId: UUIDString;
+  postId: UUIDString;
+  viewerKey: string;
+  viewedAt: TimestampString;
 }
 
 export interface CreateFollowData {
@@ -235,6 +342,58 @@ export interface CreateStoryViewVariables {
   membershipId: UUIDString;
 }
 
+export interface CreateUserBlockData {
+  userBlock_insert: UserBlock_Key;
+}
+
+export interface CreateUserBlockVariables {
+  id: UUIDString;
+  blockKey: string;
+  tenantId: UUIDString;
+  blockerUserId: UUIDString;
+  blockedUserId: UUIDString;
+}
+
+export interface DeleteContentDailyInsightData {
+  contentDailyInsight_delete?: ContentDailyInsight_Key | null;
+}
+
+export interface DeleteContentDailyInsightVariables {
+  id: UUIDString;
+}
+
+export interface DeleteContentEventData {
+  contentEvent_delete?: ContentEvent_Key | null;
+}
+
+export interface DeleteContentEventVariables {
+  id: UUIDString;
+}
+
+export interface DeleteContentPurgeRequestData {
+  contentPurgeRequest_delete?: ContentPurgeRequest_Key | null;
+}
+
+export interface DeleteContentPurgeRequestVariables {
+  id: UUIDString;
+}
+
+export interface DeleteContentUniqueViewerData {
+  contentUniqueViewer_delete?: ContentUniqueViewer_Key | null;
+}
+
+export interface DeleteContentUniqueViewerDayData {
+  contentUniqueViewerDay_delete?: ContentUniqueViewerDay_Key | null;
+}
+
+export interface DeleteContentUniqueViewerDayVariables {
+  id: UUIDString;
+}
+
+export interface DeleteContentUniqueViewerVariables {
+  id: UUIDString;
+}
+
 export interface Follow_Key {
   id: UUIDString;
   __typename?: 'Follow_Key';
@@ -258,6 +417,77 @@ export interface GetCommentReactionByKeyData {
 
 export interface GetCommentReactionByKeyVariables {
   commentReactionKey: string;
+}
+
+export interface GetContentDailyInsightByKeyData {
+  contentDailyInsights: ({
+    id: UUIDString;
+    insightKey: string;
+    tenantId: UUIDString;
+    postId: UUIDString;
+    insightDate: DateString;
+    impressionCount: number;
+    qualifiedViewCount: number;
+    uniqueReachCount: number;
+    videoPlayCount: number;
+    videoViewCount: number;
+    replayCount: number;
+    watchMsTotal: Int64String;
+    completionCount: number;
+    carouselSlideCount: number;
+  } & ContentDailyInsight_Key)[];
+}
+
+export interface GetContentDailyInsightByKeyVariables {
+  insightKey: string;
+}
+
+export interface GetContentEventByKeyData {
+  contentEvents: ({
+    id: UUIDString;
+    eventKey: string;
+  } & ContentEvent_Key)[];
+}
+
+export interface GetContentEventByKeyVariables {
+  eventKey: string;
+}
+
+export interface GetContentMeasurementPreferenceData {
+  contentMeasurementPreferences: ({
+    id: UUIDString;
+    preferenceKey: string;
+    tenantId: UUIDString;
+    userId: UUIDString;
+    measurementEnabled: boolean;
+  } & ContentMeasurementPreference_Key)[];
+}
+
+export interface GetContentMeasurementPreferenceVariables {
+  preferenceKey: string;
+}
+
+export interface GetContentUniqueViewerByKeyData {
+  contentUniqueViewers: ({
+    id: UUIDString;
+    qualifiedViewCount: number;
+    lastViewedAt: TimestampString;
+  } & ContentUniqueViewer_Key)[];
+}
+
+export interface GetContentUniqueViewerByKeyVariables {
+  uniqueKey: string;
+}
+
+export interface GetContentUniqueViewerDayByKeyData {
+  contentUniqueViewerDays: ({
+    id: UUIDString;
+    qualifiedViewCount: number;
+  } & ContentUniqueViewerDay_Key)[];
+}
+
+export interface GetContentUniqueViewerDayByKeyVariables {
+  uniqueKey: string;
 }
 
 export interface GetFollowByKeyData {
@@ -319,6 +549,22 @@ export interface GetReactionByKeyVariables {
   reactionKey: string;
 }
 
+export interface GetRecommendationFeedbackByKeyData {
+  recommendationFeedbackRecords: ({
+    id: UUIDString;
+    feedbackKey: string;
+    tenantId: UUIDString;
+    postId: UUIDString;
+    userId: UUIDString;
+    action: string;
+    deletedAt?: TimestampString | null;
+  } & RecommendationFeedback_Key)[];
+}
+
+export interface GetRecommendationFeedbackByKeyVariables {
+  feedbackKey: string;
+}
+
 export interface GetStoryByIdData {
   story?: {
     id: UUIDString;
@@ -372,6 +618,23 @@ export interface GetStoryViewByKeyData {
 
 export interface GetStoryViewByKeyVariables {
   storyViewKey: string;
+}
+
+export interface GetUserBlockByKeyData {
+  userBlocks: ({
+    id: UUIDString;
+    blockKey: string;
+    tenantId: UUIDString;
+    blockerUserId: UUIDString;
+    blockedUserId: UUIDString;
+    createdAt: TimestampString;
+    updatedAt: TimestampString;
+    deletedAt?: TimestampString | null;
+  } & UserBlock_Key)[];
+}
+
+export interface GetUserBlockByKeyVariables {
+  blockKey: string;
 }
 
 export interface ListActivePostSavesByPostData {
@@ -497,6 +760,182 @@ export interface ListCommentsByTenantData {
 
 export interface ListCommentsByTenantVariables {
   tenantId: UUIDString;
+  limit: number;
+}
+
+export interface ListContentDailyInsightIdsByPostData {
+  contentDailyInsights: ({
+    id: UUIDString;
+  } & ContentDailyInsight_Key)[];
+}
+
+export interface ListContentDailyInsightIdsByPostVariables {
+  postId: UUIDString;
+  limit: number;
+}
+
+export interface ListContentDailyInsightsByPostData {
+  contentDailyInsights: ({
+    insightDate: DateString;
+    impressionCount: number;
+    qualifiedViewCount: number;
+    uniqueReachCount: number;
+    videoPlayCount: number;
+    videoViewCount: number;
+    replayCount: number;
+    watchMsTotal: Int64String;
+    completionCount: number;
+    carouselSlideCount: number;
+  })[];
+}
+
+export interface ListContentDailyInsightsByPostVariables {
+  postId: UUIDString;
+  since: DateString;
+  limit: number;
+}
+
+export interface ListContentEventIdsByPostData {
+  contentEvents: ({
+    id: UUIDString;
+  } & ContentEvent_Key)[];
+}
+
+export interface ListContentEventIdsByPostVariables {
+  postId: UUIDString;
+  limit: number;
+}
+
+export interface ListContentEventIdsByViewerKeyData {
+  contentEvents: ({
+    id: UUIDString;
+  } & ContentEvent_Key)[];
+}
+
+export interface ListContentEventIdsByViewerKeyVariables {
+  viewerKey: string;
+  limit: number;
+}
+
+export interface ListContentEventsByPostWindowData {
+  contentEvents: ({
+    id: UUIDString;
+    tenantId: UUIDString;
+    postId: UUIDString;
+    viewerKey: string;
+    eventType: string;
+    visibleMs: number;
+    watchMs: number;
+    progressBasisPoints: number;
+    occurredAt: TimestampString;
+  } & ContentEvent_Key)[];
+}
+
+export interface ListContentEventsByPostWindowVariables {
+  postId: UUIDString;
+  from: TimestampString;
+  until: TimestampString;
+  limit: number;
+}
+
+export interface ListContentUniqueViewerDayIdsByPostData {
+  contentUniqueViewerDays: ({
+    id: UUIDString;
+  } & ContentUniqueViewerDay_Key)[];
+}
+
+export interface ListContentUniqueViewerDayIdsByPostVariables {
+  postId: UUIDString;
+  limit: number;
+}
+
+export interface ListContentUniqueViewerDayIdsByViewerKeyData {
+  contentUniqueViewerDays: ({
+    id: UUIDString;
+  } & ContentUniqueViewerDay_Key)[];
+}
+
+export interface ListContentUniqueViewerDayIdsByViewerKeyVariables {
+  viewerKey: string;
+  limit: number;
+}
+
+export interface ListContentUniqueViewerDaysByPostData {
+  contentUniqueViewerDays: ({
+    viewerKey: string;
+  })[];
+}
+
+export interface ListContentUniqueViewerDaysByPostVariables {
+  postId: UUIDString;
+  since: DateString;
+  limit: number;
+}
+
+export interface ListContentUniqueViewerIdsByPostData {
+  contentUniqueViewers: ({
+    id: UUIDString;
+  } & ContentUniqueViewer_Key)[];
+}
+
+export interface ListContentUniqueViewerIdsByPostVariables {
+  postId: UUIDString;
+  limit: number;
+}
+
+export interface ListContentUniqueViewerIdsByViewerKeyData {
+  contentUniqueViewers: ({
+    id: UUIDString;
+  } & ContentUniqueViewer_Key)[];
+}
+
+export interface ListContentUniqueViewerIdsByViewerKeyVariables {
+  viewerKey: string;
+  limit: number;
+}
+
+export interface ListContentUniqueViewersByPostData {
+  contentUniqueViewers: ({
+    viewerKey: string;
+  })[];
+}
+
+export interface ListContentUniqueViewersByPostSinceData {
+  contentUniqueViewers: ({
+    viewerKey: string;
+  })[];
+}
+
+export interface ListContentUniqueViewersByPostSinceVariables {
+  postId: UUIDString;
+  since: TimestampString;
+  limit: number;
+}
+
+export interface ListContentUniqueViewersByPostVariables {
+  postId: UUIDString;
+  limit: number;
+}
+
+export interface ListExpiredContentEventsData {
+  contentEvents: ({
+    id: UUIDString;
+  } & ContentEvent_Key)[];
+}
+
+export interface ListExpiredContentEventsVariables {
+  before: TimestampString;
+  limit: number;
+}
+
+export interface ListExpiredContentUniqueViewerDaysData {
+  contentUniqueViewerDays: ({
+    id: UUIDString;
+  } & ContentUniqueViewerDay_Key)[];
+}
+
+export interface ListExpiredContentUniqueViewerDaysVariables {
+  before: TimestampString;
   limit: number;
 }
 
@@ -629,6 +1068,48 @@ export interface ListReactionsByTenantVariables {
   limit: number;
 }
 
+export interface ListReadyContentPurgeRequestsData {
+  contentPurgeRequests: ({
+    id: UUIDString;
+    postId: UUIDString;
+  } & ContentPurgeRequest_Key)[];
+}
+
+export interface ListReadyContentPurgeRequestsVariables {
+  before: TimestampString;
+  limit: number;
+}
+
+export interface ListRecentContentEventsForViewerData {
+  contentEvents: ({
+    id: UUIDString;
+  } & ContentEvent_Key)[];
+}
+
+export interface ListRecentContentEventsForViewerVariables {
+  postId: UUIDString;
+  viewerKey: string;
+  eventType: string;
+  from: TimestampString;
+  limit: number;
+}
+
+export interface ListRecommendationFeedbackByUserData {
+  recommendationFeedbackRecords: ({
+    id: UUIDString;
+    feedbackKey: string;
+    postId: UUIDString;
+    action: string;
+    updatedAt: TimestampString;
+  } & RecommendationFeedback_Key)[];
+}
+
+export interface ListRecommendationFeedbackByUserVariables {
+  tenantId: UUIDString;
+  userId: UUIDString;
+  limit: number;
+}
+
 export interface ListStoriesByTenantData {
   stories: ({
     id: UUIDString;
@@ -703,6 +1184,49 @@ export interface ListStoryViewsByTenantVariables {
   limit: number;
 }
 
+export interface ListUnrolledContentEventsData {
+  contentEvents: ({
+    id: UUIDString;
+    tenantId: UUIDString;
+    postId: UUIDString;
+    viewerKey: string;
+    eventType: string;
+    visibleMs: number;
+    watchMs: number;
+    progressBasisPoints: number;
+    occurredAt: TimestampString;
+  } & ContentEvent_Key)[];
+}
+
+export interface ListUnrolledContentEventsVariables {
+  limit: number;
+}
+
+export interface ListUserBlocksByTenantData {
+  userBlocks: ({
+    id: UUIDString;
+    blockKey: string;
+    tenantId: UUIDString;
+    blockerUserId: UUIDString;
+    blockedUserId: UUIDString;
+    createdAt: TimestampString;
+    updatedAt: TimestampString;
+  } & UserBlock_Key)[];
+}
+
+export interface ListUserBlocksByTenantVariables {
+  tenantId: UUIDString;
+  limit: number;
+}
+
+export interface MarkContentEventRolledUpData {
+  contentEvent_update?: ContentEvent_Key | null;
+}
+
+export interface MarkContentEventRolledUpVariables {
+  id: UUIDString;
+}
+
 export interface MarketListingContact_Key {
   id: string;
   __typename?: 'MarketListingContact_Key';
@@ -763,6 +1287,11 @@ export interface Reaction_Key {
   __typename?: 'Reaction_Key';
 }
 
+export interface RecommendationFeedback_Key {
+  id: UUIDString;
+  __typename?: 'RecommendationFeedback_Key';
+}
+
 export interface Report_Key {
   id: UUIDString;
   __typename?: 'Report_Key';
@@ -810,6 +1339,26 @@ export interface SoftDeletePostVariables {
   id: UUIDString;
 }
 
+export interface SoftDeletePostWithPurgeData {
+  post_update?: Post_Key | null;
+  contentPurgeRequest_insert: ContentPurgeRequest_Key;
+}
+
+export interface SoftDeletePostWithPurgeVariables {
+  id: UUIDString;
+  tenantId: UUIDString;
+  purgeRequestId: UUIDString;
+  purgeKey: string;
+}
+
+export interface SoftDeleteUserBlockData {
+  userBlock_update?: UserBlock_Key | null;
+}
+
+export interface SoftDeleteUserBlockVariables {
+  id: UUIDString;
+}
+
 export interface StoryReaction_Key {
   id: UUIDString;
   __typename?: 'StoryReaction_Key';
@@ -849,6 +1398,43 @@ export interface UpdateCommentReactionVariables {
   reactionType: string;
 }
 
+export interface UpdateContentDailyInsightData {
+  contentDailyInsight_update?: ContentDailyInsight_Key | null;
+}
+
+export interface UpdateContentDailyInsightVariables {
+  id: UUIDString;
+  impressionCount: number;
+  qualifiedViewCount: number;
+  uniqueReachCount: number;
+  videoPlayCount: number;
+  videoViewCount: number;
+  replayCount: number;
+  watchMsTotal: Int64String;
+  completionCount: number;
+  carouselSlideCount: number;
+}
+
+export interface UpdateContentUniqueViewerData {
+  contentUniqueViewer_update?: ContentUniqueViewer_Key | null;
+}
+
+export interface UpdateContentUniqueViewerDayData {
+  contentUniqueViewerDay_update?: ContentUniqueViewerDay_Key | null;
+}
+
+export interface UpdateContentUniqueViewerDayVariables {
+  id: UUIDString;
+  qualifiedViewCount: number;
+  viewedAt: TimestampString;
+}
+
+export interface UpdateContentUniqueViewerVariables {
+  id: UUIDString;
+  qualifiedViewCount: number;
+  viewedAt: TimestampString;
+}
+
 export interface UpdatePostData {
   post_update?: Post_Key | null;
 }
@@ -878,9 +1464,39 @@ export interface UpdateStoryReactionVariables {
   reactionType: string;
 }
 
+export interface UpsertContentMeasurementPreferenceData {
+  contentMeasurementPreference_upsert: ContentMeasurementPreference_Key;
+}
+
+export interface UpsertContentMeasurementPreferenceVariables {
+  id: UUIDString;
+  preferenceKey: string;
+  tenantId: UUIDString;
+  userId: UUIDString;
+  measurementEnabled: boolean;
+}
+
+export interface UpsertRecommendationFeedbackData {
+  recommendationFeedback_upsert: RecommendationFeedback_Key;
+}
+
+export interface UpsertRecommendationFeedbackVariables {
+  id: UUIDString;
+  feedbackKey: string;
+  tenantId: UUIDString;
+  postId: UUIDString;
+  userId: UUIDString;
+  action: string;
+}
+
 export interface UserActivity_Key {
   id: UUIDString;
   __typename?: 'UserActivity_Key';
+}
+
+export interface UserBlock_Key {
+  id: UUIDString;
+  __typename?: 'UserBlock_Key';
 }
 
 export interface User_Key {
@@ -1097,4 +1713,229 @@ export function softDeleteFollow(vars: SoftDeleteFollowVariables, options?: Oper
 export function softDeletePost(dc: DataConnect, vars: SoftDeletePostVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<SoftDeletePostData>>;
 /** Generated Node Admin SDK operation action function for the 'SoftDeletePost' Mutation. Allow users to pass in custom DataConnect instances. */
 export function softDeletePost(vars: SoftDeletePostVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<SoftDeletePostData>>;
+
+/** Generated Node Admin SDK operation action function for the 'ListUserBlocksByTenant' Query. Allow users to execute without passing in DataConnect. */
+export function listUserBlocksByTenant(dc: DataConnect, vars: ListUserBlocksByTenantVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListUserBlocksByTenantData>>;
+/** Generated Node Admin SDK operation action function for the 'ListUserBlocksByTenant' Query. Allow users to pass in custom DataConnect instances. */
+export function listUserBlocksByTenant(vars: ListUserBlocksByTenantVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListUserBlocksByTenantData>>;
+
+/** Generated Node Admin SDK operation action function for the 'GetUserBlockByKey' Query. Allow users to execute without passing in DataConnect. */
+export function getUserBlockByKey(dc: DataConnect, vars: GetUserBlockByKeyVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetUserBlockByKeyData>>;
+/** Generated Node Admin SDK operation action function for the 'GetUserBlockByKey' Query. Allow users to pass in custom DataConnect instances. */
+export function getUserBlockByKey(vars: GetUserBlockByKeyVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetUserBlockByKeyData>>;
+
+/** Generated Node Admin SDK operation action function for the 'CreateUserBlock' Mutation. Allow users to execute without passing in DataConnect. */
+export function createUserBlock(dc: DataConnect, vars: CreateUserBlockVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateUserBlockData>>;
+/** Generated Node Admin SDK operation action function for the 'CreateUserBlock' Mutation. Allow users to pass in custom DataConnect instances. */
+export function createUserBlock(vars: CreateUserBlockVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateUserBlockData>>;
+
+/** Generated Node Admin SDK operation action function for the 'ActivateUserBlock' Mutation. Allow users to execute without passing in DataConnect. */
+export function activateUserBlock(dc: DataConnect, vars: ActivateUserBlockVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ActivateUserBlockData>>;
+/** Generated Node Admin SDK operation action function for the 'ActivateUserBlock' Mutation. Allow users to pass in custom DataConnect instances. */
+export function activateUserBlock(vars: ActivateUserBlockVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ActivateUserBlockData>>;
+
+/** Generated Node Admin SDK operation action function for the 'SoftDeleteUserBlock' Mutation. Allow users to execute without passing in DataConnect. */
+export function softDeleteUserBlock(dc: DataConnect, vars: SoftDeleteUserBlockVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<SoftDeleteUserBlockData>>;
+/** Generated Node Admin SDK operation action function for the 'SoftDeleteUserBlock' Mutation. Allow users to pass in custom DataConnect instances. */
+export function softDeleteUserBlock(vars: SoftDeleteUserBlockVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<SoftDeleteUserBlockData>>;
+
+/** Generated Node Admin SDK operation action function for the 'GetContentMeasurementPreference' Query. Allow users to execute without passing in DataConnect. */
+export function getContentMeasurementPreference(dc: DataConnect, vars: GetContentMeasurementPreferenceVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetContentMeasurementPreferenceData>>;
+/** Generated Node Admin SDK operation action function for the 'GetContentMeasurementPreference' Query. Allow users to pass in custom DataConnect instances. */
+export function getContentMeasurementPreference(vars: GetContentMeasurementPreferenceVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetContentMeasurementPreferenceData>>;
+
+/** Generated Node Admin SDK operation action function for the 'UpsertContentMeasurementPreference' Mutation. Allow users to execute without passing in DataConnect. */
+export function upsertContentMeasurementPreference(dc: DataConnect, vars: UpsertContentMeasurementPreferenceVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpsertContentMeasurementPreferenceData>>;
+/** Generated Node Admin SDK operation action function for the 'UpsertContentMeasurementPreference' Mutation. Allow users to pass in custom DataConnect instances. */
+export function upsertContentMeasurementPreference(vars: UpsertContentMeasurementPreferenceVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpsertContentMeasurementPreferenceData>>;
+
+/** Generated Node Admin SDK operation action function for the 'ListRecommendationFeedbackByUser' Query. Allow users to execute without passing in DataConnect. */
+export function listRecommendationFeedbackByUser(dc: DataConnect, vars: ListRecommendationFeedbackByUserVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListRecommendationFeedbackByUserData>>;
+/** Generated Node Admin SDK operation action function for the 'ListRecommendationFeedbackByUser' Query. Allow users to pass in custom DataConnect instances. */
+export function listRecommendationFeedbackByUser(vars: ListRecommendationFeedbackByUserVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListRecommendationFeedbackByUserData>>;
+
+/** Generated Node Admin SDK operation action function for the 'GetRecommendationFeedbackByKey' Query. Allow users to execute without passing in DataConnect. */
+export function getRecommendationFeedbackByKey(dc: DataConnect, vars: GetRecommendationFeedbackByKeyVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetRecommendationFeedbackByKeyData>>;
+/** Generated Node Admin SDK operation action function for the 'GetRecommendationFeedbackByKey' Query. Allow users to pass in custom DataConnect instances. */
+export function getRecommendationFeedbackByKey(vars: GetRecommendationFeedbackByKeyVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetRecommendationFeedbackByKeyData>>;
+
+/** Generated Node Admin SDK operation action function for the 'UpsertRecommendationFeedback' Mutation. Allow users to execute without passing in DataConnect. */
+export function upsertRecommendationFeedback(dc: DataConnect, vars: UpsertRecommendationFeedbackVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpsertRecommendationFeedbackData>>;
+/** Generated Node Admin SDK operation action function for the 'UpsertRecommendationFeedback' Mutation. Allow users to pass in custom DataConnect instances. */
+export function upsertRecommendationFeedback(vars: UpsertRecommendationFeedbackVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpsertRecommendationFeedbackData>>;
+
+/** Generated Node Admin SDK operation action function for the 'SoftDeletePostWithPurge' Mutation. Allow users to execute without passing in DataConnect. */
+export function softDeletePostWithPurge(dc: DataConnect, vars: SoftDeletePostWithPurgeVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<SoftDeletePostWithPurgeData>>;
+/** Generated Node Admin SDK operation action function for the 'SoftDeletePostWithPurge' Mutation. Allow users to pass in custom DataConnect instances. */
+export function softDeletePostWithPurge(vars: SoftDeletePostWithPurgeVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<SoftDeletePostWithPurgeData>>;
+
+/** Generated Node Admin SDK operation action function for the 'GetContentEventByKey' Query. Allow users to execute without passing in DataConnect. */
+export function getContentEventByKey(dc: DataConnect, vars: GetContentEventByKeyVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetContentEventByKeyData>>;
+/** Generated Node Admin SDK operation action function for the 'GetContentEventByKey' Query. Allow users to pass in custom DataConnect instances. */
+export function getContentEventByKey(vars: GetContentEventByKeyVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetContentEventByKeyData>>;
+
+/** Generated Node Admin SDK operation action function for the 'ListRecentContentEventsForViewer' Query. Allow users to execute without passing in DataConnect. */
+export function listRecentContentEventsForViewer(dc: DataConnect, vars: ListRecentContentEventsForViewerVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListRecentContentEventsForViewerData>>;
+/** Generated Node Admin SDK operation action function for the 'ListRecentContentEventsForViewer' Query. Allow users to pass in custom DataConnect instances. */
+export function listRecentContentEventsForViewer(vars: ListRecentContentEventsForViewerVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListRecentContentEventsForViewerData>>;
+
+/** Generated Node Admin SDK operation action function for the 'CreateContentEvent' Mutation. Allow users to execute without passing in DataConnect. */
+export function createContentEvent(dc: DataConnect, vars: CreateContentEventVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateContentEventData>>;
+/** Generated Node Admin SDK operation action function for the 'CreateContentEvent' Mutation. Allow users to pass in custom DataConnect instances. */
+export function createContentEvent(vars: CreateContentEventVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateContentEventData>>;
+
+/** Generated Node Admin SDK operation action function for the 'ListUnrolledContentEvents' Query. Allow users to execute without passing in DataConnect. */
+export function listUnrolledContentEvents(dc: DataConnect, vars: ListUnrolledContentEventsVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListUnrolledContentEventsData>>;
+/** Generated Node Admin SDK operation action function for the 'ListUnrolledContentEvents' Query. Allow users to pass in custom DataConnect instances. */
+export function listUnrolledContentEvents(vars: ListUnrolledContentEventsVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListUnrolledContentEventsData>>;
+
+/** Generated Node Admin SDK operation action function for the 'ListContentEventsByPostWindow' Query. Allow users to execute without passing in DataConnect. */
+export function listContentEventsByPostWindow(dc: DataConnect, vars: ListContentEventsByPostWindowVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListContentEventsByPostWindowData>>;
+/** Generated Node Admin SDK operation action function for the 'ListContentEventsByPostWindow' Query. Allow users to pass in custom DataConnect instances. */
+export function listContentEventsByPostWindow(vars: ListContentEventsByPostWindowVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListContentEventsByPostWindowData>>;
+
+/** Generated Node Admin SDK operation action function for the 'MarkContentEventRolledUp' Mutation. Allow users to execute without passing in DataConnect. */
+export function markContentEventRolledUp(dc: DataConnect, vars: MarkContentEventRolledUpVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<MarkContentEventRolledUpData>>;
+/** Generated Node Admin SDK operation action function for the 'MarkContentEventRolledUp' Mutation. Allow users to pass in custom DataConnect instances. */
+export function markContentEventRolledUp(vars: MarkContentEventRolledUpVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<MarkContentEventRolledUpData>>;
+
+/** Generated Node Admin SDK operation action function for the 'GetContentDailyInsightByKey' Query. Allow users to execute without passing in DataConnect. */
+export function getContentDailyInsightByKey(dc: DataConnect, vars: GetContentDailyInsightByKeyVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetContentDailyInsightByKeyData>>;
+/** Generated Node Admin SDK operation action function for the 'GetContentDailyInsightByKey' Query. Allow users to pass in custom DataConnect instances. */
+export function getContentDailyInsightByKey(vars: GetContentDailyInsightByKeyVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetContentDailyInsightByKeyData>>;
+
+/** Generated Node Admin SDK operation action function for the 'CreateContentDailyInsight' Mutation. Allow users to execute without passing in DataConnect. */
+export function createContentDailyInsight(dc: DataConnect, vars: CreateContentDailyInsightVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateContentDailyInsightData>>;
+/** Generated Node Admin SDK operation action function for the 'CreateContentDailyInsight' Mutation. Allow users to pass in custom DataConnect instances. */
+export function createContentDailyInsight(vars: CreateContentDailyInsightVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateContentDailyInsightData>>;
+
+/** Generated Node Admin SDK operation action function for the 'UpdateContentDailyInsight' Mutation. Allow users to execute without passing in DataConnect. */
+export function updateContentDailyInsight(dc: DataConnect, vars: UpdateContentDailyInsightVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpdateContentDailyInsightData>>;
+/** Generated Node Admin SDK operation action function for the 'UpdateContentDailyInsight' Mutation. Allow users to pass in custom DataConnect instances. */
+export function updateContentDailyInsight(vars: UpdateContentDailyInsightVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpdateContentDailyInsightData>>;
+
+/** Generated Node Admin SDK operation action function for the 'GetContentUniqueViewerDayByKey' Query. Allow users to execute without passing in DataConnect. */
+export function getContentUniqueViewerDayByKey(dc: DataConnect, vars: GetContentUniqueViewerDayByKeyVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetContentUniqueViewerDayByKeyData>>;
+/** Generated Node Admin SDK operation action function for the 'GetContentUniqueViewerDayByKey' Query. Allow users to pass in custom DataConnect instances. */
+export function getContentUniqueViewerDayByKey(vars: GetContentUniqueViewerDayByKeyVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetContentUniqueViewerDayByKeyData>>;
+
+/** Generated Node Admin SDK operation action function for the 'CreateContentUniqueViewerDay' Mutation. Allow users to execute without passing in DataConnect. */
+export function createContentUniqueViewerDay(dc: DataConnect, vars: CreateContentUniqueViewerDayVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateContentUniqueViewerDayData>>;
+/** Generated Node Admin SDK operation action function for the 'CreateContentUniqueViewerDay' Mutation. Allow users to pass in custom DataConnect instances. */
+export function createContentUniqueViewerDay(vars: CreateContentUniqueViewerDayVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateContentUniqueViewerDayData>>;
+
+/** Generated Node Admin SDK operation action function for the 'UpdateContentUniqueViewerDay' Mutation. Allow users to execute without passing in DataConnect. */
+export function updateContentUniqueViewerDay(dc: DataConnect, vars: UpdateContentUniqueViewerDayVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpdateContentUniqueViewerDayData>>;
+/** Generated Node Admin SDK operation action function for the 'UpdateContentUniqueViewerDay' Mutation. Allow users to pass in custom DataConnect instances. */
+export function updateContentUniqueViewerDay(vars: UpdateContentUniqueViewerDayVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpdateContentUniqueViewerDayData>>;
+
+/** Generated Node Admin SDK operation action function for the 'GetContentUniqueViewerByKey' Query. Allow users to execute without passing in DataConnect. */
+export function getContentUniqueViewerByKey(dc: DataConnect, vars: GetContentUniqueViewerByKeyVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetContentUniqueViewerByKeyData>>;
+/** Generated Node Admin SDK operation action function for the 'GetContentUniqueViewerByKey' Query. Allow users to pass in custom DataConnect instances. */
+export function getContentUniqueViewerByKey(vars: GetContentUniqueViewerByKeyVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetContentUniqueViewerByKeyData>>;
+
+/** Generated Node Admin SDK operation action function for the 'CreateContentUniqueViewer' Mutation. Allow users to execute without passing in DataConnect. */
+export function createContentUniqueViewer(dc: DataConnect, vars: CreateContentUniqueViewerVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateContentUniqueViewerData>>;
+/** Generated Node Admin SDK operation action function for the 'CreateContentUniqueViewer' Mutation. Allow users to pass in custom DataConnect instances. */
+export function createContentUniqueViewer(vars: CreateContentUniqueViewerVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateContentUniqueViewerData>>;
+
+/** Generated Node Admin SDK operation action function for the 'UpdateContentUniqueViewer' Mutation. Allow users to execute without passing in DataConnect. */
+export function updateContentUniqueViewer(dc: DataConnect, vars: UpdateContentUniqueViewerVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpdateContentUniqueViewerData>>;
+/** Generated Node Admin SDK operation action function for the 'UpdateContentUniqueViewer' Mutation. Allow users to pass in custom DataConnect instances. */
+export function updateContentUniqueViewer(vars: UpdateContentUniqueViewerVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpdateContentUniqueViewerData>>;
+
+/** Generated Node Admin SDK operation action function for the 'ListContentDailyInsightsByPost' Query. Allow users to execute without passing in DataConnect. */
+export function listContentDailyInsightsByPost(dc: DataConnect, vars: ListContentDailyInsightsByPostVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListContentDailyInsightsByPostData>>;
+/** Generated Node Admin SDK operation action function for the 'ListContentDailyInsightsByPost' Query. Allow users to pass in custom DataConnect instances. */
+export function listContentDailyInsightsByPost(vars: ListContentDailyInsightsByPostVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListContentDailyInsightsByPostData>>;
+
+/** Generated Node Admin SDK operation action function for the 'ListContentUniqueViewerDaysByPost' Query. Allow users to execute without passing in DataConnect. */
+export function listContentUniqueViewerDaysByPost(dc: DataConnect, vars: ListContentUniqueViewerDaysByPostVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListContentUniqueViewerDaysByPostData>>;
+/** Generated Node Admin SDK operation action function for the 'ListContentUniqueViewerDaysByPost' Query. Allow users to pass in custom DataConnect instances. */
+export function listContentUniqueViewerDaysByPost(vars: ListContentUniqueViewerDaysByPostVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListContentUniqueViewerDaysByPostData>>;
+
+/** Generated Node Admin SDK operation action function for the 'ListContentUniqueViewersByPost' Query. Allow users to execute without passing in DataConnect. */
+export function listContentUniqueViewersByPost(dc: DataConnect, vars: ListContentUniqueViewersByPostVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListContentUniqueViewersByPostData>>;
+/** Generated Node Admin SDK operation action function for the 'ListContentUniqueViewersByPost' Query. Allow users to pass in custom DataConnect instances. */
+export function listContentUniqueViewersByPost(vars: ListContentUniqueViewersByPostVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListContentUniqueViewersByPostData>>;
+
+/** Generated Node Admin SDK operation action function for the 'ListContentUniqueViewersByPostSince' Query. Allow users to execute without passing in DataConnect. */
+export function listContentUniqueViewersByPostSince(dc: DataConnect, vars: ListContentUniqueViewersByPostSinceVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListContentUniqueViewersByPostSinceData>>;
+/** Generated Node Admin SDK operation action function for the 'ListContentUniqueViewersByPostSince' Query. Allow users to pass in custom DataConnect instances. */
+export function listContentUniqueViewersByPostSince(vars: ListContentUniqueViewersByPostSinceVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListContentUniqueViewersByPostSinceData>>;
+
+/** Generated Node Admin SDK operation action function for the 'ListExpiredContentEvents' Query. Allow users to execute without passing in DataConnect. */
+export function listExpiredContentEvents(dc: DataConnect, vars: ListExpiredContentEventsVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListExpiredContentEventsData>>;
+/** Generated Node Admin SDK operation action function for the 'ListExpiredContentEvents' Query. Allow users to pass in custom DataConnect instances. */
+export function listExpiredContentEvents(vars: ListExpiredContentEventsVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListExpiredContentEventsData>>;
+
+/** Generated Node Admin SDK operation action function for the 'DeleteContentEvent' Mutation. Allow users to execute without passing in DataConnect. */
+export function deleteContentEvent(dc: DataConnect, vars: DeleteContentEventVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<DeleteContentEventData>>;
+/** Generated Node Admin SDK operation action function for the 'DeleteContentEvent' Mutation. Allow users to pass in custom DataConnect instances. */
+export function deleteContentEvent(vars: DeleteContentEventVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<DeleteContentEventData>>;
+
+/** Generated Node Admin SDK operation action function for the 'ListExpiredContentUniqueViewerDays' Query. Allow users to execute without passing in DataConnect. */
+export function listExpiredContentUniqueViewerDays(dc: DataConnect, vars: ListExpiredContentUniqueViewerDaysVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListExpiredContentUniqueViewerDaysData>>;
+/** Generated Node Admin SDK operation action function for the 'ListExpiredContentUniqueViewerDays' Query. Allow users to pass in custom DataConnect instances. */
+export function listExpiredContentUniqueViewerDays(vars: ListExpiredContentUniqueViewerDaysVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListExpiredContentUniqueViewerDaysData>>;
+
+/** Generated Node Admin SDK operation action function for the 'DeleteContentUniqueViewerDay' Mutation. Allow users to execute without passing in DataConnect. */
+export function deleteContentUniqueViewerDay(dc: DataConnect, vars: DeleteContentUniqueViewerDayVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<DeleteContentUniqueViewerDayData>>;
+/** Generated Node Admin SDK operation action function for the 'DeleteContentUniqueViewerDay' Mutation. Allow users to pass in custom DataConnect instances. */
+export function deleteContentUniqueViewerDay(vars: DeleteContentUniqueViewerDayVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<DeleteContentUniqueViewerDayData>>;
+
+/** Generated Node Admin SDK operation action function for the 'ListContentEventIdsByPost' Query. Allow users to execute without passing in DataConnect. */
+export function listContentEventIdsByPost(dc: DataConnect, vars: ListContentEventIdsByPostVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListContentEventIdsByPostData>>;
+/** Generated Node Admin SDK operation action function for the 'ListContentEventIdsByPost' Query. Allow users to pass in custom DataConnect instances. */
+export function listContentEventIdsByPost(vars: ListContentEventIdsByPostVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListContentEventIdsByPostData>>;
+
+/** Generated Node Admin SDK operation action function for the 'ListContentEventIdsByViewerKey' Query. Allow users to execute without passing in DataConnect. */
+export function listContentEventIdsByViewerKey(dc: DataConnect, vars: ListContentEventIdsByViewerKeyVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListContentEventIdsByViewerKeyData>>;
+/** Generated Node Admin SDK operation action function for the 'ListContentEventIdsByViewerKey' Query. Allow users to pass in custom DataConnect instances. */
+export function listContentEventIdsByViewerKey(vars: ListContentEventIdsByViewerKeyVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListContentEventIdsByViewerKeyData>>;
+
+/** Generated Node Admin SDK operation action function for the 'ListContentUniqueViewerDayIdsByViewerKey' Query. Allow users to execute without passing in DataConnect. */
+export function listContentUniqueViewerDayIdsByViewerKey(dc: DataConnect, vars: ListContentUniqueViewerDayIdsByViewerKeyVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListContentUniqueViewerDayIdsByViewerKeyData>>;
+/** Generated Node Admin SDK operation action function for the 'ListContentUniqueViewerDayIdsByViewerKey' Query. Allow users to pass in custom DataConnect instances. */
+export function listContentUniqueViewerDayIdsByViewerKey(vars: ListContentUniqueViewerDayIdsByViewerKeyVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListContentUniqueViewerDayIdsByViewerKeyData>>;
+
+/** Generated Node Admin SDK operation action function for the 'ListContentUniqueViewerIdsByViewerKey' Query. Allow users to execute without passing in DataConnect. */
+export function listContentUniqueViewerIdsByViewerKey(dc: DataConnect, vars: ListContentUniqueViewerIdsByViewerKeyVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListContentUniqueViewerIdsByViewerKeyData>>;
+/** Generated Node Admin SDK operation action function for the 'ListContentUniqueViewerIdsByViewerKey' Query. Allow users to pass in custom DataConnect instances. */
+export function listContentUniqueViewerIdsByViewerKey(vars: ListContentUniqueViewerIdsByViewerKeyVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListContentUniqueViewerIdsByViewerKeyData>>;
+
+/** Generated Node Admin SDK operation action function for the 'ListContentUniqueViewerDayIdsByPost' Query. Allow users to execute without passing in DataConnect. */
+export function listContentUniqueViewerDayIdsByPost(dc: DataConnect, vars: ListContentUniqueViewerDayIdsByPostVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListContentUniqueViewerDayIdsByPostData>>;
+/** Generated Node Admin SDK operation action function for the 'ListContentUniqueViewerDayIdsByPost' Query. Allow users to pass in custom DataConnect instances. */
+export function listContentUniqueViewerDayIdsByPost(vars: ListContentUniqueViewerDayIdsByPostVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListContentUniqueViewerDayIdsByPostData>>;
+
+/** Generated Node Admin SDK operation action function for the 'ListContentUniqueViewerIdsByPost' Query. Allow users to execute without passing in DataConnect. */
+export function listContentUniqueViewerIdsByPost(dc: DataConnect, vars: ListContentUniqueViewerIdsByPostVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListContentUniqueViewerIdsByPostData>>;
+/** Generated Node Admin SDK operation action function for the 'ListContentUniqueViewerIdsByPost' Query. Allow users to pass in custom DataConnect instances. */
+export function listContentUniqueViewerIdsByPost(vars: ListContentUniqueViewerIdsByPostVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListContentUniqueViewerIdsByPostData>>;
+
+/** Generated Node Admin SDK operation action function for the 'ListContentDailyInsightIdsByPost' Query. Allow users to execute without passing in DataConnect. */
+export function listContentDailyInsightIdsByPost(dc: DataConnect, vars: ListContentDailyInsightIdsByPostVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListContentDailyInsightIdsByPostData>>;
+/** Generated Node Admin SDK operation action function for the 'ListContentDailyInsightIdsByPost' Query. Allow users to pass in custom DataConnect instances. */
+export function listContentDailyInsightIdsByPost(vars: ListContentDailyInsightIdsByPostVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListContentDailyInsightIdsByPostData>>;
+
+/** Generated Node Admin SDK operation action function for the 'DeleteContentUniqueViewer' Mutation. Allow users to execute without passing in DataConnect. */
+export function deleteContentUniqueViewer(dc: DataConnect, vars: DeleteContentUniqueViewerVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<DeleteContentUniqueViewerData>>;
+/** Generated Node Admin SDK operation action function for the 'DeleteContentUniqueViewer' Mutation. Allow users to pass in custom DataConnect instances. */
+export function deleteContentUniqueViewer(vars: DeleteContentUniqueViewerVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<DeleteContentUniqueViewerData>>;
+
+/** Generated Node Admin SDK operation action function for the 'DeleteContentDailyInsight' Mutation. Allow users to execute without passing in DataConnect. */
+export function deleteContentDailyInsight(dc: DataConnect, vars: DeleteContentDailyInsightVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<DeleteContentDailyInsightData>>;
+/** Generated Node Admin SDK operation action function for the 'DeleteContentDailyInsight' Mutation. Allow users to pass in custom DataConnect instances. */
+export function deleteContentDailyInsight(vars: DeleteContentDailyInsightVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<DeleteContentDailyInsightData>>;
+
+/** Generated Node Admin SDK operation action function for the 'ListReadyContentPurgeRequests' Query. Allow users to execute without passing in DataConnect. */
+export function listReadyContentPurgeRequests(dc: DataConnect, vars: ListReadyContentPurgeRequestsVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListReadyContentPurgeRequestsData>>;
+/** Generated Node Admin SDK operation action function for the 'ListReadyContentPurgeRequests' Query. Allow users to pass in custom DataConnect instances. */
+export function listReadyContentPurgeRequests(vars: ListReadyContentPurgeRequestsVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ListReadyContentPurgeRequestsData>>;
+
+/** Generated Node Admin SDK operation action function for the 'DeleteContentPurgeRequest' Mutation. Allow users to execute without passing in DataConnect. */
+export function deleteContentPurgeRequest(dc: DataConnect, vars: DeleteContentPurgeRequestVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<DeleteContentPurgeRequestData>>;
+/** Generated Node Admin SDK operation action function for the 'DeleteContentPurgeRequest' Mutation. Allow users to pass in custom DataConnect instances. */
+export function deleteContentPurgeRequest(vars: DeleteContentPurgeRequestVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<DeleteContentPurgeRequestData>>;
 

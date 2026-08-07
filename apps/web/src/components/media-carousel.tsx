@@ -2,6 +2,7 @@
 
 import { motion, useMotionValue, useTransform, animate, AnimatePresence } from "framer-motion";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import type { ContentEventType } from "../lib/content-measurement";
 
 type MediaVariant = {
   url: string;
@@ -29,6 +30,7 @@ interface MediaCarouselProps {
   /** Post ID for heart burst */
   showHeartBurst?: boolean;
   heartBurstNode?: ReactNode;
+  onMeasurementEvent?: (eventType: ContentEventType, metrics?: { visibleMs?: number; watchMs?: number; progressBasisPoints?: number }) => void;
 }
 
 export function MediaCarousel({
@@ -38,6 +40,7 @@ export function MediaCarousel({
   onClick,
   showHeartBurst,
   heartBurstNode,
+  onMeasurementEvent,
 }: MediaCarouselProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [isHovered, setIsHovered] = useState(false);
@@ -45,6 +48,17 @@ export function MediaCarousel({
   const trackRef = useRef<HTMLDivElement>(null);
   const x = useMotionValue(0);
   const total = items.length;
+  const initialSlide = useRef(true);
+  const measurementRef = useRef(onMeasurementEvent);
+  useEffect(() => { measurementRef.current = onMeasurementEvent; }, [onMeasurementEvent]);
+
+  useEffect(() => {
+    if (initialSlide.current) {
+      initialSlide.current = false;
+      return;
+    }
+    measurementRef.current?.("carousel_slide");
+  }, [activeIndex]);
 
   // Double-tap detection — only fires when user did NOT drag
   const lastTap = useRef(0);
@@ -121,7 +135,7 @@ export function MediaCarousel({
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleTap(); } }}
       >
         {item.kind === "video" ? (
-          <FeedVideo src={item.url} variants={item.variants} />
+          <FeedVideo src={item.url} variants={item.variants} onMeasurementEvent={onMeasurementEvent} />
         ) : (
           <img
             src={item.url}
@@ -163,7 +177,7 @@ export function MediaCarousel({
               style={{ width: `${100 / total}%` }}
             >
               {item.kind === "video" ? (
-                <FeedVideo src={item.url} variants={item.variants} isActive={i === activeIndex} />
+                <FeedVideo src={item.url} variants={item.variants} isActive={i === activeIndex} onMeasurementEvent={onMeasurementEvent} />
               ) : (
                 <img
                   src={item.url}
@@ -225,6 +239,7 @@ interface FeedVideoProps {
   src: string;
   variants?: MediaVariant[];
   isActive?: boolean;
+  onMeasurementEvent?: MediaCarouselProps["onMeasurementEvent"];
 }
 
 function pickVideoSource(src: string, variants: MediaVariant[] | undefined) {
@@ -250,13 +265,16 @@ function pickVideoSource(src: string, variants: MediaVariant[] | undefined) {
   );
 }
 
-export function FeedVideo({ src, variants, isActive = true }: FeedVideoProps) {
+export function FeedVideo({ src, variants, isActive = true, onMeasurementEvent }: FeedVideoProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playbackSrc, setPlaybackSrc] = useState(src);
   const [isPaused, setIsPaused] = useState(false);
   const [isHolding, setIsHolding] = useState(false);
   const [showPlayIcon, setShowPlayIcon] = useState(false);
   const [progress, setProgress] = useState(0);
+  const viewSent = useRef(false);
+  const completionSent = useRef(false);
+  const previousTime = useRef(0);
 
   useEffect(() => {
     setPlaybackSrc(pickVideoSource(src, variants));
@@ -304,6 +322,24 @@ export function FeedVideo({ src, variants, isActive = true }: FeedVideoProps) {
     const video = videoRef.current;
     if (video && video.duration) {
       setProgress((video.currentTime / video.duration) * 100);
+      const basisPoints = Math.min(10_000, Math.round((video.currentTime / video.duration) * 10_000));
+      if (!viewSent.current && video.currentTime >= 3) {
+        viewSent.current = true;
+        onMeasurementEvent?.("video_view", { watchMs: 3000, progressBasisPoints: basisPoints });
+      }
+      if (!completionSent.current && basisPoints >= 9500) {
+        completionSent.current = true;
+        onMeasurementEvent?.("video_complete", {
+          watchMs: Math.max(0, Math.round(video.currentTime * 1000) - (viewSent.current ? 3000 : 0)),
+          progressBasisPoints: basisPoints
+        });
+      }
+      if (previousTime.current > 2 && video.currentTime + 1 < previousTime.current) {
+        onMeasurementEvent?.("video_replay");
+        viewSent.current = false;
+        completionSent.current = false;
+      }
+      previousTime.current = video.currentTime;
     }
   };
 
@@ -324,6 +360,7 @@ export function FeedVideo({ src, variants, isActive = true }: FeedVideoProps) {
         loop
         preload="none"
         onTimeUpdate={handleTimeUpdate}
+        onPlay={() => onMeasurementEvent?.("video_play")}
       />
 
       {/* 2x Speed Badge */}

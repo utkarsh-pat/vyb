@@ -73,6 +73,36 @@ export interface ConnectSession_Key {
   __typename?: 'ConnectSession_Key';
 }
 
+export interface ContentDailyInsight_Key {
+  id: UUIDString;
+  __typename?: 'ContentDailyInsight_Key';
+}
+
+export interface ContentEvent_Key {
+  id: UUIDString;
+  __typename?: 'ContentEvent_Key';
+}
+
+export interface ContentMeasurementPreference_Key {
+  id: UUIDString;
+  __typename?: 'ContentMeasurementPreference_Key';
+}
+
+export interface ContentPurgeRequest_Key {
+  id: UUIDString;
+  __typename?: 'ContentPurgeRequest_Key';
+}
+
+export interface ContentUniqueViewerDay_Key {
+  id: UUIDString;
+  __typename?: 'ContentUniqueViewerDay_Key';
+}
+
+export interface ContentUniqueViewer_Key {
+  id: UUIDString;
+  __typename?: 'ContentUniqueViewer_Key';
+}
+
 export interface Course_Key {
   id: UUIDString;
   __typename?: 'Course_Key';
@@ -483,6 +513,11 @@ export interface Reaction_Key {
   __typename?: 'Reaction_Key';
 }
 
+export interface RecommendationFeedback_Key {
+  id: UUIDString;
+  __typename?: 'RecommendationFeedback_Key';
+}
+
 export interface Report_Key {
   id: UUIDString;
   __typename?: 'Report_Key';
@@ -602,6 +637,11 @@ export interface UpdateMarketRequestDetailsVariables {
 export interface UserActivity_Key {
   id: UUIDString;
   __typename?: 'UserActivity_Key';
+}
+
+export interface UserBlock_Key {
+  id: UUIDString;
+  __typename?: 'UserBlock_Key';
 }
 
 export interface User_Key {

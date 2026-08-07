@@ -44,6 +44,7 @@ import {
   type PostDisplayPreference
 } from "./campus-settings-storage";
 import { useSearchNavigationGuard } from "../lib/search-navigation";
+import { flushContentEvents, recordContentEvent } from "../lib/content-measurement";
 
 const SocialThreadSheet = dynamic(
   () => import("./social-thread-sheet").then((module) => module.SocialThreadSheet),
@@ -476,6 +477,12 @@ export function CampusReelsShell({
   const [durationByPost, setDurationByPost] = useState<Record<string, number>>({});
   const [scrubbingPostId, setScrubbingPostId] = useState<string | null>(null);
   const [playbackFeedback, setPlaybackFeedback] = useState<{ postId: string; paused: boolean } | null>(null);
+  const videoMeasurementRef = useRef<Record<string, {
+    previousTime: number;
+    watchedMs: number;
+    viewSent: boolean;
+    completeSent: boolean;
+  }>>({});
   const [nextCursor, setNextCursor] = useState<string | null>(initialNextCursor);
   const [isLoadingMoreVibes, setIsLoadingMoreVibes] = useState(false);
   const [storedCampusSettings, setStoredCampusSettings] = useState(createDefaultCampusSettings);
@@ -498,6 +505,26 @@ export function CampusReelsShell({
 
   const identityLine = [course, stream].filter(Boolean).join(" / ") || `${collegeName} • ${role}`;
   const activePost = engagement.posts[clamp(activeIndex, 0, Math.max(engagement.posts.length - 1, 0))] ?? null;
+
+  useEffect(() => {
+    if (!activePost) return;
+    const postId = activePost.id;
+    const impression = window.setTimeout(() => {
+      if (document.visibilityState === "visible") {
+        recordContentEvent(postId, "impression", { visibleMs: 500 });
+      }
+    }, 500);
+    const qualified = window.setTimeout(() => {
+      if (document.visibilityState === "visible") {
+        recordContentEvent(postId, "qualified_view", { visibleMs: 1000 });
+      }
+    }, 1000);
+    return () => {
+      window.clearTimeout(impression);
+      window.clearTimeout(qualified);
+      void flushContentEvents();
+    };
+  }, [activePost?.id]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(min-width: 960px)");
@@ -1418,6 +1445,28 @@ export function CampusReelsShell({
     }
   }
 
+  async function handleNotInterested(post: FeedCard) {
+    setActionBusy(true);
+    setActionMessage(null);
+    try {
+      const response = await fetch(`/api/posts/${encodeURIComponent(post.id)}/recommendation`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "not_interested" })
+      });
+      const payload = await response.json().catch(() => null) as { error?: { message?: string } } | null;
+      if (!response.ok) throw new Error(payload?.error?.message ?? "Could not update recommendations.");
+      engagement.removePost(post.id);
+      removeMirroredPost(post.id);
+      setActionPost(null);
+      setFlashMessage("This vibe will not be recommended again.");
+    } catch (error) {
+      setActionMessage(error instanceof Error ? error.message : "Could not update recommendations.");
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
   async function handleReportComment(commentId: string) {
     try {
       const response = await fetch("/api/reports", {
@@ -1568,6 +1617,35 @@ export function CampusReelsShell({
     }
 
     const nextProgress = element.duration > 0 ? element.currentTime / element.duration : 0;
+    if (activePost?.id === postId && !element.paused && document.visibilityState === "visible") {
+      const measurement = videoMeasurementRef.current[postId] ?? {
+        previousTime: element.currentTime,
+        watchedMs: 0,
+        viewSent: false,
+        completeSent: false
+      };
+      const elapsedSeconds = element.currentTime - measurement.previousTime;
+      if (elapsedSeconds > 0 && elapsedSeconds < 1.5) {
+        measurement.watchedMs += Math.round(elapsedSeconds * 1000);
+      }
+      measurement.previousTime = element.currentTime;
+      const progressBasisPoints = Math.round(nextProgress * 10_000);
+      if (!measurement.viewSent && (measurement.watchedMs >= 3000 || nextProgress >= 0.3)) {
+        measurement.viewSent = true;
+        recordContentEvent(postId, "video_view", {
+          watchMs: Math.max(3000, measurement.watchedMs),
+          progressBasisPoints
+        });
+      }
+      if (!measurement.completeSent && nextProgress >= 0.95) {
+        measurement.completeSent = true;
+        recordContentEvent(postId, "video_complete", {
+          watchMs: measurement.watchedMs,
+          progressBasisPoints
+        });
+      }
+      videoMeasurementRef.current[postId] = measurement;
+    }
     if (element.duration > 0 && Number.isFinite(element.duration)) {
       setDurationByPost((current) => current[postId] === element.duration
         ? current
@@ -1706,6 +1784,12 @@ export function CampusReelsShell({
                               loop
                               muted={isMuted}
                               preload={isActive ? "auto" : "metadata"}
+                              onPlay={() => {
+                                if (isActive) recordContentEvent(item.id, "video_play");
+                              }}
+                              onEnded={() => {
+                                if (isActive) recordContentEvent(item.id, "video_replay");
+                              }}
                               onTimeUpdate={(event) => handleVideoProgress(item.id, event.currentTarget)}
                               onLoadedMetadata={(event) => handleVideoProgress(item.id, event.currentTarget)}
                             />
@@ -2130,6 +2214,11 @@ export function CampusReelsShell({
         onCopyLink={() => {
           if (actionPost) {
             void handleCopyPostLink(actionPost);
+          }
+        }}
+        onNotInterested={() => {
+          if (actionPost) {
+            void handleNotInterested(actionPost);
           }
         }}
       />

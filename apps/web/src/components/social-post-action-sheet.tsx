@@ -1,6 +1,6 @@
 "use client";
 
-import type { FeedCard } from "@vyb/contracts";
+import type { ContentInsightResponse, FeedCard } from "@vyb/contracts";
 import { useEffect, useState } from "react";
 
 type SocialPostActionSheetProps = {
@@ -19,9 +19,10 @@ type SocialPostActionSheetProps = {
   onDelete: () => void;
   onReport: (reason: string) => void;
   onCopyLink: () => void;
+  onNotInterested: () => void;
 };
 
-type SheetMode = "menu" | "report" | "edit";
+type SheetMode = "menu" | "report" | "edit" | "insights";
 
 function EyeIcon() {
   return (
@@ -97,19 +98,45 @@ export function SocialPostActionSheet({
   onEdit,
   onDelete,
   onReport,
-  onCopyLink
+  onCopyLink,
+  onNotInterested
 }: SocialPostActionSheetProps) {
   const [mode, setMode] = useState<SheetMode>("menu");
   const [draft, setDraft] = useState("");
   const [locationDraft, setLocationDraft] = useState("");
   const [allowAnonymousCommentsDraft, setAllowAnonymousCommentsDraft] = useState(true);
+  const [insightRange, setInsightRange] = useState<ContentInsightResponse["range"]>("7d");
+  const [insights, setInsights] = useState<ContentInsightResponse | null>(null);
+  const [insightsLoading, setInsightsLoading] = useState(false);
+  const [insightsError, setInsightsError] = useState<string | null>(null);
 
   useEffect(() => {
     setMode("menu");
     setDraft(post?.body ?? "");
     setLocationDraft(post?.location ?? "");
     setAllowAnonymousCommentsDraft(post?.allowAnonymousComments !== false);
+    setInsights(null);
+    setInsightsError(null);
   }, [post?.id]);
+
+  async function loadInsights(range: ContentInsightResponse["range"]) {
+    if (!post) return;
+    setInsightRange(range);
+    setInsightsLoading(true);
+    setInsightsError(null);
+    try {
+      const response = await fetch(`/api/posts/${encodeURIComponent(post.id)}/insights?range=${encodeURIComponent(range)}`, {
+        cache: "no-store"
+      });
+      const payload = await response.json().catch(() => null) as ContentInsightResponse & { error?: { message?: string } };
+      if (!response.ok) throw new Error(payload?.error?.message ?? "Insights are unavailable right now.");
+      setInsights(payload);
+    } catch (error) {
+      setInsightsError(error instanceof Error ? error.message : "Insights are unavailable right now.");
+    } finally {
+      setInsightsLoading(false);
+    }
+  }
 
   useEffect(() => {
     if (post) {
@@ -166,6 +193,17 @@ export function SocialPostActionSheet({
                 </button>
               ) : null}
               {isOwner ? (
+                <button type="button" onClick={() => { setMode("insights"); void loadInsights("7d"); }}>
+                  <div className="action-icon"><EyeIcon /></div>
+                  <span>View creator insights</span>
+                </button>
+              ) : (
+                <button type="button" onClick={onNotInterested} disabled={isBusy}>
+                  <div className="action-icon"><EyeIcon /></div>
+                  <span>Not interested</span>
+                </button>
+              )}
+              {isOwner ? (
                 <>
                   <button type="button" onClick={onToggleReactionCount} disabled={isBusy}>
                     <div className="action-icon"><EyeIcon /></div>
@@ -200,6 +238,43 @@ export function SocialPostActionSheet({
                   <span>Report post</span>
                 </button>
               )}
+            </div>
+          </>
+        ) : mode === "insights" ? (
+          <>
+            <div className="vyb-post-actions-head">
+              <div>
+                <strong>Creator insights</strong>
+                <span>Unique reach is de-duplicated; views can repeat.</span>
+              </div>
+              <button type="button" className="vyb-post-share-close" onClick={() => setMode("menu")}>â†</button>
+            </div>
+            <div className="sheet-form-content">
+              <div className="vyb-post-insight-ranges" role="group" aria-label="Insight range">
+                {(["24h", "7d", "30d", "lifetime"] as const).map((range) => (
+                  <button
+                    key={range}
+                    type="button"
+                    className={insightRange === range ? "is-active" : ""}
+                    onClick={() => void loadInsights(range)}
+                    disabled={insightsLoading}
+                  >
+                    {range}
+                  </button>
+                ))}
+              </div>
+              {insightsLoading ? <p>Loading insights...</p> : null}
+              {insightsError ? <p className="vyb-post-actions-message">{insightsError}</p> : null}
+              {insights ? (
+                <div className="vyb-post-insight-grid">
+                  <div><strong>{insights.reach.toLocaleString()}</strong><span>Unique reach</span></div>
+                  <div><strong>{insights.views.toLocaleString()}</strong><span>Qualified views</span></div>
+                  <div><strong>{insights.impressionCount.toLocaleString()}</strong><span>Impressions</span></div>
+                  <div><strong>{Math.round(insights.watchMsTotal / 1000).toLocaleString()}s</strong><span>Watch time</span></div>
+                  <div><strong>{insights.completionCount.toLocaleString()}</strong><span>Completions</span></div>
+                  <div><strong>{insights.carouselSlideCount.toLocaleString()}</strong><span>Carousel swipes</span></div>
+                </div>
+              ) : null}
             </div>
           </>
         ) : (

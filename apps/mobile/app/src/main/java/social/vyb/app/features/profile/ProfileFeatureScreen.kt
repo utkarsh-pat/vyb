@@ -151,7 +151,9 @@ fun ProfileFeatureScreen(
                 state = state,
                 onBack = profileViewModel::back,
                 onChange = profileViewModel::setPrivacy,
-                onSave = profileViewModel::savePrivacy
+                onSave = profileViewModel::savePrivacy,
+                onMeasurementChange = profileViewModel::setContentMeasurementEnabled,
+                onEraseMeasurement = profileViewModel::eraseContentMeasurement
             )
             ProfilePanel.Security -> SecuritySettings(
                 state = state,
@@ -407,7 +409,9 @@ private fun PrivacySettings(
     state: ProfileUiState,
     onBack: () -> Unit,
     onChange: (ChatPrivacySettings) -> Unit,
-    onSave: () -> Unit
+    onSave: () -> Unit,
+    onMeasurementChange: (Boolean) -> Unit,
+    onEraseMeasurement: () -> Unit
 ) {
     val settings = state.privacy
     ProfilePage("Chat privacy", onBack) {
@@ -434,6 +438,22 @@ private fun PrivacySettings(
             "Show when you are typing",
             settings.typingIndicator
         ) { onChange(settings.copy(typingIndicator = it)) }
+        Text(
+            "Creator measurement",
+            color = VybText,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(top = 18.dp)
+        )
+        PrivacyToggle(
+            "Anonymous performance measurement",
+            "Lets your own posts show privacy-preserving reach and view insights.",
+            state.contentMeasurementEnabled
+        ) { onMeasurementChange(it) }
+        TextButton(
+            onClick = onEraseMeasurement,
+            enabled = !state.busy,
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("Erase raw measurement history", color = MaterialTheme.colorScheme.error) }
         MessageBanner(state)
         PrimaryAction("Save privacy", state.busy, onSave)
     }

@@ -5,7 +5,10 @@ const LOCAL_INTERNAL_API_KEY = "local-vyb-internal-key";
 export function getConfiguredInternalApiKey() {
   const configured = process.env.VYB_INTERNAL_API_KEY?.trim();
 
-  if (configured && !(process.env.NODE_ENV === "production" && configured === LOCAL_INTERNAL_API_KEY)) {
+  if (configured && !(
+    process.env.NODE_ENV === "production" &&
+    (configured === LOCAL_INTERNAL_API_KEY || configured.length < 24)
+  )) {
     return configured;
   }
 
@@ -19,7 +22,7 @@ export function getConfiguredInternalApiKey() {
 export function getRequiredInternalApiKey() {
   const key = getConfiguredInternalApiKey();
   if (!key) {
-    throw new Error("VYB_INTERNAL_API_KEY must be set to a non-local value in production.");
+    throw new Error("VYB_INTERNAL_API_KEY must contain at least 24 non-local characters in production.");
   }
 
   return key;

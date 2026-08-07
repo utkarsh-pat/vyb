@@ -76,7 +76,11 @@ async function validateInternalKeyAndCors() {
   assert.equal(internalAuth.getConfiguredInternalApiKey(), null, "explicit local key should still be rejected in production");
 
   process.env.VYB_INTERNAL_API_KEY = "production-secret";
-  assert.equal(internalAuth.isTrustedInternalApiKey("production-secret"), true, "configured internal key should be trusted");
+  assert.equal(internalAuth.getConfiguredInternalApiKey(), null, "short production internal keys should fail closed");
+
+  const productionInternalKey = "production-internal-secret-at-least-24";
+  process.env.VYB_INTERNAL_API_KEY = productionInternalKey;
+  assert.equal(internalAuth.isTrustedInternalApiKey(productionInternalKey), true, "configured internal key should be trusted");
 
   process.env.VYB_CORS_ALLOWED_ORIGINS = "https://app.example.com";
   delete process.env.VYB_WEB_ORIGIN;

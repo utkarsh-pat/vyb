@@ -156,6 +156,165 @@ type Follow @table(name: "follows", singular: "follow", plural: "follows", key: 
   deletedAt: Timestamp @col(name: "deleted_at")
 }
 
+# A block is tenant-scoped and symmetric at read time: content and profile
+# discovery are hidden when either side has an active row. Keeping this as a
+# first-class server record prevents per-device moderation state from drifting.
+type UserBlock
+  @table(name: "user_blocks", singular: "userBlock", plural: "userBlocks", key: ["id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  blockKey: String! @col(name: "block_key") @unique
+  tenant: Tenant!
+  blockerUserId: UUID! @col(name: "blocker_user_id")
+  blockedUserId: UUID! @col(name: "blocked_user_id")
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
+# Cross-device privacy preference. When disabled the ingestion API becomes a
+# no-op and existing pseudonymous viewer ledgers can be purged on request.
+type ContentMeasurementPreference
+  @table(
+    name: "content_measurement_preferences"
+    singular: "contentMeasurementPreference"
+    plural: "contentMeasurementPreferences"
+    key: ["id"]
+  ) {
+  id: UUID! @default(expr: "uuidV4()")
+  preferenceKey: String! @col(name: "preference_key") @unique
+  tenant: Tenant!
+  userId: UUID! @col(name: "user_id")
+  measurementEnabled: Boolean! @col(name: "measurement_enabled") @default(value: true)
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+}
+
+# Explicit ranking feedback is separate from engagement so "not interested"
+# never masquerades as a reaction and can be honored on every device.
+type RecommendationFeedback
+  @table(
+    name: "recommendation_feedback"
+    singular: "recommendationFeedback"
+    plural: "recommendationFeedbackRecords"
+    key: ["id"]
+  ) {
+  id: UUID! @default(expr: "uuidV4()")
+  feedbackKey: String! @col(name: "feedback_key") @unique
+  tenant: Tenant!
+  post: Post!
+  userId: UUID! @col(name: "user_id")
+  action: String!
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+  deletedAt: Timestamp @col(name: "deleted_at")
+}
+
+# Immutable, short-lived measurement facts. Viewer identifiers are keyed HMAC
+# pseudonyms (never email/device advertising IDs) and are removed by retention.
+type ContentEvent
+  @table(name: "content_events", singular: "contentEvent", plural: "contentEvents", key: ["id"]) {
+  id: UUID! @default(expr: "uuidV4()")
+  eventKey: String! @col(name: "event_key") @unique
+  tenant: Tenant!
+  post: Post!
+  viewerKey: String! @col(name: "viewer_key")
+  sessionKey: String! @col(name: "session_key")
+  eventType: String! @col(name: "event_type")
+  source: String!
+  visibleMs: Int! @col(name: "visible_ms") @default(value: 0)
+  watchMs: Int! @col(name: "watch_ms") @default(value: 0)
+  progressBasisPoints: Int! @col(name: "progress_basis_points") @default(value: 0)
+  occurredAt: Timestamp! @col(name: "occurred_at")
+  receivedAt: Timestamp! @col(name: "received_at") @default(expr: "request.time")
+  expiresAt: Timestamp! @col(name: "expires_at")
+  rolledUpAt: Timestamp @col(name: "rolled_up_at")
+}
+
+# One row per content/viewer/UTC-day. This is the anti-inflation ledger used by
+# ranking; it is intentionally distinct from the non-unique view counter.
+type ContentUniqueViewerDay
+  @table(
+    name: "content_unique_viewer_days"
+    singular: "contentUniqueViewerDay"
+    plural: "contentUniqueViewerDays"
+    key: ["id"]
+  ) {
+  id: UUID! @default(expr: "uuidV4()")
+  uniqueKey: String! @col(name: "unique_key") @unique
+  tenant: Tenant!
+  post: Post!
+  viewerKey: String! @col(name: "viewer_key")
+  viewDate: Date! @col(name: "view_date")
+  firstViewedAt: Timestamp! @col(name: "first_viewed_at")
+  lastViewedAt: Timestamp! @col(name: "last_viewed_at")
+  qualifiedViewCount: Int! @col(name: "qualified_view_count") @default(value: 1)
+  expiresAt: Timestamp! @col(name: "expires_at")
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+}
+
+# Lifetime exact reach ledger. It stores no raw interaction history.
+type ContentUniqueViewer
+  @table(
+    name: "content_unique_viewers"
+    singular: "contentUniqueViewer"
+    plural: "contentUniqueViewers"
+    key: ["id"]
+  ) {
+  id: UUID! @default(expr: "uuidV4()")
+  uniqueKey: String! @col(name: "unique_key") @unique
+  tenant: Tenant!
+  post: Post!
+  viewerKey: String! @col(name: "viewer_key")
+  firstViewedAt: Timestamp! @col(name: "first_viewed_at")
+  lastViewedAt: Timestamp! @col(name: "last_viewed_at")
+  qualifiedViewCount: Int! @col(name: "qualified_view_count") @default(value: 1)
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+}
+
+type ContentDailyInsight
+  @table(
+    name: "content_daily_insights"
+    singular: "contentDailyInsight"
+    plural: "contentDailyInsights"
+    key: ["id"]
+  ) {
+  id: UUID! @default(expr: "uuidV4()")
+  insightKey: String! @col(name: "insight_key") @unique
+  tenant: Tenant!
+  post: Post!
+  insightDate: Date! @col(name: "insight_date")
+  impressionCount: Int! @col(name: "impression_count") @default(value: 0)
+  qualifiedViewCount: Int! @col(name: "qualified_view_count") @default(value: 0)
+  uniqueReachCount: Int! @col(name: "unique_reach_count") @default(value: 0)
+  videoPlayCount: Int! @col(name: "video_play_count") @default(value: 0)
+  videoViewCount: Int! @col(name: "video_view_count") @default(value: 0)
+  replayCount: Int! @col(name: "replay_count") @default(value: 0)
+  watchMsTotal: Int64! @col(name: "watch_ms_total") @default(value: 0)
+  completionCount: Int! @col(name: "completion_count") @default(value: 0)
+  carouselSlideCount: Int! @col(name: "carousel_slide_count") @default(value: 0)
+  createdAt: Timestamp! @col(name: "created_at") @default(expr: "request.time")
+  updatedAt: Timestamp! @col(name: "updated_at") @default(expr: "request.time")
+}
+
+# Durable privacy cleanup request created atomically with post soft deletion.
+# The delayed maintenance sweep closes races with already-authorized in-flight
+# event requests before deleting this request.
+type ContentPurgeRequest
+  @table(
+    name: "content_purge_requests"
+    singular: "contentPurgeRequest"
+    plural: "contentPurgeRequests"
+    key: ["id"]
+  ) {
+  id: UUID! @default(expr: "uuidV4()")
+  purgeKey: String! @col(name: "purge_key") @unique
+  tenant: Tenant!
+  post: Post!
+  requestedAt: Timestamp! @col(name: "requested_at") @default(expr: "request.time")
+}
+
 extend type Post {
   tenantId: UUID!
   communityId: UUID
@@ -205,5 +364,43 @@ extend type StoryView {
 
 extend type Follow {
   tenantId: UUID!
+}
+
+extend type UserBlock {
+  tenantId: UUID!
+}
+
+extend type ContentMeasurementPreference {
+  tenantId: UUID!
+}
+
+extend type RecommendationFeedback {
+  tenantId: UUID!
+  postId: UUID!
+}
+
+extend type ContentEvent {
+  tenantId: UUID!
+  postId: UUID!
+}
+
+extend type ContentUniqueViewerDay {
+  tenantId: UUID!
+  postId: UUID!
+}
+
+extend type ContentUniqueViewer {
+  tenantId: UUID!
+  postId: UUID!
+}
+
+extend type ContentDailyInsight {
+  tenantId: UUID!
+  postId: UUID!
+}
+
+extend type ContentPurgeRequest {
+  tenantId: UUID!
+  postId: UUID!
 }
 
