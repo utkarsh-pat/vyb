@@ -11962,3 +11962,22 @@ input:checked + .vyb-settings-list-toggle-slider:before {
     right: 1rem !important;
   }
 }
+.vyb-campus-new-posts {
+  position: sticky;
+  top: 0.75rem;
+  z-index: 35;
+  display: block;
+  width: max-content;
+  max-width: calc(100% - 2rem);
+  margin: 0.65rem auto -0.15rem;
+  padding: 0.55rem 0.95rem;
+  border: 1px solid color-mix(in srgb, var(--vyb-accent, #6c5ce7) 55%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--vyb-surface, #10172a) 84%, transparent);
+  color: var(--vyb-text, #f7f8ff);
+  font: inherit;
+  font-weight: 750;
+  box-shadow: 0 10px 30px rgb(0 0 0 / 22%);
+  backdrop-filter: blur(16px) saturate(135%);
+  cursor: pointer;
+}

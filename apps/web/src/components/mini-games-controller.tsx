@@ -2,22 +2,15 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import type { MiniGameSlug } from "../lib/mini-game-slugs";
 
 const GAMES = {
-  chess: { title: "Chess", description: "A local two-player chess board with legal piece movement.", icon: "♞" },
-  ludo: { title: "Ludo", description: "A touch-friendly local Ludo match with optional bot turns.", icon: "L" },
   "color-sort": { title: "Color Sort", description: "Sort every colour into its own tube with undo and saved progress.", icon: "C" },
-  "n-queens": { title: "N-Queens Visualizer", description: "Watch and control backtracking to place non-attacking queens.", icon: "Q" },
+  "n-queens": { title: "N-Queens Solver", description: "Explore the daily puzzle's backtracking solution step by step.", icon: "Q" },
   "word-puzzle": { title: "Word Puzzle", description: "A local daily-style five-letter challenge.", icon: "W" }
 } as const;
 
-type GameSlug = keyof typeof GAMES;
-
-export function isMiniGameSlug(value: string): value is GameSlug {
-  return value in GAMES;
-}
-
-export function MiniGamesController({ game }: { game: GameSlug }) {
+export function MiniGamesController({ game }: { game: MiniGameSlug }) {
   const [frameReady, setFrameReady] = useState(false);
   const meta = GAMES[game];
   const src = useMemo(() => `/games/${game}/index.html`, [game]);

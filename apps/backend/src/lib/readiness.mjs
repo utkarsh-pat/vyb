@@ -19,6 +19,10 @@ export function evaluateRuntimeReadiness(env = process.env) {
       "R2_PUBLIC_BASE_URL"
     ]),
     signedGames: hasValue(env.VYB_GAMES_SESSION_SECRET) || hasValue(env.VYB_SESSION_SECRET),
+    socialRealtimeFanout: hasAll(env, [
+      "VYB_SOCIAL_REALTIME_PUBLIC_ORIGIN",
+      "VYB_SOCIAL_REALTIME_SECRET"
+    ]),
     analyticsMeasurement:
       hasValue(env.VYB_ANALYTICS_VIEWER_KEY_SECRET) && env.VYB_ANALYTICS_VIEWER_KEY_SECRET.trim().length >= 24,
     internalJobs:
@@ -35,6 +39,7 @@ export function evaluateRuntimeReadiness(env = process.env) {
   const degradedFeatures = [];
   if (!checks.r2Media) degradedFeatures.push("r2-media");
   if (!checks.signedGames) degradedFeatures.push("signed-games");
+  if (!checks.socialRealtimeFanout) degradedFeatures.push("social-realtime-fanout");
 
   return {
     ready: missingRequired.length === 0,

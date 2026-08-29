@@ -972,6 +972,10 @@ function getChatBucket() {
   return getR2Bucket();
 }
 
+function isChatStorageNotConfiguredError(error) {
+  return (error instanceof Error ? error.message : String(error)).includes("R2 media storage is not configured");
+}
+
 function toIsoString(value) {
   const parsed = new Date(value ?? Date.now());
   return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
@@ -983,6 +987,10 @@ function normalizeString(value) {
 
 function normalizeIdList(values) {
   return Array.from(new Set((Array.isArray(values) ? values : []).map((value) => normalizeString(value)).filter(Boolean)));
+}
+
+function normalizeUuidForKey(value) {
+  return normalizeString(value)?.replaceAll("-", "").toLowerCase() ?? "";
 }
 
 function isBatchReadFallbackEligibleError(error) {
@@ -1052,8 +1060,14 @@ function buildChatIdentityKey(tenantId, userId) {
   return `${tenantId}:${userId}`;
 }
 
-function buildConversationKey(userIdA, userIdB) {
-  return [userIdA, userIdB].sort().join(":");
+function buildConversationKey(tenantId, userIdA, userIdB) {
+  // A user's identity can participate in multiple campus tenants over time.
+  // Scoping the unique key prevents an archived/legacy tenant conversation
+  // from being reused across the current tenant security boundary.
+  return [
+    normalizeUuidForKey(tenantId),
+    ...[userIdA, userIdB].map(normalizeUuidForKey).sort()
+  ].join(":");
 }
 
 function isDuplicateConversationKeyError(error) {
@@ -1130,7 +1144,7 @@ async function waitForDirectConversationAccess(viewer, conversationKey, retries 
 }
 
 function buildChatParticipantKey(conversationId, userId) {
-  return `${conversationId}:${userId}`;
+  return `${normalizeUuidForKey(conversationId)}:${normalizeUuidForKey(userId)}`;
 }
 
 async function ensureChatParticipantRecord({ tenantId, conversationId, membershipId, userId }) {
@@ -2709,17 +2723,21 @@ export async function clearChatKeyBackupPinAttemptState(viewer) {
 
 async function getHiddenChatMessageState(viewer) {
   const storagePath = buildChatHiddenMessageStoragePath(viewer.tenantId, viewer.userId);
-  const file = getChatBucket().file(storagePath);
-  const [exists] = await file.exists();
-
-  if (!exists) {
-    return normalizeHiddenMessageState(null);
-  }
-
   try {
+    const file = getChatBucket().file(storagePath);
+    const [exists] = await file.exists();
+    if (!exists) {
+      return normalizeHiddenMessageState(null);
+    }
     const [buffer] = await file.download();
     return normalizeHiddenMessageState(JSON.parse(buffer.toString("utf8")));
-  } catch {
+  } catch (error) {
+    if (!isChatStorageNotConfiguredError(error)) {
+      console.warn("[chat] hidden_message_state_read_skipped", {
+        userId: viewer.userId,
+        message: error instanceof Error ? error.message : "Unknown storage failure"
+      });
+    }
     return normalizeHiddenMessageState(null);
   }
 }
@@ -2727,13 +2745,19 @@ async function getHiddenChatMessageState(viewer) {
 async function saveHiddenChatMessageState(viewer, state) {
   const nextState = normalizeHiddenMessageState(state);
   const storagePath = buildChatHiddenMessageStoragePath(viewer.tenantId, viewer.userId);
-  await getChatBucket().file(storagePath).save(Buffer.from(JSON.stringify(nextState), "utf8"), {
-    resumable: false,
-    metadata: {
-      contentType: "application/json; charset=utf-8",
-      cacheControl: "private, max-age=0, no-cache"
+  try {
+    await getChatBucket().file(storagePath).save(Buffer.from(JSON.stringify(nextState), "utf8"), {
+      resumable: false,
+      metadata: {
+        contentType: "application/json; charset=utf-8",
+        cacheControl: "private, max-age=0, no-cache"
+      }
+    });
+  } catch (error) {
+    if (!isChatStorageNotConfiguredError(error)) {
+      throw error;
     }
-  });
+  }
 
   return nextState;
 }
@@ -2841,9 +2865,15 @@ export async function listChatInbox(viewer) {
   ]);
 
   const accessItems = [];
+  const seenConversationIds = new Set();
   for (const viewerParticipant of viewerParticipants) {
     const conversation = conversationMap.get(viewerParticipant.conversationId);
     if (!conversation || conversation.tenantId !== viewer.tenantId) {
+      continue;
+    }
+
+    const canonicalConversationId = normalizeUuidForKey(conversation.id);
+    if (seenConversationIds.has(canonicalConversationId)) {
       continue;
     }
 
@@ -2862,6 +2892,7 @@ export async function listChatInbox(viewer) {
       viewerParticipant: confirmedViewerParticipant,
       peerParticipant
     });
+    seenConversationIds.add(canonicalConversationId);
   }
 
   const visibleAccessItems = (
@@ -2972,7 +3003,7 @@ export async function createOrGetDirectConversation(viewer, input) {
     throw new ChatSecurityError(403, "RELATIONSHIP_BLOCKED", "This chat is unavailable.");
   }
 
-  const conversationKey = buildConversationKey(viewer.userId, recipientProfile.userId);
+  const conversationKey = buildConversationKey(viewer.tenantId, viewer.userId, recipientProfile.userId);
   let conversation = await waitForDirectConversation(conversationKey, 2);
   const anyConversation = conversation ?? (await getAnyChatConversationByKey(conversationKey));
   let created = false;
@@ -3339,21 +3370,8 @@ export async function sendChatMessage(viewer, conversationId, payload) {
     });
   }
   const storedMessage = await hydrateChatMessage(storedMessageRaw);
-  const preview = await buildConversationPreview(viewer, await getChatConversationById(conversationId), access.viewerParticipant, access.peerParticipant);
-
-  await trackActivity({
-    tenantId: viewer.tenantId,
-    membershipId: viewer.membershipId,
-    activityType: "chat_message_sent",
-    entityType: "chat_message",
-    entityId: messageId,
-    metadata: {
-      conversationId,
-      messageKind
-    },
-    auditAction: "chat_message_sent"
-  });
-
+  // Fan out the committed encrypted envelope before preparing inbox metadata
+  // and analytics. Recipients should not wait for sender-only response work.
   emitChatRealtimeEvent({
     conversationId,
     type: "chat.message",
@@ -3374,6 +3392,24 @@ export async function sendChatMessage(viewer, conversationId, payload) {
     messageId,
     durationMs: Date.now() - sendStartedAt
   });
+
+  const [preview] = await Promise.all([
+    getChatConversationById(conversationId).then((conversation) =>
+      buildConversationPreview(viewer, conversation, access.viewerParticipant, access.peerParticipant)
+    ),
+    trackActivity({
+      tenantId: viewer.tenantId,
+      membershipId: viewer.membershipId,
+      activityType: "chat_message_sent",
+      entityType: "chat_message",
+      entityId: messageId,
+      metadata: {
+        conversationId,
+        messageKind
+      },
+      auditAction: "chat_message_sent"
+    })
+  ]);
 
   return {
     item: storedMessage,

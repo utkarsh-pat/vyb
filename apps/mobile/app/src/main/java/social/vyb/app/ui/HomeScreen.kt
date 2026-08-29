@@ -49,10 +49,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -104,6 +106,8 @@ fun HomeScreen(
     initialPostId: String? = null,
     onInitialPostConsumed: () -> Unit = {},
     onRefresh: () -> Unit,
+    onReconcile: () -> Unit,
+    onApplyPendingFeedChanges: () -> Unit,
     onLoadMore: () -> Unit,
     onOpenSearch: () -> Unit,
     onOpenMessages: () -> Unit,
@@ -124,6 +128,29 @@ fun HomeScreen(
     var fullPostId by remember { mutableStateOf<String?>(null) }
     val feedListState = rememberLazyListState()
     var showPostFab by remember { mutableStateOf(true) }
+    val feedLifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(feedLifecycleOwner, onReconcile) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) onReconcile()
+        }
+        feedLifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { feedLifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    LaunchedEffect(onReconcile) {
+        while (true) {
+            kotlinx.coroutines.delay(45_000)
+            onReconcile()
+        }
+    }
+    LaunchedEffect(state.hasPendingFeedChanges) {
+        if (
+            state.hasPendingFeedChanges &&
+            feedListState.firstVisibleItemIndex == 0 &&
+            feedListState.firstVisibleItemScrollOffset <= 56
+        ) {
+            onApplyPendingFeedChanges()
+        }
+    }
     LaunchedEffect(composerNotice) {
         if (composerNotice != null) {
             kotlinx.coroutines.delay(2_200)
@@ -424,6 +451,27 @@ fun HomeScreen(
             }
         }
         item { Spacer(Modifier.height(20.dp)) }
+    }
+    AnimatedVisibility(
+        visible = state.hasPendingFeedChanges,
+        enter = fadeIn(),
+        exit = fadeOut(),
+        modifier = Modifier.align(Alignment.TopCenter).padding(top = 76.dp)
+    ) {
+        Surface(
+            modifier = Modifier.clickable(onClick = onApplyPendingFeedChanges),
+            color = VybIndigo.copy(alpha = .94f),
+            shape = RoundedCornerShape(999.dp),
+            shadowElevation = 8.dp
+        ) {
+            Text(
+                "New posts",
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 9.dp)
+            )
+        }
     }
     AnimatedVisibility(
         visible = (showPostFab || mediaComposerState.isPublishing || socialState.creatingPost) &&

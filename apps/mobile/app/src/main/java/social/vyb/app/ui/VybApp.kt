@@ -353,6 +353,8 @@ private fun VybAppContent(
                                 initialPostId = pendingPostId,
                                 onInitialPostConsumed = { pendingPostId = null },
                                 onRefresh = viewModel::refreshHomeFeed,
+                                onReconcile = viewModel::reconcileHomeFeed,
+                                onApplyPendingFeedChanges = viewModel::applyPendingFeedChanges,
                                 onLoadMore = viewModel::loadMoreHomeFeed,
                                 onOpenSearch = { navController.navigate("search") },
                                 onOpenMessages = { navController.navigate("messages") },
@@ -469,6 +471,10 @@ private fun VybAppContent(
                                     pendingMarketId = item.id
                                     pendingMarketType = if (item.kind.name == "Request") "request" else "listing"
                                     navigateTo("market")
+                                },
+                                onOpenConversation = { conversationId ->
+                                    pendingConversationId = conversationId
+                                    navigateTo("messages")
                                 }
                             )
                         }
@@ -497,6 +503,10 @@ private fun VybAppContent(
                                     pendingMarketId = item.id
                                     pendingMarketType = if (item.kind.name == "Request") "request" else "listing"
                                     navigateTo("market")
+                                },
+                                onOpenConversation = { conversationId ->
+                                    pendingConversationId = conversationId
+                                    navigateTo("messages")
                                 }
                             )
                         }

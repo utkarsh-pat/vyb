@@ -33,6 +33,7 @@ import javax.crypto.spec.SecretKeySpec
 internal object ChatCrypto {
     const val IDENTITY_ALGORITHM = "ECDH-P256"
     const val MESSAGE_ALGORITHM = "ECDH-P256/AES-GCM"
+    const val ATTACHMENT_ALGORITHM = "ECDH-P256/AES-GCM/attachment-v1"
     private const val KEYSTORE = "AndroidKeyStore"
     private const val ALIAS_PREFIX = "vyb_chat_p256_"
     private const val WRAP_ALIAS_PREFIX = "vyb_chat_wrap_"
@@ -41,6 +42,12 @@ internal object ChatCrypto {
 
     data class LocalIdentity(val publicKey: String, val privateKey: PrivateKey)
     data class EncryptedMessage(val cipherText: String, val cipherIv: String)
+    data class EncryptedAttachment(
+        val bytes: ByteArray,
+        val cipherIv: String,
+        val senderPublicKey: String,
+        val recipientPublicKey: String
+    )
 
     fun findLocalIdentity(context: Context, userId: String): LocalIdentity? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
@@ -205,6 +212,42 @@ internal object ChatCrypto {
         return cipher(Cipher.DECRYPT_MODE, identity.privateKey, peerPublicKey, iv)
             .doFinal(cipherBytes)
             .toString(StandardCharsets.UTF_8)
+    }
+
+    fun encryptAttachment(
+        plaintext: ByteArray,
+        identity: LocalIdentity,
+        peerPublicKey: String
+    ): EncryptedAttachment {
+        val iv = ByteArray(12).also(SecureRandom()::nextBytes)
+        return EncryptedAttachment(
+            bytes = cipher(Cipher.ENCRYPT_MODE, identity.privateKey, peerPublicKey, iv).doFinal(plaintext),
+            cipherIv = encode(iv),
+            senderPublicKey = identity.publicKey,
+            recipientPublicKey = peerPublicKey
+        )
+    }
+
+    fun decryptAttachment(
+        cipherBytes: ByteArray,
+        attachment: ChatAttachmentDto,
+        identity: LocalIdentity,
+        fallbackPeerPublicKey: String
+    ): ByteArray {
+        require(attachment.cipherAlgorithm == ATTACHMENT_ALGORITHM && !attachment.cipherIv.isNullOrBlank()) {
+            "This chat attachment is missing its encryption envelope."
+        }
+        val peerPublicKey = when {
+            attachment.senderPublicKey == identity.publicKey -> attachment.recipientPublicKey
+            attachment.recipientPublicKey == identity.publicKey -> attachment.senderPublicKey
+            else -> fallbackPeerPublicKey
+        } ?: error("This chat attachment cannot be opened without the peer public key.")
+        return cipher(
+            Cipher.DECRYPT_MODE,
+            identity.privateKey,
+            peerPublicKey,
+            decode(requireNotNull(attachment.cipherIv))
+        ).doFinal(cipherBytes)
     }
 
     private fun cipher(

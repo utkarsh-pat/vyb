@@ -5,6 +5,8 @@
 .next
 .tmp
 .turbo
+**/.turbo/
+**/.turbo/**
 .env
 .env.*
 !.env.example
@@ -55,3 +57,4 @@ deploy/cloudrun/*.env
 firebase-debug.log
 secrets
 *.log
+**/*.log

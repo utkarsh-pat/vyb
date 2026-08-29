@@ -63,6 +63,7 @@ import {
   subscribeToCampusSettings
 } from "./campus-settings-storage";
 import { MessageCardRenderer } from "./message-card-renderer";
+import { StoryBuilder } from "./story-builder";
 import { queueAppRouteOrigin, readAppRouteOrigin } from "../lib/app-navigation-state";
 
 type ActiveConversation = ChatConversationResponse["conversation"];
@@ -123,9 +124,8 @@ type PendingDeleteUndo = {
   expiresAt: number;
 };
 type ViewOncePreviewState = {
-  url: string;
-  kind: "image" | "video";
-  messageId: string;
+  items: Array<{ url: string; kind: "image" | "video"; messageId: string }>;
+  viewOnce: boolean;
 };
 type PendingMessageSendState = {
   progress: number;
@@ -622,7 +622,7 @@ function getReplyPreview(
   if (!message) return "Original message";
   const text = getMessageBody(message, plaintextByMessageId[message.id]).replace(/\s+/g, " ").trim();
   if (!text) return "Original message";
-  return text.length > 72 ? `${text.slice(0, 72)}...` : text;
+  return text.length > 72 ? `${text.slice(0, 72)}…` : text;
 }
 
 function getInitials(name: string) {
@@ -1316,6 +1316,7 @@ export function CampusMessagesShell({
   const [draftMessage, setDraftMessage] = useState("");
   const [pendingShareCard, setPendingShareCard] = useState<PendingShareCard | null>(null);
   const [pendingMediaAttachments, setPendingMediaAttachments] = useState<PendingMediaAttachment[]>([]);
+  const [editingPendingMedia, setEditingPendingMedia] = useState<PendingMediaAttachment | null>(null);
   const [viewOnceEnabled, setViewOnceEnabled] = useState(false);
   const [composerDragActive, setComposerDragActive] = useState(false);
   const [isRecordingVoiceNote, setIsRecordingVoiceNote] = useState(false);
@@ -1378,6 +1379,7 @@ export function CampusMessagesShell({
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const mediaInputRef = useRef<HTMLInputElement | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const threadRef = useRef<HTMLDivElement | null>(null);
   const pageRef = useRef<HTMLElement | null>(null);
   const pendingMediaUrlsRef = useRef<string[]>([]);
@@ -3838,6 +3840,29 @@ export function CampusMessagesShell({
     await queuePendingMediaAttachments(files);
   }
 
+  async function applyPendingMediaEdit(result: { file: File }) {
+    const target = editingPendingMedia;
+    if (!target) return;
+    const nextUrl = window.URL.createObjectURL(result.file);
+    const dimensions = await readImageDimensions(nextUrl);
+    setPendingMediaAttachments((current) =>
+      current.map((item) => {
+        if (item.id !== target.id) return item;
+        window.URL.revokeObjectURL(item.previewUrl);
+        return {
+          ...item,
+          file: result.file,
+          name: result.file.name || item.name,
+          mimeType: result.file.type || item.mimeType,
+          previewUrl: nextUrl,
+          width: dimensions.width,
+          height: dimensions.height
+        };
+      })
+    );
+    setEditingPendingMedia(null);
+  }
+
   function handleComposerDragOver(event: React.DragEvent<HTMLFormElement>) {
     event.preventDefault();
     setComposerDragActive(true);
@@ -4468,6 +4493,14 @@ export function CampusMessagesShell({
               payload.payload?.item && typeof payload.payload.item === "object"
                 ? (payload.payload.item as ChatMessageRecord)
                 : null;
+
+            if (incomingMessage?.senderUserId && incomingMessage.senderUserId !== viewerUserId) {
+              applyRemoteTypingState(conversationId, {
+                userId: incomingMessage.senderUserId,
+                membershipId: incomingMessage.senderMembershipId ?? "peer",
+                isTyping: false
+              });
+            }
 
             if (incomingMessage && payload.type === "chat.message" && incomingMessage.senderUserId === viewerUserId) {
               const currentConversation = activeConversationRef.current;
@@ -5244,10 +5277,32 @@ export function CampusMessagesShell({
     }
 
     if (!message.attachment.viewOnce || options.isOwnMessage) {
-      setViewOncePreview({
+      const currentItem = {
         url: options.renderUrl,
-        kind: options.attachmentKind === "video" ? "video" : "image",
+        kind: options.attachmentKind === "video" ? "video" as const : "image" as const,
         messageId: message.id
+      };
+      const gallery = message.attachment.viewOnce
+        ? [currentItem]
+        : [
+            currentItem,
+            ...(activeConversation?.messages ?? [])
+              .filter((candidate) => candidate.id !== message.id && candidate.attachment && !candidate.attachment.viewOnce)
+              .map((candidate) => {
+                const url = attachmentObjectUrlByMessageId[candidate.id] ||
+                  (!isE2eeAttachmentCipher(candidate.attachment!) ? candidate.attachment!.url : "");
+                if (!url || candidate.attachment!.mimeType.startsWith("audio/")) return null;
+                return {
+                  url,
+                  kind: candidate.attachment!.mimeType.startsWith("video/") ? "video" as const : "image" as const,
+                  messageId: candidate.id
+                };
+              })
+              .filter((item): item is { url: string; kind: "image" | "video"; messageId: string } => Boolean(item))
+          ];
+      setViewOncePreview({
+        items: gallery,
+        viewOnce: Boolean(message.attachment.viewOnce)
       });
       return;
     }
@@ -5267,9 +5322,12 @@ export function CampusMessagesShell({
     }
 
     setViewOncePreview({
-      url: options.renderUrl,
-      kind: options.attachmentKind === "video" ? "video" : "image",
-      messageId: message.id
+      items: [{
+        url: options.renderUrl,
+        kind: options.attachmentKind === "video" ? "video" : "image",
+        messageId: message.id
+      }],
+      viewOnce: true
     });
   }
 
@@ -6225,8 +6283,13 @@ export function CampusMessagesShell({
       activeConversationTyping.userId === activePeer.userId &&
       Date.now() - activeConversationTyping.updatedAt < TYPING_INDICATOR_WINDOW_MS
   );
+  useEffect(() => {
+    if (activePeerIsTyping) {
+      scrollChatThreadToBottom({ force: chatThreadStickToBottomRef.current });
+    }
+  }, [activePeerIsTyping]);
   const activePeerStatus = activePeerIsTyping ? "online" : canSeePresence ? activePeerPresence.tone : "away";
-  const activePeerStatusLabel = activePeerIsTyping ? "Typing..." : canSeePresence ? activePeerPresence.label : "Last seen hidden";
+  const activePeerStatusLabel = activePeerIsTyping ? "Typing…" : canSeePresence ? activePeerPresence.label : "Last seen hidden";
   const activePeerInitials = activePeer ? getInitials(activePeer.displayName) : "";
   const activePeerMeta = activePeer
     ? [activePeer.course, activePeer.stream].filter(Boolean).join(" / ") || collegeName
@@ -6354,7 +6417,7 @@ export function CampusMessagesShell({
                     onChange={(event) => setQuery(event.target.value)}
                     onFocus={() => setFocused(true)}
                     onBlur={() => setFocused(false)}
-                    placeholder="Search doston by handle or name..."
+                    placeholder="Search doston by handle or name…"
                     autoCapitalize="none"
                     autoComplete="off"
                     spellCheck={false}
@@ -6399,7 +6462,7 @@ export function CampusMessagesShell({
                     {searchLoading && (
                       <div className="spm-search-hint">
                         <span className="spm-search-spinner" aria-hidden="true" />
-                        Searching campus...
+                        Searching campus…
                       </div>
                     )}
 
@@ -6816,7 +6879,7 @@ export function CampusMessagesShell({
               {conversationLoading && !activeConversation && (
                 <div className="spm-chat-state">
                   <span className="spm-search-spinner" aria-hidden="true" />
-                  Opening secure chat...
+                  Opening secure chat…
                 </div>
               )}
 
@@ -6846,7 +6909,7 @@ export function CampusMessagesShell({
                   {renderBackupPanel}
 
                   <div className="spm-chat-thread" ref={threadRef} onScroll={handleChatThreadScroll}>
-                    {messageTimeline.length === 0 ? (
+                    {messageTimeline.length === 0 && !activePeerIsTyping ? (
                       <div className="spm-chat-empty">
                         <div className="spm-chat-empty-icon">
                           <IconMessages />
@@ -6855,7 +6918,8 @@ export function CampusMessagesShell({
                         <span>This conversation is ready for your first message.</span>
                       </div>
                     ) : (
-                      messageTimeline.map((item) => {
+                      <>
+                      {messageTimeline.map((item) => {
                         if (item.type === "day") {
                           return (
                             <div key={item.key} className="spm-chat-day-divider">
@@ -6916,11 +6980,21 @@ export function CampusMessagesShell({
                           attachmentRenderUrl &&
                           attachmentKind !== "audio"
                         );
+                        const normalizedAttachmentBody = plaintext.trim().toLowerCase();
+                        const isGeneratedAttachmentLabel = Boolean(message.attachment) && [
+                          "voice note",
+                          "photo",
+                          "video",
+                          "shared image",
+                          "shared video",
+                          "shared media",
+                        ].includes(normalizedAttachmentBody);
                         const shouldSuppressMediaFallbackText =
-                          message.messageKind === "image" &&
-                          Boolean(message.attachment?.url || attachmentRenderUrl) &&
-                          !plaintext.trim() &&
-                          !isDeletedMessage;
+                          !isDeletedMessage &&
+                          (isGeneratedAttachmentLabel ||
+                            (message.messageKind === "image" &&
+                              Boolean(message.attachment?.url || attachmentRenderUrl) &&
+                              !plaintext.trim()));
                         const isScreenshotAlert = plaintext.includes("Suspected screenshot:");
                         const isSystemMessage = message.messageKind === "system" || isScreenshotAlert;
                         const isEditedMessage =
@@ -7016,7 +7090,7 @@ export function CampusMessagesShell({
                                           </button>
                                         </div>
                                       ) : (
-                                        <div className="spm-chat-attachment-loading">Decrypting media...</div>
+                                        <div className="spm-chat-attachment-loading">Decrypting media…</div>
                                       )
                                     ) : attachmentKind === "video" ? (
                                       <>
@@ -7025,6 +7099,11 @@ export function CampusMessagesShell({
                                           controls
                                           playsInline
                                           preload="metadata"
+                                          onClick={() => void openViewOnceAttachment(message, {
+                                            isOwnMessage,
+                                            attachmentKind,
+                                            renderUrl: attachmentRenderUrl
+                                          })}
                                         />
                                         {pendingSendState ? <PendingSendOverlay state={pendingSendState} /> : null}
                                       </>
@@ -7035,7 +7114,6 @@ export function CampusMessagesShell({
                                             <IconPlay />
                                           </span>
                                           <div className="spm-chat-voice-body">
-                                            <span className="spm-chat-voice-label">Voice note</span>
                                             <audio
                                               className="spm-chat-voice-audio"
                                               src={attachmentRenderUrl}
@@ -7053,6 +7131,11 @@ export function CampusMessagesShell({
                                           src={attachmentRenderUrl}
                                           alt="Shared in chat"
                                           loading="lazy"
+                                          onClick={() => void openViewOnceAttachment(message, {
+                                            isOwnMessage,
+                                            attachmentKind,
+                                            renderUrl: attachmentRenderUrl
+                                          })}
                                         />
                                         {pendingSendState ? <PendingSendOverlay state={pendingSendState} /> : null}
                                       </>
@@ -7196,7 +7279,17 @@ export function CampusMessagesShell({
                             )}
                           </div>
                         );
-                      })
+                      })}
+                      {activePeerIsTyping ? (
+                        <div className="spm-chat-message-row spm-chat-typing-row" role="status" aria-label={`${activePeer?.displayName ?? "They"} is typing`}>
+                          <div className="spm-chat-bubble spm-chat-typing-bubble" aria-hidden="true">
+                            <span />
+                            <span />
+                            <span />
+                          </div>
+                        </div>
+                      ) : null}
+                      </>
                     )}
                   </div>
 
@@ -7508,6 +7601,16 @@ export function CampusMessagesShell({
                                   <img src={attachment.previewUrl} alt="" loading="lazy" />
                                 )}
                               </div>
+                              {attachment.mediaKind === "image" ? (
+                                <button
+                                  type="button"
+                                  className="spm-chat-compose-media-edit"
+                                  onClick={() => setEditingPendingMedia(attachment)}
+                                  aria-label={`Edit ${attachment.name}`}
+                                >
+                                  <IconEdit />
+                                </button>
+                              ) : null}
                               <button
                                 type="button"
                                 className="spm-chat-compose-media-remove"
@@ -7600,6 +7703,14 @@ export function CampusMessagesShell({
                         accept={CHAT_MEDIA_ACCEPT}
                         onChange={handleMediaSelection}
                       />
+                      <input
+                        ref={cameraInputRef}
+                        type="file"
+                        hidden
+                        accept="image/*"
+                        capture="environment"
+                        onChange={handleMediaSelection}
+                      />
                       <button
                         type="button"
                         className="spm-chat-share-trigger"
@@ -7612,6 +7723,15 @@ export function CampusMessagesShell({
                         disabled={Boolean(editingMessage)}
                       >
                         <IconPlus />
+                      </button>
+                      <button
+                        type="button"
+                        className="spm-chat-share-trigger spm-chat-camera-trigger"
+                        aria-label="Open camera"
+                        onClick={() => cameraInputRef.current?.click()}
+                        disabled={Boolean(editingMessage)}
+                      >
+                        Camera
                       </button>
 
                       <div className="spm-chat-compose-box">
@@ -7722,13 +7842,12 @@ export function CampusMessagesShell({
         <div
           className="spm-chat-view-once-backdrop"
           role="presentation"
-          onClick={() => setViewOncePreview(null)}
         >
           <div
             className="spm-chat-view-once-modal"
             role="dialog"
             aria-modal="true"
-            aria-label="View once media"
+            aria-label={viewOncePreview.viewOnce ? "View once media" : "Chat media viewer"}
             onClick={(event) => event.stopPropagation()}
           >
             <button
@@ -7739,13 +7858,33 @@ export function CampusMessagesShell({
             >
               <IconClose />
             </button>
-            {viewOncePreview.kind === "video" ? (
-              <video src={viewOncePreview.url} controls autoPlay playsInline className="spm-chat-view-once-media" />
-            ) : (
-              <img src={viewOncePreview.url} alt="View once media" className="spm-chat-view-once-media" />
-            )}
+            <div className="spm-chat-media-carousel" aria-label="Swipe through chat media">
+              {viewOncePreview.items.map((item) => (
+                <div className="spm-chat-media-carousel-page" key={item.messageId}>
+                  {item.kind === "video" ? (
+                    <video src={item.url} controls autoPlay={viewOncePreview.items.length === 1} playsInline className="spm-chat-view-once-media" />
+                  ) : (
+                    <img src={item.url} alt="Shared chat media" className="spm-chat-view-once-media" />
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
+      )}
+
+      {editingPendingMedia?.mediaKind === "image" && (
+        <StoryBuilder
+          asset={{
+            id: editingPendingMedia.id,
+            url: editingPendingMedia.previewUrl,
+            file: editingPendingMedia.file,
+            kind: "image"
+          }}
+          purpose="post"
+          onApply={(result) => void applyPendingMediaEdit(result)}
+          onClose={() => setEditingPendingMedia(null)}
+        />
       )}
 
       {activeVibePreview && (

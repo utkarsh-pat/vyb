@@ -1,8 +1,13 @@
 package social.vyb.app.features.messages
 
 import android.content.Context
+import android.net.Uri
+import android.util.Base64
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.put
 import retrofit2.HttpException
 import social.vyb.app.data.RemotePost
@@ -12,12 +17,47 @@ import social.vyb.app.features.realtime.ChatRealtimeClient
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 
 class ChatRepository(
     private val context: Context,
     private val auth: FirebaseAuth = FirebaseAuth.getInstance()
 ) {
+    fun currentViewerName(): String = auth.currentUser?.displayName
+        ?.trim()?.takeIf(String::isNotBlank)
+        ?: auth.currentUser?.email?.substringBefore('@')
+        ?: "A participant"
+    private val chatPreferences by lazy {
+        context.getSharedPreferences("vyb_chat_preferences", Context.MODE_PRIVATE)
+    }
+
+    fun loadDefaultDuration(conversationId: String): String {
+        val userId = auth.currentUser?.uid ?: "anonymous"
+        return chatPreferences.getString("ttl:$userId:$conversationId", "30d")
+            ?.takeIf { it in SUPPORTED_TTL_KEYS }
+            ?: "30d"
+    }
+
+    fun saveDefaultDuration(conversationId: String, durationKey: String) {
+        require(durationKey in SUPPORTED_TTL_KEYS) { "Unsupported chat expiry timer." }
+        val userId = auth.currentUser?.uid ?: "anonymous"
+        chatPreferences.edit().putString("ttl:$userId:$conversationId", durationKey).apply()
+    }
+
+    private data class ConversationSession(
+        val viewerUserId: String,
+        val identity: ChatCrypto.LocalIdentity,
+        val peerPublicKey: String,
+        val peerName: String,
+        val peerHandle: String,
+        val peerAvatarUrl: String?,
+        val isOnline: Boolean
+    )
+
     private val api: ChatApi = VybNetwork.create()
+    private val json = Json { ignoreUnknownKeys = true }
+    private val conversationSessions = ConcurrentHashMap<String, ConversationSession>()
     private val realtimeClient = ChatRealtimeClient(
         socketUrlProvider = { conversationId ->
             api.socketToken(bearer(), conversationId).wsUrl
@@ -33,10 +73,14 @@ class ChatRepository(
     fun acknowledgeDelivered(conversationId: String, messageIds: List<String>): Boolean =
         realtimeClient.acknowledgeDelivered(conversationId, messageIds)
 
+    internal suspend fun heartbeatPresence(): ChatPresenceHeartbeatResponseDto = apiCall {
+        api.heartbeatPresence(bearer())
+    }
+
     suspend fun loadInbox(): List<ChatInboxItem> = apiCall {
         val response = api.inbox(bearer())
         val localIdentity = resolveLocalIdentity(response.viewer)
-        response.items.map { preview ->
+        response.items.distinctBy(ChatPreviewDto::id).map { preview ->
             val lastMessage = preview.lastMessage
             ChatInboxItem(
                 id = preview.id,
@@ -53,6 +97,15 @@ class ChatRepository(
                 isOnline = preview.peer.isOnline
             )
         }
+    }
+
+    suspend fun openDirectConversation(username: String): String = apiCall {
+        val normalizedUsername = username.trim().removePrefix("@")
+        require(normalizedUsername.isNotEmpty()) { "Choose a member first." }
+        api.createDirectConversation(
+            authorization = bearer(),
+            body = CreateDirectChatRequestDto(recipientUsername = normalizedUsername)
+        ).conversation.id
     }
 
     suspend fun loadCommunityInbox(): List<CommunityInboxItem> = apiCall {
@@ -138,17 +191,41 @@ class ChatRepository(
         }
         val peerKey = response.conversation.peer.publicKey?.publicKey
             ?: error("This member has not set up secure chat yet.")
-        val messages = response.conversation.messages.map { message ->
+        val session = ConversationSession(
+            viewerUserId = response.viewer.userId,
+            identity = localIdentity,
+            peerPublicKey = peerKey,
+            peerName = response.conversation.peer.displayName,
+            peerHandle = "@${response.conversation.peer.username}",
+            peerAvatarUrl = response.conversation.peer.avatarUrl,
+            isOnline = response.conversation.peer.isOnline
+        )
+        conversationSessions[conversationId] = session
+        val peerReadIndex = response.conversation.peerLastReadMessageId?.let { readId ->
+            response.conversation.messages.indexOfFirst { it.id == readId }
+        } ?: -1
+        val messages = response.conversation.messages.mapIndexed { index, message ->
             val plaintext = runCatching { ChatCrypto.decrypt(message, localIdentity, peerKey) }.getOrNull()
             ChatMessageItem(
                 id = message.id,
                 body = plaintext ?: "Unable to decrypt this message on this device.",
                 timestamp = formatTimestamp(message.createdAt),
                 isMine = message.senderUserId == response.viewer.userId,
-                isReadable = plaintext != null
+                isReadable = plaintext != null,
+                deliveryState = if (message.senderUserId == response.viewer.userId && index <= peerReadIndex) {
+                    ChatDeliveryState.Read
+                } else {
+                    ChatDeliveryState.Sent
+                },
+                expiresAt = message.expiresAt,
+                messageKind = message.messageKind,
+                attachment = message.attachment
             )
         }
-        response.conversation.messages.lastOrNull()?.let { last ->
+        response.conversation.messages.lastOrNull()?.takeIf { last ->
+            last.senderUserId != response.viewer.userId &&
+                last.id != response.conversation.lastReadMessageId
+        }?.let { last ->
             runCatching {
                 api.markRead(
                     bearer(),
@@ -158,31 +235,34 @@ class ChatRepository(
             }
         }
         ConversationResult(
-            peerName = response.conversation.peer.displayName,
-            peerHandle = "@${response.conversation.peer.username}",
-            isOnline = response.conversation.peer.isOnline,
+            peerName = session.peerName,
+            peerHandle = session.peerHandle,
+            peerAvatarUrl = session.peerAvatarUrl,
+            isOnline = session.isOnline,
             messages = messages,
             viewerUserId = response.viewer.userId
         )
     }
 
-    suspend fun sendText(conversationId: String, plaintext: String): ChatMessageItem = apiCall {
+    suspend fun sendText(
+        conversationId: String,
+        plaintext: String,
+        durationKey: String = "30d"
+    ): ChatMessageItem = apiCall {
         val text = plaintext.trim()
         require(text.isNotEmpty()) { "Type a message first." }
         require(text.length <= 4_000) { "Message is too long." }
 
-        val conversation = api.conversation(bearer(), conversationId)
-        val identity = resolveOrProvisionIdentity(conversation.viewer)
-        val peerKey = conversation.conversation.peer.publicKey?.publicKey
-            ?: error("This member has not set up secure chat yet.")
-        val encrypted = ChatCrypto.encrypt(text, identity, peerKey)
+        val session = conversationSessions[conversationId] ?: loadConversationSession(conversationId)
+        val encrypted = ChatCrypto.encrypt(text, session.identity, session.peerPublicKey)
         val sent = api.sendMessage(
             bearer(),
             conversationId,
             SendChatMessageRequestDto(
                 cipherText = encrypted.cipherText,
                 cipherIv = encrypted.cipherIv,
-                cipherAlgorithm = ChatCrypto.MESSAGE_ALGORITHM
+                cipherAlgorithm = ChatCrypto.MESSAGE_ALGORITHM,
+                durationKey = durationKey
             )
         ).item
         ChatMessageItem(
@@ -190,8 +270,164 @@ class ChatRepository(
             body = text,
             timestamp = formatTimestamp(sent.createdAt),
             isMine = true,
-            isReadable = true
+            isReadable = true,
+            deliveryState = ChatDeliveryState.Sent,
+            expiresAt = sent.expiresAt,
+            messageKind = sent.messageKind,
+            attachment = sent.attachment
         )
+    }
+
+    suspend fun receiveRealtimeMessage(
+        conversationId: String,
+        item: JsonObject?
+    ): ChatMessageItem? = apiCall {
+        val message = item?.let { json.decodeFromJsonElement<ChatMessageDto>(it) } ?: return@apiCall null
+        val session = conversationSessions[conversationId] ?: return@apiCall null
+        val plaintext = runCatching {
+            ChatCrypto.decrypt(message, session.identity, session.peerPublicKey)
+        }.getOrNull()
+        val isMine = message.senderUserId == session.viewerUserId
+        if (!isMine) {
+            runCatching { Instant.parse(message.createdAt).toEpochMilli() }
+                .onSuccess { ChatTelemetry.realtimeArrival(it, message.id) }
+        }
+        ChatMessageItem(
+            id = message.id,
+            body = plaintext ?: "Unable to decrypt this message on this device.",
+            timestamp = formatTimestamp(message.createdAt),
+            isMine = isMine,
+            isReadable = plaintext != null,
+            deliveryState = ChatDeliveryState.Sent,
+            expiresAt = message.expiresAt,
+            messageKind = message.messageKind,
+            attachment = message.attachment
+        )
+    }
+
+    suspend fun sendMedia(
+        conversationId: String,
+        source: Uri,
+        fileName: String,
+        mimeType: String,
+        width: Int? = null,
+        height: Int? = null,
+        durationMs: Int? = null,
+        viewOnce: Boolean = false,
+        caption: String = "",
+        durationKey: String = "30d"
+    ): ChatMessageItem = apiCall {
+        require(
+            mimeType.startsWith("image/") || mimeType.startsWith("video/") || mimeType.startsWith("audio/")
+        ) { "Choose an image, video, or audio file." }
+        val originalBytes = context.contentResolver.openInputStream(source)?.use { it.readBytes() }
+            ?: error("The selected media could not be opened.")
+        val session = conversationSessions[conversationId] ?: loadConversationSession(conversationId)
+        val encryptedAttachment = ChatCrypto.encryptAttachment(
+            originalBytes,
+            session.identity,
+            session.peerPublicKey
+        )
+        val uploaded = api.uploadAttachment(
+            bearer(),
+            UploadChatAttachmentRequestDto(
+                fileName = fileName,
+                mimeType = mimeType,
+                base64Data = Base64.encodeToString(encryptedAttachment.bytes, Base64.NO_WRAP),
+                width = width,
+                height = height,
+                durationMs = durationMs,
+                viewOnce = viewOnce && !mimeType.startsWith("audio/"),
+                cipherAlgorithm = ChatCrypto.ATTACHMENT_ALGORITHM,
+                cipherIv = encryptedAttachment.cipherIv,
+                senderPublicKey = encryptedAttachment.senderPublicKey,
+                recipientPublicKey = encryptedAttachment.recipientPublicKey
+            )
+        ).attachment
+        val plaintext = caption.trim().ifBlank {
+            when {
+                mimeType.startsWith("audio/") -> "Voice note"
+                mimeType.startsWith("video/") -> "Video"
+                else -> "Photo"
+            }
+        }
+        val encryptedText = ChatCrypto.encrypt(plaintext, session.identity, session.peerPublicKey)
+        val sent = api.sendMessage(
+            bearer(),
+            conversationId,
+            SendChatMessageRequestDto(
+                messageKind = "image",
+                cipherText = encryptedText.cipherText,
+                cipherIv = encryptedText.cipherIv,
+                cipherAlgorithm = ChatCrypto.MESSAGE_ALGORITHM,
+                attachment = uploaded,
+                durationKey = durationKey
+            )
+        ).item
+        val cached = cacheDecryptedAttachment(sent.id, mimeType, originalBytes)
+        ChatMessageItem(
+            id = sent.id,
+            body = plaintext,
+            timestamp = formatTimestamp(sent.createdAt),
+            isMine = true,
+            isReadable = true,
+            deliveryState = ChatDeliveryState.Sent,
+            expiresAt = sent.expiresAt,
+            messageKind = sent.messageKind,
+            attachment = sent.attachment,
+            localMediaUri = cached.toURI().toString()
+        )
+    }
+
+    suspend fun loadAttachment(
+        conversationId: String,
+        message: ChatMessageItem,
+        consumeViewOnce: Boolean = false
+    ): String = apiCall {
+        val attachment = requireNotNull(message.attachment) { "This message has no media." }
+        val cached = cachedAttachment(message.id, attachment.mimeType)
+        val localUri = if (cached != null) {
+            cached.toURI().toString()
+        } else {
+            val session = conversationSessions[conversationId] ?: loadConversationSession(conversationId)
+            val encryptedBytes = api.downloadAttachment(bearer(), message.id).use { it.bytes() }
+            val plaintext = ChatCrypto.decryptAttachment(
+                encryptedBytes,
+                attachment,
+                session.identity,
+                session.peerPublicKey
+            )
+            cacheDecryptedAttachment(message.id, attachment.mimeType, plaintext).toURI().toString()
+        }
+        if (consumeViewOnce && attachment.viewOnce && !message.isMine) {
+            api.updateMessageLifecycle(
+                bearer(),
+                message.id,
+                UpdateChatMessageLifecycleRequestDto(consumeViewOnce = true)
+            )
+        }
+        localUri
+    }
+
+    private fun cachedAttachment(messageId: String, mimeType: String): File? {
+        val file = File(File(context.cacheDir, "chat-media"), "$messageId.${extensionFor(mimeType)}")
+        return file.takeIf(File::isFile)
+    }
+
+    private fun cacheDecryptedAttachment(messageId: String, mimeType: String, bytes: ByteArray): File {
+        val directory = File(context.cacheDir, "chat-media").apply { mkdirs() }
+        return File(directory, "$messageId.${extensionFor(mimeType)}").apply { writeBytes(bytes) }
+    }
+
+    private fun extensionFor(mimeType: String): String = when {
+        mimeType == "image/png" -> "png"
+        mimeType == "image/webp" -> "webp"
+        mimeType.startsWith("image/") -> "jpg"
+        mimeType == "video/webm" -> "webm"
+        mimeType.startsWith("video/") -> "mp4"
+        mimeType == "audio/webm" -> "webm"
+        mimeType == "audio/ogg" -> "ogg"
+        else -> "m4a"
     }
 
     suspend fun sendVibeCard(
@@ -236,7 +472,9 @@ class ChatRepository(
             body = payload,
             timestamp = formatTimestamp(sent.createdAt),
             isMine = true,
-            isReadable = true
+            isReadable = true,
+            messageKind = sent.messageKind,
+            attachment = sent.attachment
         )
     }
 
@@ -260,6 +498,25 @@ class ChatRepository(
             UpsertChatIdentityRequestDto(publicKey = created.publicKey)
         )
         return created
+    }
+
+    private suspend fun loadConversationSession(conversationId: String): ConversationSession {
+        var response = api.conversation(bearer(), conversationId)
+        val identity = resolveOrProvisionIdentity(response.viewer)
+        if (response.viewer.activeIdentity == null) {
+            response = api.conversation(bearer(), conversationId)
+        }
+        val peerKey = response.conversation.peer.publicKey?.publicKey
+            ?: error("This member has not set up secure chat yet.")
+        return ConversationSession(
+            viewerUserId = response.viewer.userId,
+            identity = identity,
+            peerPublicKey = peerKey,
+            peerName = response.conversation.peer.displayName,
+            peerHandle = "@${response.conversation.peer.username}",
+            peerAvatarUrl = response.conversation.peer.avatarUrl,
+            isOnline = response.conversation.peer.isOnline
+        ).also { conversationSessions[conversationId] = it }
     }
 
     private fun resolveLocalIdentity(viewer: ChatViewerDto): ChatCrypto.LocalIdentity? {
@@ -290,11 +547,16 @@ class ChatRepository(
         throw IllegalStateException(message, error)
     }
 
+    private companion object {
+        val SUPPORTED_TTL_KEYS = setOf("instant", "1h", "24h", "7d", "30d", "90d")
+    }
+
 }
 
 data class ConversationResult(
     val peerName: String,
     val peerHandle: String,
+    val peerAvatarUrl: String?,
     val isOnline: Boolean,
     val messages: List<ChatMessageItem>,
     val viewerUserId: String

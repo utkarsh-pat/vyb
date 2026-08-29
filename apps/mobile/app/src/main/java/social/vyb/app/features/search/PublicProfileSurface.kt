@@ -25,8 +25,10 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -50,8 +52,11 @@ import social.vyb.app.features.social.SocialAvatar
 internal fun PublicProfileContent(
     response: PublicProfileResponse,
     mutating: Boolean,
+    openingChat: Boolean,
+    chatError: String?,
     onBack: () -> Unit,
     onToggleFollow: () -> Unit,
+    onMessage: () -> Unit,
     onOpenPost: (String) -> Unit,
     onOpenVibe: (String) -> Unit
 ) {
@@ -95,24 +100,51 @@ internal fun PublicProfileContent(
                     Text(it, color = VybText, modifier = Modifier.padding(horizontal = 18.dp))
                 }
                 if (!response.isViewerProfile) {
-                    Button(
-                        onClick = onToggleFollow,
-                        enabled = !mutating,
-                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (response.isFollowing) VybPanelLifted else VybIndigo,
-                            contentColor = VybText
-                        )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        if (mutating) {
-                            CircularProgressIndicator(
-                                Modifier.size(16.dp),
-                                strokeWidth = 2.dp,
-                                color = VybText
+                        Button(
+                            onClick = onToggleFollow,
+                            enabled = !mutating,
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (response.isFollowing) VybPanelLifted else VybIndigo,
+                                contentColor = VybText
                             )
-                        } else {
-                            Text(if (response.isFollowing) "Following" else "Follow")
+                        ) {
+                            if (mutating) {
+                                CircularProgressIndicator(
+                                    Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                    color = VybText
+                                )
+                            } else {
+                                Text(if (response.isFollowing) "Following" else "Follow")
+                            }
                         }
+                        OutlinedButton(
+                            onClick = onMessage,
+                            enabled = !openingChat,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            if (openingChat) {
+                                CircularProgressIndicator(
+                                    Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                    color = VybText
+                                )
+                            } else {
+                                Text("Message")
+                            }
+                        }
+                    }
+                    chatError?.let {
+                        Text(
+                            it,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(horizontal = 18.dp)
+                        )
                     }
                 }
                 Text(

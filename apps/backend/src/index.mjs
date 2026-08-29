@@ -24,11 +24,12 @@ import {
 } from "./modules/games/scribble-realtime-hub.mjs";
 import { getGamesModuleHealth, handleGamesRoute } from "./modules/games/index.mjs";
 import { getAnalyticsModuleHealth, handleAnalyticsRoute } from "./modules/analytics/index.mjs";
+import { handleRelationshipPolicyRoute } from "./modules/shared/relationship-policy-route.mjs";
 
 loadRootEnv();
 
 const port = Number(process.env.PORT ?? 4000);
-const routeHandlers = [handleAnalyticsRoute, handleIdentityRoute, handleCampusRoute, handleSocialRoute, handleChatRoute, handleResourcesRoute, handleMarketRoute, handleEventsRoute, handleNotificationsRoute, handleModerationRoute, handleGamesRoute];
+const routeHandlers = [handleRelationshipPolicyRoute, handleAnalyticsRoute, handleIdentityRoute, handleCampusRoute, handleSocialRoute, handleChatRoute, handleResourcesRoute, handleMarketRoute, handleEventsRoute, handleNotificationsRoute, handleModerationRoute, handleGamesRoute];
 
 export async function handleBackendRequest(request, response) {
   const startedAt = Date.now();

@@ -1,4 +1,5 @@
 import { readJson, sendError, sendJson } from "../../lib/http.mjs";
+import { buildPublicRealtimeSocketUrl } from "../../lib/realtime-url.mjs";
 import { createHmac } from "node:crypto";
 import { getConfiguredInternalApiKey } from "../../lib/internal-auth.mjs";
 import { getProfileByUserId } from "../identity/profile-repository.mjs";
@@ -79,11 +80,11 @@ function buildChatSocketUrl(request, payload) {
   }
   const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
   const signature = createHmac("sha256", secret).update(encoded).digest("base64url");
-  const forwardedProto = String(request.headers["x-forwarded-proto"] ?? "").split(",")[0].trim();
-  const forwardedHost = String(request.headers["x-forwarded-host"] ?? "").split(",")[0].trim();
-  const secure = forwardedProto ? forwardedProto === "https" : Boolean(request.socket?.encrypted);
-  const host = forwardedHost || request.headers.host;
-  return `${secure ? "wss" : "ws"}://${host}/ws/chat?token=${encodeURIComponent(`${encoded}.${signature}`)}`;
+  return buildPublicRealtimeSocketUrl({
+    request,
+    path: "/ws/chat",
+    token: `${encoded}.${signature}`
+  });
 }
 
 export function getChatModuleHealth() {

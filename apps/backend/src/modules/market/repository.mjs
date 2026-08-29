@@ -32,6 +32,7 @@ import {
   updateMarketRequestDetails
 } from "../../../../../packages/dataconnect/marketplace-admin-sdk/esm/index.esm.js";
 import { listProfilesByUserIds } from "../identity/profile-repository.mjs";
+import { assertRelationshipAllowed, isRelationshipBlocked } from "../shared/relationship-policy.mjs";
 
 const LEGACY_TENANT_SCAN_LIMIT = 5000;
 const MARKET_DASHBOARD_PRIMARY_LIMIT = readPositiveIntEnv("VYB_MARKET_DASHBOARD_PRIMARY_LIMIT", 240);
@@ -442,12 +443,18 @@ async function readLiveMarketSnapshot(tenantId) {
   }
 }
 
-function buildDashboard(snapshot, viewer, profileMap = null) {
+export function buildDashboard(snapshot, viewer, profileMap = null) {
   const activeListings = snapshot.listings.filter(
-    (item) => isActiveRecord(item) && !isLegacySeedMarketActorId(item.sellerUserId)
+    (item) =>
+      isActiveRecord(item) &&
+      !isLegacySeedMarketActorId(item.sellerUserId) &&
+      !isRelationshipBlocked(viewer, item.sellerUserId)
   );
   const activeRequests = snapshot.requests.filter(
-    (item) => isActiveRecord(item) && !isLegacySeedMarketActorId(item.requesterUserId)
+    (item) =>
+      isActiveRecord(item) &&
+      !isLegacySeedMarketActorId(item.requesterUserId) &&
+      !isRelationshipBlocked(viewer, item.requesterUserId)
   );
   const activeListingIds = new Set(activeListings.map((item) => item.id));
   const activeRequestIds = new Set(activeRequests.map((item) => item.id));
@@ -484,7 +491,12 @@ function buildDashboard(snapshot, viewer, profileMap = null) {
 
   const saveCounts = new Map();
   const savedListingIds = new Set();
-  for (const item of snapshot.saves.filter((entry) => !entry.deletedAt && activeListingIds.has(entry.listingId))) {
+  for (const item of snapshot.saves.filter(
+    (entry) =>
+      !entry.deletedAt &&
+      activeListingIds.has(entry.listingId) &&
+      !isRelationshipBlocked(viewer, entry.userId)
+  )) {
     saveCounts.set(item.listingId, Number(saveCounts.get(item.listingId) ?? 0) + 1);
     if (item.userId === viewer.userId) {
       savedListingIds.add(item.listingId);
@@ -492,12 +504,24 @@ function buildDashboard(snapshot, viewer, profileMap = null) {
   }
 
   const listingInquiryCounts = new Map();
-  for (const item of snapshot.listingContacts.filter((entry) => !entry.deletedAt && activeListingIds.has(entry.listingId))) {
+  for (const item of snapshot.listingContacts.filter(
+    (entry) =>
+      !entry.deletedAt &&
+      activeListingIds.has(entry.listingId) &&
+      !isRelationshipBlocked(viewer, entry.fromUserId) &&
+      !isRelationshipBlocked(viewer, entry.toUserId)
+  )) {
     listingInquiryCounts.set(item.listingId, Number(listingInquiryCounts.get(item.listingId) ?? 0) + 1);
   }
 
   const requestResponseCounts = new Map();
-  for (const item of snapshot.requestContacts.filter((entry) => !entry.deletedAt && activeRequestIds.has(entry.requestId))) {
+  for (const item of snapshot.requestContacts.filter(
+    (entry) =>
+      !entry.deletedAt &&
+      activeRequestIds.has(entry.requestId) &&
+      !isRelationshipBlocked(viewer, entry.fromUserId) &&
+      !isRelationshipBlocked(viewer, entry.toUserId)
+  )) {
     requestResponseCounts.set(item.requestId, Number(requestResponseCounts.get(item.requestId) ?? 0) + 1);
   }
 
@@ -635,10 +659,20 @@ export async function getLiveMarketDashboard(viewer) {
   const snapshot = await readLiveMarketSnapshot(viewer.tenantId);
   const profileUserIds = [
     ...snapshot.listings
-      .filter((item) => isActiveRecord(item) && !isLegacySeedMarketActorId(item.sellerUserId))
+      .filter(
+        (item) =>
+          isActiveRecord(item) &&
+          !isLegacySeedMarketActorId(item.sellerUserId) &&
+          !isRelationshipBlocked(viewer, item.sellerUserId)
+      )
       .map((item) => item.sellerUserId),
     ...snapshot.requests
-      .filter((item) => isActiveRecord(item) && !isLegacySeedMarketActorId(item.requesterUserId))
+      .filter(
+        (item) =>
+          isActiveRecord(item) &&
+          !isLegacySeedMarketActorId(item.requesterUserId) &&
+          !isRelationshipBlocked(viewer, item.requesterUserId)
+      )
       .map((item) => item.requesterUserId)
   ];
   const profileMap = await buildProfileByUserIdMap(viewer.tenantId, profileUserIds);
@@ -977,6 +1011,7 @@ export async function toggleLiveMarketSave(viewer, listingId) {
   if (listing.sellerUserId === viewer.userId) {
     throw new Error("You cannot save your own listing.");
   }
+  assertRelationshipAllowed(viewer, listing.sellerUserId, "That listing is no longer available.");
 
   const existing = await listActiveMarketListingSavesByUserAndListing(dc, {
     tenantId: viewer.tenantId,
@@ -1024,6 +1059,7 @@ export async function createLiveMarketContact(viewer, input) {
     if (listing.sellerUserId === viewer.userId) {
       throw new Error("You cannot contact your own market post.");
     }
+    assertRelationshipAllowed(viewer, listing.sellerUserId, "That market post is no longer available.");
 
     await createMarketListingContact(dc, {
       id: `contact-${randomUUID()}`,
@@ -1044,6 +1080,7 @@ export async function createLiveMarketContact(viewer, input) {
     if (request.requesterUserId === viewer.userId) {
       throw new Error("You cannot contact your own market post.");
     }
+    assertRelationshipAllowed(viewer, request.requesterUserId, "That market post is no longer available.");
 
     await createMarketRequestContact(dc, {
       id: `contact-${randomUUID()}`,

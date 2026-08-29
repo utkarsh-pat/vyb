@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -81,7 +82,7 @@ fun FunHubScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var tab by remember(initialTab) {
-        mutableStateOf(initialTab?.coerceIn(0, 2))
+        mutableStateOf(initialTab?.coerceIn(0, 7))
     }
     LaunchedEffect(viewModel) { viewModel.initialize() }
     LaunchedEffect(refreshSignal) {
@@ -102,7 +103,7 @@ fun FunHubScreen(
                 }
                 Column(Modifier.weight(1f)) {
                     Text(
-                        listOf("Connect", "Queens", "Scribble")[tab!!],
+                        listOf("Connect", "Queens", "Scribble", "Chess Arena", "Ludo Club", "UNO Party", "Color Sort", "Word Puzzle")[tab!!],
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Black,
                         color = VybText
@@ -123,6 +124,11 @@ fun FunHubScreen(
                 onOpen = { tab = it }
             )
             tab == 2 -> ScribbleScreen(Modifier.fillMaxSize())
+            tab == 3 -> ChessGameScreen(Modifier.fillMaxSize())
+            tab == 4 -> AuthenticatedWebGameScreen("ludo", Modifier.fillMaxSize())
+            tab == 5 -> AuthenticatedWebGameScreen("uno", Modifier.fillMaxSize())
+            tab == 6 -> LocalHtmlGameScreen("color-sort", Modifier.fillMaxSize())
+            tab == 7 -> LocalHtmlGameScreen("word-puzzle", Modifier.fillMaxSize())
             state.isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 VybLoadingMark(width = 104.dp)
             }
@@ -158,6 +164,46 @@ private fun GamesOverview(
     onOpen: (Int) -> Unit
 ) {
     val games = listOf(
+        GameHubCard(
+            "Chess",
+            "Online rooms + legal local board",
+            "Live",
+            Icons.Default.SportsEsports,
+            Color(0xFF8BC34A),
+            3
+        ),
+        GameHubCard(
+            "Ludo",
+            "Online rooms, invites and server dice",
+            "Live",
+            Icons.Default.SportsEsports,
+            Color(0xFFFF5264),
+            4
+        ),
+        GameHubCard(
+            "UNO",
+            "2–4 player online card rooms",
+            "Live",
+            Icons.Default.SportsEsports,
+            Color(0xFFF8C630),
+            5
+        ),
+        GameHubCard(
+            "Color Sort",
+            "Relaxing offline tube puzzle",
+            "Play",
+            Icons.Default.AutoAwesome,
+            Color(0xFF55B4FF),
+            6
+        ),
+        GameHubCard(
+            "Word Puzzle",
+            "Daily five-letter challenge",
+            "Play",
+            Icons.Default.Edit,
+            Color(0xFF26A269),
+            7
+        ),
         GameHubCard(
             "Connect",
             state.connect?.let { "Daily #${it.dailyIndex} · ${it.level.difficulty}" }
@@ -235,9 +281,14 @@ private fun GamesOverview(
             ) {
                 games.sortedBy {
                     when (it.title) {
-                        "Connect" -> 0
-                        "Scribble" -> 1
-                        else -> 2
+                        "Chess" -> 0
+                        "Ludo" -> 1
+                        "UNO" -> 2
+                        "Connect" -> 3
+                        "Scribble" -> 4
+                        "N-Queens" -> 5
+                        "Color Sort" -> 6
+                        else -> 7
                     }
                 }.forEach { game ->
                     GameOverviewCard(game, Modifier.weight(1f)) { onOpen(game.tab) }
@@ -246,9 +297,14 @@ private fun GamesOverview(
         } else {
             games.sortedBy {
                 when (it.title) {
-                    "Connect" -> 0
-                    "Scribble" -> 1
-                    else -> 2
+                    "Chess" -> 0
+                    "Ludo" -> 1
+                    "UNO" -> 2
+                    "Connect" -> 3
+                    "Scribble" -> 4
+                    "N-Queens" -> 5
+                    "Color Sort" -> 6
+                    else -> 7
                 }
             }.forEach { game ->
                 GameOverviewCard(game, Modifier.fillMaxWidth().padding(top = 14.dp)) {

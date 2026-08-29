@@ -1,6 +1,7 @@
 import { readJson, sendError, sendJson } from "../../lib/http.mjs";
 import { getProfileByUserId } from "../identity/profile-repository.mjs";
 import { resolveLiveContext } from "../shared/viewer-context.mjs";
+import { hydrateViewerRelationshipPolicy, RelationshipBlockedError } from "../shared/relationship-policy.mjs";
 import {
   createLiveMarketContact,
   createLiveMarketPost,
@@ -58,8 +59,8 @@ function sendMarketFailure(response, scope, resolved, error) {
 
   sendError(
     response,
-    502,
-    `${scope.toUpperCase()}_FAILED`,
+    error instanceof RelationshipBlockedError ? error.status : 502,
+    error instanceof RelationshipBlockedError ? error.code : `${scope.toUpperCase()}_FAILED`,
     error instanceof Error ? error.message : "Market service is unavailable right now."
   );
 }
@@ -91,7 +92,9 @@ export async function handleMarketRoute({ request, response, url, context }) {
     userId: resolved.live.user.id,
     firebaseIdToken: context.actor.firebaseIdToken ?? null
   }).catch(() => null);
-  const viewer = buildMarketViewer(resolved, profile, context.actor.firebaseIdToken ?? null);
+  const viewer = await hydrateViewerRelationshipPolicy(
+    buildMarketViewer(resolved, profile, context.actor.firebaseIdToken ?? null)
+  );
 
   if (request.method === "GET" && url.pathname === "/v1/market") {
     try {

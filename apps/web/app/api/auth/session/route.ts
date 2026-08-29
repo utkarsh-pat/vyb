@@ -176,7 +176,32 @@ function isSameOriginRequest(request: Request) {
     return process.env.NODE_ENV !== "production";
   }
 
-  return origin === new URL(request.url).origin;
+  if (origin === new URL(request.url).origin) {
+    return true;
+  }
+
+  // `next dev --hostname 0.0.0.0` may receive a browser request from
+  // localhost while Request.url uses the bound host. Keep the CSRF boundary
+  // strict in production, but accept only loopback browser origins locally.
+  if (process.env.NODE_ENV === "production") {
+    return false;
+  }
+
+  try {
+    const parsedOrigin = new URL(origin);
+    return (
+      parsedOrigin.protocol === "http:" &&
+      (
+        parsedOrigin.hostname === "localhost" ||
+        parsedOrigin.hostname === "127.0.0.1" ||
+        parsedOrigin.hostname === "[::1]" ||
+        // Android Emulator's host-loopback alias. This branch is dev-only.
+        parsedOrigin.hostname === "10.0.2.2"
+      )
+    );
+  } catch {
+    return false;
+  }
 }
 
 function timingSafeStringEqual(left: string, right: string) {

@@ -754,6 +754,13 @@ export function CampusHomeShell({
   const messagesNavigationInFlightRef = useRef(false);
   const pullStartYRef = useRef<number | null>(null);
 
+  useEffect(() => {
+    if (!engagement.hasPendingFeedInvalidation || engagement.pendingRealtimePostCount > 0) return;
+    if (document.visibilityState !== "visible" || window.scrollY > 64) return;
+    engagement.clearPendingFeedInvalidation();
+    startTransition(() => router.refresh());
+  }, [engagement.hasPendingFeedInvalidation, engagement.pendingRealtimePostCount, router]);
+
   const storyGroups = useMemo(() => buildStoryRailGroups(storyFeed, viewerUsername), [storyFeed, viewerUsername]);
   const storySequence = useMemo(() => storyGroups.flatMap((group) => group.items), [storyGroups]);
   const mirroredPostLookup = useMemo(
@@ -2229,6 +2236,27 @@ export function CampusHomeShell({
         </header>
 
         {flashMessage ? <div className="vyb-campus-flash-message">{flashMessage}</div> : null}
+
+        {engagement.pendingRealtimePostCount > 0 || engagement.hasPendingFeedInvalidation ? (
+          <button
+            type="button"
+            className="vyb-campus-new-posts"
+            onClick={() => {
+              engagement.revealPendingPosts();
+              if (engagement.hasPendingFeedInvalidation) {
+                engagement.clearPendingFeedInvalidation();
+                startTransition(() => router.refresh());
+              }
+              window.scrollTo({ top: 0, behavior: "smooth" });
+            }}
+          >
+            {engagement.pendingRealtimePostCount === 0
+              ? "Feed updates available"
+              : engagement.pendingRealtimePostCount === 1
+              ? "1 new post"
+              : `${engagement.pendingRealtimePostCount} new posts`}
+          </button>
+        ) : null}
 
         <div className="vyb-campus-feed-stack">
           <div className="vyb-campus-stories">

@@ -111,7 +111,48 @@
 .vyb-mini-game-note { width: min(1100px, 100%); margin: 12px auto 0; color: #8d9ab8; font-size: 0.82rem; text-align: center; }
 
 @media (max-width: 640px) {
-  .vyb-mini-game-page { padding: 16px 10px 28px; }
-  .vyb-mini-game-frame-shell { min-height: calc(100dvh - 190px); border-radius: 16px; }
-  .vyb-mini-game-frame { height: calc(100dvh - 190px); min-height: 540px; }
+  .vyb-mini-game-page {
+    height: 100dvh;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 0 0 env(safe-area-inset-bottom);
+    overflow: hidden;
+  }
+
+  .vyb-mini-game-header {
+    width: 100%;
+    min-height: 4.5rem;
+    margin: 0;
+    padding: 0.65rem 0.75rem;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 0 0.7rem;
+    border-bottom: 1px solid rgba(207, 219, 255, 0.14);
+    background: rgba(7, 17, 38, 0.92);
+    backdrop-filter: blur(16px);
+  }
+
+  .vyb-mini-game-back {
+    grid-row: 1 / 3;
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+    margin: 0;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    border: 1px solid rgba(207, 219, 255, 0.17);
+    border-radius: 0.85rem;
+    background: rgba(255, 255, 255, 0.06);
+    font-size: 0;
+  }
+
+  .vyb-mini-game-back::before { content: "←"; font-size: 1.25rem; }
+  .vyb-mini-game-kicker { margin: 0; font-size: 0.58rem; }
+  .vyb-mini-game-header h1 { font-size: 1.05rem; line-height: 1.15; }
+  .vyb-mini-game-header p:not(.vyb-mini-game-kicker) { display: none; }
+  .vyb-mini-game-frame-shell { flex: 1; min-height: 0; border-width: 0; border-radius: 0; }
+  .vyb-mini-game-frame { height: 100%; min-height: 0; }
+  .vyb-mini-game-note { display: none; }
 }

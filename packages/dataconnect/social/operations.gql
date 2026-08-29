@@ -438,12 +438,13 @@ query ListFollowersByUser($tenantId: UUID!, $followingUserId: UUID!, $limit: Int
 }
 
 query GetFollowByKey($followKey: String!) @auth(level: NO_ACCESS) {
-  follows(where: { followKey: { eq: $followKey }, deletedAt: { isNull: true } }, limit: 1) {
+  follows(where: { followKey: { eq: $followKey } }, limit: 1) {
     id
     tenantId
     followerUserId
     followingUserId
     createdAt
+    deletedAt
   }
 }
 
@@ -495,6 +496,75 @@ mutation CreatePost(
       publishedAt_expr: "request.time"
       createdAt_expr: "request.time"
       updatedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation CreatePostWithFeedChange(
+  $id: UUID!
+  $tenantId: UUID!
+  $communityId: UUID
+  $membershipId: UUID!
+  $authorUserId: UUID
+  $authorUsername: String! = "vyb_user"
+  $authorName: String! = "Vyb Student"
+  $authorEmail: String
+  $isAnonymous: Boolean! = false
+  $allowAnonymousComments: Boolean! = true
+  $visibility: String! = "public"
+  $placement: String! = "feed"
+  $kind: String!
+  $title: String
+  $body: String!
+  $mediaUrl: String
+  $storagePath: String
+  $mediaMimeType: String
+  $mediaSizeBytes: Int64
+  $location: String
+  $status: String!
+  $feedChangeId: UUID!
+  $feedChangeEventKey: String!
+  $feedChangeExpiresAt: Timestamp!
+) @auth(level: NO_ACCESS) @transaction {
+  post_insert(
+    data: {
+      id: $id
+      tenantId: $tenantId
+      communityId: $communityId
+      membershipId: $membershipId
+      authorUserId: $authorUserId
+      authorUsername: $authorUsername
+      authorName: $authorName
+      authorEmail: $authorEmail
+      isAnonymous: $isAnonymous
+      allowAnonymousComments: $allowAnonymousComments
+      visibility: $visibility
+      placement: $placement
+      kind: $kind
+      title: $title
+      body: $body
+      mediaUrl: $mediaUrl
+      storagePath: $storagePath
+      mediaMimeType: $mediaMimeType
+      mediaSizeBytes: $mediaSizeBytes
+      location: $location
+      status: $status
+      publishedAt_expr: "request.time"
+      createdAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+  feedChangeEvent_insert(
+    data: {
+      id: $feedChangeId
+      eventKey: $feedChangeEventKey
+      tenantId: $tenantId
+      entityType: "post"
+      entityId: $id
+      eventType: "post.created"
+      actorUserId: $authorUserId
+      createdAt_expr: "request.time"
+      expiresAt: $feedChangeExpiresAt
     }
   )
 }
@@ -774,6 +844,43 @@ mutation UpdatePost(
   )
 }
 
+mutation UpdatePostWithFeedChange(
+  $id: UUID!
+  $tenantId: UUID!
+  $title: String
+  $body: String!
+  $location: String
+  $allowAnonymousComments: Boolean! = true
+  $actorUserId: UUID
+  $feedChangeId: UUID!
+  $feedChangeEventKey: String!
+  $feedChangeExpiresAt: Timestamp!
+) @auth(level: NO_ACCESS) @transaction {
+  post_update(
+    key: { id: $id }
+    data: {
+      title: $title
+      body: $body
+      location: $location
+      allowAnonymousComments: $allowAnonymousComments
+      updatedAt_expr: "request.time"
+    }
+  )
+  feedChangeEvent_insert(
+    data: {
+      id: $feedChangeId
+      eventKey: $feedChangeEventKey
+      tenantId: $tenantId
+      entityType: "post"
+      entityId: $id
+      eventType: "post.updated"
+      actorUserId: $actorUserId
+      createdAt_expr: "request.time"
+      expiresAt: $feedChangeExpiresAt
+    }
+  )
+}
+
 mutation CreateFollow(
   $id: UUID!
   $followKey: String!
@@ -791,6 +898,13 @@ mutation CreateFollow(
       createdAt_expr: "request.time"
       updatedAt_expr: "request.time"
     }
+  )
+}
+
+mutation ActivateFollow($id: UUID!) @auth(level: NO_ACCESS) @transaction {
+  follow_update(
+    key: { id: $id }
+    data: { deletedAt: null, updatedAt_expr: "request.time" }
   )
 }
 
@@ -981,6 +1095,48 @@ mutation SoftDeletePostWithPurge(
       tenantId: $tenantId
       postId: $id
       requestedAt_expr: "request.time"
+    }
+  )
+}
+
+mutation SoftDeletePostWithPurgeAndFeedChange(
+  $id: UUID!
+  $tenantId: UUID!
+  $purgeRequestId: UUID!
+  $purgeKey: String!
+  $actorUserId: UUID
+  $feedChangeId: UUID!
+  $feedChangeEventKey: String!
+  $feedChangeExpiresAt: Timestamp!
+) @auth(level: NO_ACCESS) @transaction {
+  post_update(
+    key: { id: $id }
+    data: {
+      status: "removed"
+      deletedAt_expr: "request.time"
+      updatedAt_expr: "request.time"
+    }
+  )
+  contentPurgeRequest_insert(
+    data: {
+      id: $purgeRequestId
+      purgeKey: $purgeKey
+      tenantId: $tenantId
+      postId: $id
+      requestedAt_expr: "request.time"
+    }
+  )
+  feedChangeEvent_insert(
+    data: {
+      id: $feedChangeId
+      eventKey: $feedChangeEventKey
+      tenantId: $tenantId
+      entityType: "post"
+      entityId: $id
+      eventType: "post.deleted"
+      actorUserId: $actorUserId
+      createdAt_expr: "request.time"
+      expiresAt: $feedChangeExpiresAt
     }
   )
 }

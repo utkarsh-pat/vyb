@@ -10,7 +10,9 @@ test("readiness accepts Cloud Run project identity without long-lived credential
     R2_SECRET_ACCESS_KEY: "secret",
     R2_BUCKET: "bucket",
     R2_PUBLIC_BASE_URL: "https://media.example.test",
-    VYB_GAMES_SESSION_SECRET: "session-secret"
+    VYB_GAMES_SESSION_SECRET: "session-secret",
+    VYB_SOCIAL_REALTIME_PUBLIC_ORIGIN: "https://realtime.example.test",
+    VYB_SOCIAL_REALTIME_SECRET: "social-realtime-secret-for-tests"
   });
 
   assert.equal(result.ready, true);
@@ -23,7 +25,7 @@ test("readiness fails only for core project configuration and reports optional d
 
   assert.equal(result.ready, false);
   assert.deepEqual(result.missingRequired, ["firebase-project"]);
-  assert.deepEqual(result.degradedFeatures, ["r2-media", "signed-games"]);
+  assert.deepEqual(result.degradedFeatures, ["r2-media", "signed-games", "social-realtime-fanout"]);
   assert.equal(result.checks.r2Media, false);
 });
 
@@ -36,7 +38,7 @@ test("partial R2 credentials never report media ready", () => {
 
   assert.equal(result.ready, true);
   assert.equal(result.checks.r2Media, false);
-  assert.deepEqual(result.degradedFeatures, ["r2-media", "signed-games"]);
+  assert.deepEqual(result.degradedFeatures, ["r2-media", "signed-games", "social-realtime-fanout"]);
 });
 
 test("production fails closed without analytics and internal-job secrets", () => {

@@ -7,6 +7,8 @@ import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.http.Streaming
+import okhttp3.ResponseBody
 import social.vyb.app.data.FeedEnvelope
 import social.vyb.app.data.MeEnvelope
 import social.vyb.app.features.hub.CommunitiesResponseDto
@@ -50,6 +52,12 @@ internal interface ChatApi {
     @GET("v1/chats")
     suspend fun inbox(@Header("Authorization") authorization: String): ChatInboxDto
 
+    @POST("v1/chats")
+    suspend fun createDirectConversation(
+        @Header("Authorization") authorization: String,
+        @Body body: CreateDirectChatRequestDto
+    ): CreateDirectChatResponseDto
+
     @GET("v1/chats/{conversationId}")
     suspend fun conversation(
         @Header("Authorization") authorization: String,
@@ -63,12 +71,37 @@ internal interface ChatApi {
         @Body body: SendChatMessageRequestDto
     ): SendChatMessageResponseDto
 
+    @POST("v1/chats/media/upload")
+    suspend fun uploadAttachment(
+        @Header("Authorization") authorization: String,
+        @Body body: UploadChatAttachmentRequestDto
+    ): UploadChatAttachmentResponseDto
+
+    @Streaming
+    @GET("v1/chats/messages/{messageId}/media")
+    suspend fun downloadAttachment(
+        @Header("Authorization") authorization: String,
+        @Path("messageId") messageId: String
+    ): ResponseBody
+
+    @PUT("v1/chats/messages/{messageId}/lifecycle")
+    suspend fun updateMessageLifecycle(
+        @Header("Authorization") authorization: String,
+        @Path("messageId") messageId: String,
+        @Body body: UpdateChatMessageLifecycleRequestDto
+    ): UpdateChatMessageLifecycleResponseDto
+
     @PUT("v1/chats/{conversationId}/read")
     suspend fun markRead(
         @Header("Authorization") authorization: String,
         @Path("conversationId") conversationId: String,
         @Body body: MarkChatReadRequestDto
     ): MarkChatReadResponseDto
+
+    @POST("v1/chats/presence/heartbeat")
+    suspend fun heartbeatPresence(
+        @Header("Authorization") authorization: String
+    ): ChatPresenceHeartbeatResponseDto
 
     @PUT("v1/chats/keys")
     suspend fun upsertIdentity(

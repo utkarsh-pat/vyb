@@ -19,6 +19,7 @@
       "@vyb/config": ["packages/config"],
       "@vyb/dataconnect-marketplace-admin": ["packages/dataconnect/marketplace-admin-sdk"],
       "@vyb/design-tokens": ["packages/design-tokens/src/index.ts"],
+      "@vyb/game-engine": ["packages/game-engine/src/index.ts"],
       "@vyb/ui-web": ["packages/ui-web/src/index.tsx"],
       "@vyb/validation": ["packages/validation/src/index.ts"]
     }

@@ -10,6 +10,7 @@ import {
 import { trackActivity } from "../moderation/repository.mjs";
 import { resolveLiveContext } from "../shared/viewer-context.mjs";
 import { persistSocialMediaAsset, persistSocialMediaStream } from "./media-storage.mjs";
+import { buildSocialRealtimeSession, publishSocialFeedInvalidation } from "./fanout.mjs";
 import { emitSocialRealtimeEvent } from "./realtime-hub.mjs";
 import {
   getContentInsights,
@@ -35,6 +36,7 @@ import {
   getFollowStats,
   getBlockedUserIds,
   getUserSocialStatsMap,
+  getSuggestionConnectionMetrics,
   getViewerFollowingUserIds,
   isFollowing,
   isUserBlocked,
@@ -67,6 +69,15 @@ const allowedStoryMediaTypes = new Set(["image", "video"]);
 const allowedCommentMediaTypes = new Set(["image", "gif", "sticker"]);
 const allowedVibeVideoMimeTypes = new Set(["video/mp4", "video/webm", "video/quicktime"]);
 const allowedSocialImageMimeTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif"]);
+
+export function buildFeedChangeSummary(result, after) {
+  return {
+    ...result,
+    items: [],
+    nextCursor: null,
+    hasChanges: Boolean(result.highWater && result.highWater !== after)
+  };
+}
 const allowedSocialVideoMimeTypes = new Set(["video/mp4", "video/webm", "video/quicktime"]);
 const MAX_SOCIAL_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_SOCIAL_VIDEO_BYTES = 40 * 1024 * 1024;
@@ -570,6 +581,40 @@ function getRealtimeActorMembershipId(resolvedMembershipId, context) {
   return resolvedMembershipId ?? context.actor?.id ?? null;
 }
 
+export function isPublicPostRealtimeEligible(post) {
+  return post?.visibility === "public";
+}
+
+function emitPublicPostRealtimeEvent(post, event, { invalidateRestricted = false } = {}) {
+  void publishSocialFeedInvalidation({
+    tenantId: post?.tenantId ?? event.tenantId,
+    reason: event.type ?? "feed.changed",
+    excludeMembershipId: event.excludeMembershipId
+  }).catch((error) => {
+    console.warn("[social] shared realtime fanout failed", {
+      tenantId: post?.tenantId ?? event.tenantId ?? null,
+      reason: event.type ?? "feed.changed",
+      message: error instanceof Error ? error.message : String(error)
+    });
+  });
+
+  if (!isPublicPostRealtimeEligible(post)) {
+    if (invalidateRestricted) {
+      emitSocialRealtimeEvent({
+        tenantId: post?.tenantId ?? event.tenantId,
+        type: "social.feed.invalidated",
+        payload: {
+          placement: post?.placement ?? null
+        },
+        excludeMembershipId: event.excludeMembershipId
+      });
+    }
+    return;
+  }
+
+  emitSocialRealtimeEvent(event);
+}
+
 function buildPostCursor(item) {
   if (!item?.createdAt || !item?.id) {
     return null;
@@ -781,6 +826,7 @@ function isSocialRoutePath(pathname) {
   return (
     pathname === "/v1/feed" ||
     pathname === "/v1/feed/changes" ||
+    pathname === "/v1/feed/realtime/session" ||
     pathname === "/v1/vibes" ||
     pathname === "/v1/social-media/upload" ||
     pathname === "/v1/analytics/events" ||
@@ -994,18 +1040,44 @@ async function buildSuggestedUserItems({ tenantId, viewerUserId, limit }) {
     viewerUserId
   });
 
+  const [viewerProfile, connectionMetrics] = await Promise.all([
+    getProfileByUserId({ tenantId, userId: viewerUserId }),
+    getSuggestionConnectionMetrics({
+      tenantId,
+      viewerUserId,
+      candidateUserIds: profiles.map((profile) => profile.userId)
+    })
+  ]);
+
+  const normalizedViewerCourse = viewerProfile?.course?.trim().toLowerCase() ?? "";
+  const normalizedViewerStream = viewerProfile?.stream?.trim().toLowerCase() ?? "";
+
   return profiles
-    .map((profile) => buildUserSearchResponseItem(profile, metricsMap.get(profile.userId)))
+    .map((profile) => {
+      const item = buildUserSearchResponseItem(profile, metricsMap.get(profile.userId));
+      const mutualConnections = connectionMetrics.get(profile.userId)?.mutualConnections ?? 0;
+      const sameCourse = Boolean(normalizedViewerCourse && profile.course?.trim().toLowerCase() === normalizedViewerCourse);
+      const sameStream = Boolean(normalizedViewerStream && profile.stream?.trim().toLowerCase() === normalizedViewerStream);
+      return { ...item, mutualConnections, sameCourse, sameStream };
+    })
+    .filter((item) => !item.isFollowing)
     .sort((left, right) => {
-      if (left.isFollowing !== right.isFollowing) return left.isFollowing ? 1 : -1;
-      const leftScore = left.stats.followers * 3 + left.stats.posts;
-      const rightScore = right.stats.followers * 3 + right.stats.posts;
+      const leftScore = left.mutualConnections * 20 + (left.sameStream ? 15 : left.sameCourse ? 8 : 0) + left.stats.followers * 3 + left.stats.posts;
+      const rightScore = right.mutualConnections * 20 + (right.sameStream ? 15 : right.sameCourse ? 8 : 0) + right.stats.followers * 3 + right.stats.posts;
       return rightScore - leftScore || left.username.localeCompare(right.username);
     })
     .slice(0, limit)
-    .map((item) => ({
+    .map(({ sameCourse, sameStream, ...item }) => ({
       ...item,
-      suggestionReason: item.stats.followers > 0 ? "Popular in your campus" : "New in your campus"
+      suggestionReason: item.mutualConnections > 0
+        ? `${item.mutualConnections} mutual ${item.mutualConnections === 1 ? "connection" : "connections"}`
+        : sameStream
+          ? "In your stream"
+          : sameCourse
+            ? "In your course"
+            : item.stats.followers > 0
+              ? "Popular in your campus"
+              : "New in your campus"
     }));
 }
 
@@ -1082,6 +1154,23 @@ export async function handleSocialRoute({ request, response, url, context }) {
       actorId: context.actor?.id ?? null
     })
   ) {
+    return true;
+  }
+
+  if (request.method === "GET" && url.pathname === "/v1/feed/realtime/session") {
+    try {
+      sendJson(response, 200, buildSocialRealtimeSession({
+        tenantId: resolvedTenantId,
+        userId: resolvedUserId,
+        membershipId: resolvedMembershipId
+      }), { "cache-control": "no-store" });
+    } catch (error) {
+      console.warn("[social] realtime session unavailable", {
+        tenantId: resolvedTenantId,
+        message: error instanceof Error ? error.message : String(error)
+      });
+      sendError(response, 503, "SOCIAL_REALTIME_UNAVAILABLE", "Feed realtime is temporarily unavailable.");
+    }
     return true;
   }
 
@@ -1291,13 +1380,27 @@ export async function handleSocialRoute({ request, response, url, context }) {
       after: url.searchParams.get("after"),
       limit
     });
+    const summaryOnly = url.searchParams.get("summary") === "1";
+    if (summaryOnly) {
+      sendJson(
+        response,
+        200,
+        buildFeedChangeSummary(result, url.searchParams.get("after")),
+        { "cache-control": "private, no-store" }
+      );
+      return true;
+    }
     const items = await filterFeedChangesForViewer({
       changes: result.items,
       live: resolved.live,
       tenantId,
       viewerUserId: resolvedUserId
     });
-    sendJson(response, 200, { ...result, items }, { "cache-control": "private, no-store" });
+    sendJson(response, 200, {
+      ...result,
+      items,
+      hasChanges: Boolean(result.highWater && result.highWater !== url.searchParams.get("after"))
+    }, { "cache-control": "private, no-store" });
     return true;
   }
 
@@ -1591,19 +1694,17 @@ export async function handleSocialRoute({ request, response, url, context }) {
       }
     });
 
-    // Tenant-wide sockets do not carry follower/community authorization
-    // claims. Restricted posts therefore wait for an authorized delta fetch
-    // instead of being broadcast and filtered only in the client.
-    if (item.visibility === "public") {
-      emitSocialRealtimeEvent({
-        tenantId: item.tenantId,
-        type: "social.post.created",
-        payload: {
-          item: buildRealtimeFeedPayload(item)
-        },
-        excludeMembershipId: getRealtimeActorMembershipId(resolvedMembershipId, context)
-      });
-    }
+    // The in-process socket may send a complete public item. The shared hub
+    // sends only an invalidation, so every client re-fetches with its own
+    // authorization context before rendering restricted content.
+    emitPublicPostRealtimeEvent(item, {
+      tenantId: item.tenantId,
+      type: "social.post.created",
+      payload: {
+        item: buildRealtimeFeedPayload(item)
+      },
+      excludeMembershipId: getRealtimeActorMembershipId(resolvedMembershipId, context)
+    }, { invalidateRestricted: true });
 
     sendJson(response, 201, {
       item: buildFeedPayload(item)
@@ -1848,6 +1949,11 @@ export async function handleSocialRoute({ request, response, url, context }) {
     });
 
     if (!profile) {
+      sendError(response, 404, "USER_NOT_FOUND", "That campus profile was not found.");
+      return true;
+    }
+
+    if (await isUserBlocked({ tenantId, firstUserId: resolvedUserId, secondUserId: profile.userId })) {
       sendError(response, 404, "USER_NOT_FOUND", "That campus profile was not found.");
       return true;
     }
@@ -2304,16 +2410,14 @@ export async function handleSocialRoute({ request, response, url, context }) {
       }
     });
 
-    if (item.visibility === "public") {
-      emitSocialRealtimeEvent({
-        tenantId: item.tenantId,
-        type: "social.post.created",
-        payload: {
-          item: buildRealtimeFeedPayload(item)
-        },
-        excludeMembershipId: getRealtimeActorMembershipId(resolvedMembershipId, context)
-      });
-    }
+    emitPublicPostRealtimeEvent(item, {
+      tenantId: item.tenantId,
+      type: "social.post.created",
+      payload: {
+        item: buildRealtimeFeedPayload(item)
+      },
+      excludeMembershipId: getRealtimeActorMembershipId(resolvedMembershipId, context)
+    }, { invalidateRestricted: true });
 
     sendJson(response, 201, { item: buildFeedPayload(item) });
     return true;
@@ -2337,7 +2441,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
       return true;
     }
 
-    const item = await deletePost(post.id, post.tenantId);
+    const item = await deletePost(post.id, post.tenantId, resolvedUserId);
     // Immediate best-effort cleanup; the durable deletion-transaction request
     // remains for the delayed scheduler sweep that closes in-flight races.
     await purgeContentMeasurementForPost(post.id);
@@ -2353,14 +2457,14 @@ export async function handleSocialRoute({ request, response, url, context }) {
       }
     });
 
-    emitSocialRealtimeEvent({
+    emitPublicPostRealtimeEvent(post, {
       tenantId: post.tenantId,
       type: "social.post.deleted",
       payload: {
         postId: post.id
       },
       excludeMembershipId: getRealtimeActorMembershipId(resolvedMembershipId, context)
-    });
+    }, { invalidateRestricted: true });
 
     sendJson(response, 200, item);
     return true;
@@ -2435,14 +2539,14 @@ export async function handleSocialRoute({ request, response, url, context }) {
       }
     });
 
-    emitSocialRealtimeEvent({
+    emitPublicPostRealtimeEvent(post, {
       tenantId: post.tenantId,
       type: "social.post.updated",
       payload: {
         item: buildRealtimeFeedPayload(item)
       },
       excludeMembershipId: getRealtimeActorMembershipId(resolvedMembershipId, context)
-    });
+    }, { invalidateRestricted: true });
 
     sendJson(response, 200, { item: buildFeedPayload(item) });
     return true;
@@ -2593,7 +2697,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
       }
     });
 
-    emitSocialRealtimeEvent({
+    emitPublicPostRealtimeEvent(post, {
       tenantId: post.tenantId,
       type: "social.comment.created",
       payload: {
@@ -2665,7 +2769,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
       }
     });
 
-    emitSocialRealtimeEvent({
+    emitPublicPostRealtimeEvent(post, {
       tenantId: post.tenantId,
       type: "social.comment.deleted",
       payload: {
@@ -2740,7 +2844,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
       }
     });
 
-    emitSocialRealtimeEvent({
+    emitPublicPostRealtimeEvent(post, {
       tenantId: post.tenantId,
       type: "social.comment.updated",
       payload: {
@@ -2793,7 +2897,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
       }
     });
 
-    emitSocialRealtimeEvent({
+    emitPublicPostRealtimeEvent(post, {
       tenantId: post.tenantId,
       type: "social.comment.reaction.updated",
       payload: {
@@ -2896,7 +3000,7 @@ export async function handleSocialRoute({ request, response, url, context }) {
         reactionType
       }
     });
-    emitSocialRealtimeEvent({
+    emitPublicPostRealtimeEvent(post, {
       tenantId: post.tenantId,
       type: "social.post.reaction.updated",
       payload: {

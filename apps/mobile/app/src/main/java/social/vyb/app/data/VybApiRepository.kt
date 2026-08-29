@@ -21,6 +21,20 @@ class VybApiRepository {
         return HomeFeedResult(me, feed)
     }
 
+    suspend fun loadFeedChanges(after: String?): FeedChangeEnvelope {
+        val user = FirebaseAuth.getInstance().currentUser
+            ?: error("Your session expired. Please sign in again.")
+        val bearer = "Bearer ${bootstrapBackendSession(user)}"
+        return api.feedChanges(bearerToken = bearer, after = after)
+    }
+
+    suspend fun loadFeedRealtimeSession(): FeedRealtimeSessionEnvelope {
+        val user = FirebaseAuth.getInstance().currentUser
+            ?: error("Your session expired. Please sign in again.")
+        val bearer = "Bearer ${bootstrapBackendSession(user)}"
+        return api.feedRealtimeSession(bearer)
+    }
+
     suspend fun loadAppSession(): AppSessionResult {
         val user = FirebaseAuth.getInstance().currentUser
             ?: error("Your session expired. Please sign in again.")

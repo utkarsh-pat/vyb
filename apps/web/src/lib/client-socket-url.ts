@@ -2,6 +2,7 @@ import "server-only";
 
 const API_BASE_URL =
   process.env.VYB_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
+const REALTIME_PUBLIC_ORIGIN = process.env.VYB_REALTIME_PUBLIC_ORIGIN?.trim();
 
 function isLoopbackHost(hostname: string) {
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "0.0.0.0";
@@ -31,7 +32,7 @@ export function getRequestOrigin(request: Request) {
 }
 
 export function buildClientSocketUrl(request: Request, path: string, token: string) {
-  const apiSocketUrl = new URL(path, API_BASE_URL);
+  const apiSocketUrl = new URL(path, REALTIME_PUBLIC_ORIGIN || API_BASE_URL);
   const requestOrigin = getRequestOrigin(request);
   const socketUrl =
     isLoopbackHost(apiSocketUrl.hostname) && !isLoopbackHost(requestOrigin.hostname)

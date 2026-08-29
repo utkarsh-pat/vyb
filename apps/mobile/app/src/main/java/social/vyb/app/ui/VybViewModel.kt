@@ -1,14 +1,18 @@
 package social.vyb.app.ui
 
+import android.app.Application
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseUser
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import social.vyb.app.data.FirebaseAuthRepository
 import social.vyb.app.data.FeedPost
@@ -18,16 +22,34 @@ import social.vyb.app.data.VybApiRepository
 import social.vyb.app.data.VybUiState
 import social.vyb.app.data.VerificationEmailSentException
 import social.vyb.app.data.UpsertProfileRequest
+import social.vyb.app.features.realtime.SocialFeedRealtimeClient
+import social.vyb.app.features.realtime.SocialFeedRealtimeEvent
 import java.time.Duration
 import java.time.Instant
 
-class VybViewModel : ViewModel() {
+class VybViewModel(application: Application) : AndroidViewModel(application) {
     private val authRepository = FirebaseAuthRepository()
     private val apiRepository = VybApiRepository()
     private val authListener = authRepository.addAuthStateListener(::applyUser)
     private var activeUserId: String? = null
     private var sessionLoadJob: Job? = null
     private var usernameCheckJob: Job? = null
+    private var feedReconcileJob: Job? = null
+    private var socialRealtimeJob: Job? = null
+    private val socialRealtimeClient = SocialFeedRealtimeClient(
+        socketUrlProvider = { apiRepository.loadFeedRealtimeSession().wsUrl }
+    )
+    private val feedCursorStore = application.getSharedPreferences("vyb_feed_delta", Context.MODE_PRIVATE)
+    private val connectivityManager = application.getSystemService(ConnectivityManager::class.java)
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            reconcileHomeFeed()
+        }
+    }
+
+    init {
+        runCatching { connectivityManager.registerDefaultNetworkCallback(networkCallback) }
+    }
 
     var state by mutableStateOf(VybUiState(isLoading = true))
         private set
@@ -68,6 +90,8 @@ class VybViewModel : ViewModel() {
         viewModelScope.launch {
             sessionLoadJob?.cancel()
             sessionLoadJob = null
+            socialRealtimeJob?.cancel()
+            socialRealtimeJob = null
             activeUserId = null
             authRepository.signOut(context)
             state = VybUiState()
@@ -90,7 +114,8 @@ class VybViewModel : ViewModel() {
                         feed = result.feed.items.map(::toFeedPost),
                         feedNextCursor = result.feed.nextCursor,
                         feedLoading = false,
-                        feedError = null
+                        feedError = null,
+                        hasPendingFeedChanges = false
                     )
                 }
                 .onFailure { error ->
@@ -128,6 +153,28 @@ class VybViewModel : ViewModel() {
         }
     }
 
+    fun reconcileHomeFeed() {
+        val userId = activeUserId ?: return
+        if (!state.isAuthenticated || state.profileCompleted != true || feedReconcileJob?.isActive == true) return
+        val cursorKey = "cursor:$userId"
+        val after = feedCursorStore.getString(cursorKey, null)
+        feedReconcileJob = viewModelScope.launch {
+            runCatching { apiRepository.loadFeedChanges(after) }
+                .onSuccess { result ->
+                    if (activeUserId != userId) return@onSuccess
+                    result.highWater?.let { feedCursorStore.edit().putString(cursorKey, it).apply() }
+                    if (after != null && (result.hasChanges || result.resetRequired || result.highWater != after)) {
+                        state = state.copy(hasPendingFeedChanges = true)
+                    }
+                }
+        }
+    }
+
+    fun applyPendingFeedChanges() {
+        state = state.copy(hasPendingFeedChanges = false)
+        refreshHomeFeed()
+    }
+
     fun completeProfile(request: UpsertProfileRequest) {
         if (state.profileSaving) return
         state = state.copy(profileSaving = true, profileError = null)
@@ -141,6 +188,7 @@ class VybViewModel : ViewModel() {
                         college = profile.collegeName,
                         displayName = profile.profile?.fullName ?: state.displayName
                     )
+                    if (profile.profileCompleted) startSocialRealtime()
                     refreshHomeFeed()
                 }
                 .onFailure { error ->
@@ -194,6 +242,8 @@ class VybViewModel : ViewModel() {
         if (user == null) {
             sessionLoadJob?.cancel()
             sessionLoadJob = null
+            socialRealtimeJob?.cancel()
+            socialRealtimeJob = null
             activeUserId = null
             state = VybUiState(isLoading = false)
             return
@@ -202,6 +252,8 @@ class VybViewModel : ViewModel() {
         if (wasDifferentUser) {
             sessionLoadJob?.cancel()
             sessionLoadJob = null
+            socialRealtimeJob?.cancel()
+            socialRealtimeJob = null
         }
         activeUserId = user.uid
         state = state.copy(
@@ -210,6 +262,7 @@ class VybViewModel : ViewModel() {
                 state.profileCompleted == null ||
                 sessionLoadJob?.isActive == true,
             authError = null,
+            hasPendingFeedChanges = if (wasDifferentUser) false else state.hasPendingFeedChanges,
             profileCompleted = if (wasDifferentUser) null else state.profileCompleted,
             displayName = user.displayName?.takeIf { it.isNotBlank() }
                 ?: user.email?.substringBefore("@")
@@ -244,8 +297,11 @@ class VybViewModel : ViewModel() {
                         feedNextCursor = home?.feed?.nextCursor,
                         feedLoading = false,
                         feedLoadingMore = false,
-                        feedError = null
+                        feedError = null,
+                        hasPendingFeedChanges = false
                     )
+                    reconcileHomeFeed()
+                    if (result.profile.profileCompleted) startSocialRealtime()
                 }
                 .onFailure { error ->
                     if (activeUserId != requestedUserId) return@onFailure
@@ -275,8 +331,22 @@ class VybViewModel : ViewModel() {
         }
     }
 
+    private fun startSocialRealtime() {
+        if (socialRealtimeJob?.isActive == true || activeUserId == null) return
+        socialRealtimeJob = viewModelScope.launch {
+            socialRealtimeClient.observe().collectLatest { event ->
+                if (event is SocialFeedRealtimeEvent.Invalidated && activeUserId != null) {
+                    state = state.copy(hasPendingFeedChanges = true)
+                }
+            }
+        }
+    }
+
     override fun onCleared() {
         usernameCheckJob?.cancel()
+        feedReconcileJob?.cancel()
+        socialRealtimeJob?.cancel()
+        runCatching { connectivityManager.unregisterNetworkCallback(networkCallback) }
         authRepository.removeAuthStateListener(authListener)
         super.onCleared()
     }

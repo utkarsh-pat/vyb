@@ -153,3 +153,40 @@ test("reading a multi-recipient notification does not mark it read for another u
   assert.equal(secondResult.unreadCount, 1);
   assert.equal("recipient_states" in firstResult.items[0], false);
 });
+
+test("blocked actors are omitted from notification lists and unread counts", async () => {
+  const fixture = buildFixture();
+  fixture.notifications[0].actor_user_id = "user-2";
+  await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
+
+  const result = await listNotifications({
+    tenantId: "tenant-1",
+    userId: "user-1",
+    blockedUserIds: new Set(["user-2"])
+  });
+
+  assert.deepEqual(result.items, []);
+  assert.equal(result.unreadCount, 0);
+});
+
+test("push delivery is not queued when the notification actor is blocked", async () => {
+  const fixture = buildFixture();
+  fixture.notifications[0].actor_user_id = "user-2";
+  fixture.notifications[0].created_at = new Date().toISOString();
+  fixture.devices[0].updatedAt = new Date(Date.now() - 60_000).toISOString();
+  await writeFile(fixturePath, JSON.stringify(fixture), "utf8");
+
+  const sent = [];
+  const result = await runFcmNotificationDeliveryOutbox({
+    sendMessage: async (message) => sent.push(message),
+    resolveRelationshipPolicy: async ({ tenantId, userId }) => ({
+      tenantId,
+      userId,
+      blockedUserIds: new Set(["user-2"])
+    })
+  });
+
+  assert.equal(result.queued, 0);
+  assert.equal(result.attempted, 0);
+  assert.deepEqual(sent, []);
+});

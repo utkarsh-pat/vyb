@@ -1,6 +1,7 @@
 import { readJson, sendError, sendJson } from "../../lib/http.mjs";
 import { getProfileByUserId } from "../identity/profile-repository.mjs";
 import { resolveLiveContext } from "../shared/viewer-context.mjs";
+import { hydrateViewerRelationshipPolicy, RelationshipBlockedError } from "../shared/relationship-policy.mjs";
 import {
   cancelEvent,
   createEvent,
@@ -47,6 +48,10 @@ function enforceRate(response, method, pathname, userId) {
 
 function sendFailure(response, error) {
   const message = error instanceof Error ? error.message : "The events service is unavailable.";
+  if (error instanceof RelationshipBlockedError) {
+    sendError(response, error.status, error.code, message);
+    return;
+  }
   const forbidden = /only the host|communities you belong|hosts cannot/i.test(message);
   const notFound = /could not be found/i.test(message);
   sendError(response, forbidden ? 403 : notFound ? 404 : 400, forbidden ? "FORBIDDEN" : notFound ? "EVENT_NOT_FOUND" : "EVENT_REQUEST_FAILED", message);
@@ -81,7 +86,7 @@ export async function handleEventsRoute({ request, response, url, context }) {
     tenantId: resolved.live.tenant.id,
     userId: resolved.live.user.id
   }).catch(() => null);
-  const viewer = {
+  const viewer = await hydrateViewerRelationshipPolicy({
     tenantId: resolved.live.tenant.id,
     userId: resolved.live.user.id,
     username: profile?.username ?? context.actor.email?.split("@")[0] ?? resolved.live.user.id,
@@ -93,7 +98,7 @@ export async function handleEventsRoute({ request, response, url, context }) {
         .map((item) => item.community?.id)
         .filter(Boolean)
     )
-  };
+  });
 
   try {
     if (request.method === "GET" && url.pathname === "/v1/events") {

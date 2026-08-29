@@ -27,8 +27,8 @@ android {
         applicationId = "social.vyb.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 23
-        versionName = "0.1.23"
+        versionCode = 25
+        versionName = "0.1.25"
 
     }
 
@@ -48,13 +48,21 @@ android {
             val debugApiUrl = providers.gradleProperty("vybApiBaseUrl")
                 .orElse("https://api.vybnet.app/")
                 .get()
+            val debugWebUrl = providers.gradleProperty("vybWebBaseUrl")
+                .orElse("https://www.vybnet.app")
+                .get()
             buildConfigField("String", "API_BASE_URL", "\"$debugApiUrl\"")
+            buildConfigField("String", "WEB_BASE_URL", "\"$debugWebUrl\"")
         }
         release {
             val releaseApiUrl = providers.gradleProperty("vybReleaseApiBaseUrl")
                 .orElse("https://api.vybnet.app/")
                 .get()
+            val releaseWebUrl = providers.gradleProperty("vybReleaseWebBaseUrl")
+                .orElse("https://www.vybnet.app")
+                .get()
             buildConfigField("String", "API_BASE_URL", "\"$releaseApiUrl\"")
+            buildConfigField("String", "WEB_BASE_URL", "\"$releaseWebUrl\"")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -110,6 +118,7 @@ dependencies {
     implementation(libs.googleid)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
+    implementation(libs.coil.svg)
     testImplementation(libs.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

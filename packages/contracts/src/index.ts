@@ -439,6 +439,22 @@ export interface UserSearchItem extends PublicProfileSummary {
   isFollowing: boolean;
   stats: SocialProfileStats;
   suggestionReason?: string;
+  mutualConnections?: number;
+}
+
+export interface FeedChangeItem {
+  entityType: "post";
+  entityId: string;
+  eventType: "post.created" | "post.updated" | "post.deleted";
+  occurredAt: string;
+}
+
+export interface FeedChangesResponse {
+  items: FeedChangeItem[];
+  highWater: string | null;
+  nextCursor: string | null;
+  resetRequired: boolean;
+  hasChanges: boolean;
 }
 
 export interface UserSearchResponse {

@@ -37,16 +37,16 @@ type ActiveHint = {
 };
 
 const REGION_COLORS = [
-  "#E08A8A", // soft red
-  "#7BB5A3", // muted teal
-  "#A390E4", // soft purple
-  "#E0B371", // soft gold
-  "#74A9D1", // soft blue
-  "#D98EAA", // soft pink
-  "#95BA82", // muted green
-  "#D1A78B", // warm beige
-  "#6E95A8", // steel blue
-  "#B594BC"  // lilac
+  "#D9465F", // red
+  "#168B7A", // teal
+  "#7557C8", // purple
+  "#D99A12", // gold
+  "#2474B8", // blue
+  "#C83F87", // pink
+  "#579B32", // green
+  "#C96532", // orange
+  "#237D8C", // cyan
+  "#8C4FA3"  // violet
 ];
 
 const QUEENS_LEADERBOARD_SETTING_KEY = "vyb-queens-leaderboard-opt-in";
@@ -943,13 +943,20 @@ export function QueensDailyGame({ onExit, backHref = "/hub/gameshub" }: QueensDa
           <span>Time</span>
           <strong>{formatSeconds(elapsedSeconds)}</strong>
         </div>
-        <div className="vyb-queens-pill">
-          <span>Board</span>
-          <strong>{level.gridSize}x{level.gridSize}</strong>
-        </div>
-        <button type="button" className="vyb-queens-reset" onClick={resetBoard} disabled={submitBusy}>
-          Reset
-        </button>
+          <div className="vyb-queens-pill">
+            <span>Board</span>
+            <strong>{level.gridSize}x{level.gridSize}</strong>
+          </div>
+          <button
+            type="button"
+            className="vyb-queens-reset"
+            onClick={() => router.push("/hub/gameshub/n-queens")}
+          >
+            Solver
+          </button>
+          <button type="button" className="vyb-queens-reset" onClick={resetBoard} disabled={submitBusy}>
+            Reset
+          </button>
         {renderSettingsMenu()}
       </div>
 

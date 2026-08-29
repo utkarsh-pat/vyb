@@ -1,0 +1,16 @@
+Vyb Chess uses the Cburnett/Rfc1394 Standard chess-piece artwork packaged by
+cm-chessboard.
+
+Original artwork:
+https://commons.wikimedia.org/wiki/Category:SVG_chess_pieces/Standard
+
+Authors:
+- https://en.wikipedia.org/wiki/User:Cburnett
+- https://en.wikipedia.org/wiki/User:Rfc1394
+
+The piece artwork is licensed under Creative Commons Attribution-ShareAlike
+3.0 Unported (CC BY-SA 3.0):
+https://creativecommons.org/licenses/by-sa/3.0/
+
+The sprite was adapted for cm-chessboard by Stefan Haack:
+https://github.com/shaack/cm-chessboard

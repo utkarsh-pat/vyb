@@ -64,3 +64,6 @@ packages/dataconnect/**/node_modules/
 packages/dataconnect/**/node_modules/**
 **/node_modules/
 **/node_modules/**
+**/.turbo/
+**/.turbo/**
+**/*.log

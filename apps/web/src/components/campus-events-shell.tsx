@@ -1008,10 +1008,11 @@ export function CampusEventsShell({
     {
       id: "uno",
       title: "Uno Cards",
-      subtitle: "2-4 Players",
-      badge: "Soon",
+      subtitle: "2–4 online players",
+      badge: "Live",
       icon: "U",
-      isActive: false
+      isActive: true,
+      href: "/hub/gameshub/uno"
     },
     {
       id: "iq",
@@ -1033,8 +1034,8 @@ export function CampusEventsShell({
     {
       id: "chess",
       title: "Chess",
-      subtitle: "Classic local board",
-      badge: "Play",
+      subtitle: "Online + local board",
+      badge: "Live",
       icon: "♞",
       isActive: true,
       href: "/hub/gameshub/chess"
@@ -1042,8 +1043,8 @@ export function CampusEventsShell({
     {
       id: "ludo",
       title: "Ludo",
-      subtitle: "2–4 local players",
-      badge: "Play",
+      subtitle: "Online + local rooms",
+      badge: "Live",
       icon: "L",
       isActive: true,
       href: "/hub/gameshub/ludo"

@@ -5,6 +5,7 @@ import path from "node:path";
 import { getMessaging } from "firebase-admin/messaging";
 import { getWorkspaceRoot } from "../../../../../packages/config/src/index.mjs";
 import { getFirebaseAdminApp } from "../../../../../packages/config/src/firebase-admin.mjs";
+import { hydrateViewerRelationshipPolicy, isRelationshipBlocked } from "../shared/relationship-policy.mjs";
 
 const storePath = process.env.VYB_NOTIFICATION_STORE_PATH
   ? path.resolve(process.env.VYB_NOTIFICATION_STORE_PATH)
@@ -41,6 +42,23 @@ async function save(store) {
 
 function belongs(item, viewer) {
   return item.tenant_id === viewer.tenantId && Array.isArray(item.recipient_user_ids) && item.recipient_user_ids.includes(viewer.userId);
+}
+
+function getNotificationActorUserId(item) {
+  const candidates = [
+    item?.actor_user_id,
+    item?.actorUserId,
+    item?.actor?.user_id,
+    item?.actor?.userId,
+    item?.source?.userId,
+    item?.data?.actorUserId,
+    item?.metadata?.actorUserId
+  ];
+  return candidates.find((value) => typeof value === "string" && value.trim())?.trim() ?? null;
+}
+
+function belongsAndIsRelationshipVisible(item, viewer) {
+  return belongs(item, viewer) && !isRelationshipBlocked(viewer, getNotificationActorUserId(item));
 }
 
 function emptyNotificationState() {
@@ -140,13 +158,31 @@ function buildFcmPayload(item) {
   };
 }
 
-function queueFcmDeliveries(store, now = Date.now()) {
+async function getRecipientPolicy(cache, tenantId, userId, resolvePolicy = hydrateViewerRelationshipPolicy) {
+  const key = `${tenantId}:${userId}`;
+  if (!cache.has(key)) {
+    cache.set(key, resolvePolicy({ tenantId, userId }));
+  }
+  return cache.get(key);
+}
+
+async function queueFcmDeliveries(
+  store,
+  now = Date.now(),
+  policyCache = new Map(),
+  resolvePolicy = hydrateViewerRelationshipPolicy
+) {
   let queued = 0;
   for (const item of store.notifications) {
     if (!notificationCanPush(item) || !notificationHasNotExpired(item, now)) continue;
 
     const recipients = Array.isArray(item.recipient_user_ids) ? item.recipient_user_ids : [];
     for (const userId of recipients) {
+      const actorUserId = getNotificationActorUserId(item);
+      if (actorUserId) {
+        const recipientPolicy = await getRecipientPolicy(policyCache, item.tenant_id, userId, resolvePolicy);
+        if (isRelationshipBlocked(recipientPolicy, actorUserId)) continue;
+      }
       const devices = store.devices.filter(
         (device) =>
           device.tenantId === item.tenant_id &&
@@ -241,14 +277,25 @@ async function sendFcmMessage(message) {
   return getMessaging(getFirebaseAdminApp()).send(message);
 }
 
-export async function runFcmNotificationDeliveryOutbox({ tenantId = null, limit = 25, sendMessage = sendFcmMessage } = {}) {
+export async function runFcmNotificationDeliveryOutbox({
+  tenantId = null,
+  limit = 25,
+  sendMessage = sendFcmMessage,
+  resolveRelationshipPolicy = hydrateViewerRelationshipPolicy
+} = {}) {
   const store = await load();
   const now = Date.now();
-  const queued = queueFcmDeliveries(store, now);
+  const policyCache = new Map();
+  const queued = await queueFcmDeliveries(store, now, policyCache, resolveRelationshipPolicy);
   const boundedLimit = Math.max(1, Math.min(100, Number(limit) || 25));
   const due = store.pushDeliveries
     .filter((delivery) => {
-      if (!isFcmDelivery(delivery) || delivery.status === "sent" || delivery.attempts >= FCM_DELIVERY_MAX_ATTEMPTS) {
+      if (
+        !isFcmDelivery(delivery) ||
+        delivery.status === "sent" ||
+        delivery.status === "suppressed" ||
+        delivery.attempts >= FCM_DELIVERY_MAX_ATTEMPTS
+      ) {
         return false;
       }
       if (tenantId && delivery.tenantId !== tenantId) return false;
@@ -274,6 +321,22 @@ export async function runFcmNotificationDeliveryOutbox({ tenantId = null, limit 
       delivery.lastError = !device ? "FCM device is no longer registered." : "Notification is no longer available.";
       failed += 1;
       continue;
+    }
+
+    const actorUserId = getNotificationActorUserId(item);
+    if (actorUserId) {
+      const recipientPolicy = await getRecipientPolicy(
+        policyCache,
+        delivery.tenantId,
+        delivery.userId,
+        resolveRelationshipPolicy
+      );
+      if (isRelationshipBlocked(recipientPolicy, actorUserId)) {
+        delivery.status = "suppressed";
+        delivery.lastAttemptAt = new Date().toISOString();
+        delivery.lastError = "Suppressed by relationship privacy policy.";
+        continue;
+      }
     }
 
     delivery.attempts += 1;
@@ -335,7 +398,7 @@ export function startFcmNotificationDeliveryWorker() {
 export async function listNotifications(viewer, { state = "all", category = null, limit = 30, cursor = 0 } = {}) {
   const store = await load();
   const filtered = store.notifications
-    .filter((item) => belongs(item, viewer))
+    .filter((item) => belongsAndIsRelationshipVisible(item, viewer))
     .filter((item) => !category || item.category === category)
     .filter((item) => {
       const viewerState = getViewerNotificationState(item, viewer);
@@ -349,7 +412,7 @@ export async function listNotifications(viewer, { state = "all", category = null
     tenantId: viewer.tenantId,
     items: filtered.slice(cursor, cursor + limit).map((item) => buildViewerNotification(item, viewer)),
     unreadCount: store.notifications.filter((item) => {
-      if (!belongs(item, viewer)) return false;
+      if (!belongsAndIsRelationshipVisible(item, viewer)) return false;
       const viewerState = getViewerNotificationState(item, viewer);
       return !viewerState.read_at && !viewerState.archived_at;
     }).length,
@@ -359,7 +422,9 @@ export async function listNotifications(viewer, { state = "all", category = null
 
 export async function markRead(viewer, notificationId) {
   const store = await load();
-  const item = store.notifications.find((candidate) => candidate.id === notificationId && belongs(candidate, viewer));
+  const item = store.notifications.find(
+    (candidate) => candidate.id === notificationId && belongsAndIsRelationshipVisible(candidate, viewer)
+  );
   if (!item) throw new Error("Notification not found.");
   const now = new Date().toISOString();
   const viewerState = ensureViewerNotificationState(item, viewer);
@@ -375,7 +440,12 @@ export async function markAllRead(viewer, category = null) {
   let updatedCount = 0;
   for (const item of store.notifications) {
     const viewerState = getViewerNotificationState(item, viewer);
-    if (belongs(item, viewer) && !viewerState.read_at && !viewerState.archived_at && (!category || item.category === category)) {
+    if (
+      belongsAndIsRelationshipVisible(item, viewer) &&
+      !viewerState.read_at &&
+      !viewerState.archived_at &&
+      (!category || item.category === category)
+    ) {
       const mutableViewerState = ensureViewerNotificationState(item, viewer);
       mutableViewerState.read_at = now;
       mutableViewerState.seen_at ??= now;

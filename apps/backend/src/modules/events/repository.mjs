@@ -10,6 +10,7 @@ import {
   updateCampusEventStore
 } from "../../../../../packages/dataconnect/campus-admin-sdk/esm/index.esm.js";
 import { getR2Bucket } from "../../lib/r2-bucket.mjs";
+import { assertRelationshipAllowed, isRelationshipBlocked } from "../shared/relationship-policy.mjs";
 
 const queues = new Map();
 const clone = (value) => JSON.parse(JSON.stringify(value));
@@ -162,10 +163,30 @@ function registrationSummary(event) {
   };
 }
 
+function getVisibleRegistrations(event, viewer) {
+  return (event.registrations ?? []).filter(
+    (registration) => !isRelationshipBlocked(viewer, registration.attendee?.userId)
+  );
+}
+
+function canReadWithRelationshipPolicy(event, viewer) {
+  return Boolean(
+    event &&
+    canRead(event, viewer) &&
+    !isRelationshipBlocked(viewer, event.host?.userId)
+  );
+}
+
 function toEvent(event, viewer) {
-  const registrations = event.registrations ?? [];
+  const registrations = getVisibleRegistrations(event, viewer);
+  const visibleEvent = {
+    ...event,
+    registrations,
+    savedByUserIds: (event.savedByUserIds ?? []).filter((userId) => !isRelationshipBlocked(viewer, userId)),
+    interestedUserIds: (event.interestedUserIds ?? []).filter((userId) => !isRelationshipBlocked(viewer, userId))
+  };
   const viewerRegistration = registrations.find((item) => item.attendee?.userId === viewer.userId) ?? null;
-  const approvedSeats = registrations
+  const approvedSeats = (event.registrations ?? [])
     .filter((item) => item.status === "approved")
     .reduce((sum, item) => sum + Number(item.teamSize ?? 1), 0);
   const closesAt = event.registrationConfig?.closesAt;
@@ -175,12 +196,12 @@ function toEvent(event, viewer) {
     (!closesAt || Date.parse(closesAt) > Date.now()) &&
     (!event.capacity || approvedSeats < event.capacity);
   return {
-    ...clone(event),
-    savedCount: (event.savedByUserIds ?? []).length,
-    interestCount: (event.interestedUserIds ?? []).length,
+    ...clone(visibleEvent),
+    savedCount: visibleEvent.savedByUserIds.length,
+    interestCount: visibleEvent.interestedUserIds.length,
     spotsLeft: event.capacity ? Math.max(0, event.capacity - approvedSeats) : null,
     isRegistrationOpen: registrationOpen,
-    registrationSummary: registrationSummary(event),
+    registrationSummary: registrationSummary(visibleEvent),
     viewerRegistration: viewerRegistration
       ? {
           id: viewerRegistration.id,
@@ -194,15 +215,20 @@ function toEvent(event, viewer) {
           attachmentCount: viewerRegistration.attachments?.length ?? 0
         }
       : null,
-    isSaved: (event.savedByUserIds ?? []).includes(viewer.userId),
-    isInterested: (event.interestedUserIds ?? []).includes(viewer.userId),
+    isSaved: visibleEvent.savedByUserIds.includes(viewer.userId),
+    isInterested: visibleEvent.interestedUserIds.includes(viewer.userId),
     isHostedByViewer: event.host?.userId === viewer.userId
   };
 }
 
 export function dashboard(store, viewer) {
   const visible = store.events
-    .filter((event) => event.tenantId === viewer.tenantId && event.status !== "deleted" && canRead(event, viewer));
+    .filter(
+      (event) =>
+        event.tenantId === viewer.tenantId &&
+        event.status !== "deleted" &&
+        canReadWithRelationshipPolicy(event, viewer)
+    );
   const events = visible
     .filter((event) => event.status === "published")
     .map((event) => toEvent(event, viewer))
@@ -231,7 +257,7 @@ export async function listEvents(viewer) {
 
 export async function getEvent(viewer, eventId) {
   const event = findEvent(await readStore(viewer.tenantId), viewer, eventId);
-  return event && canRead(event, viewer) ? toEvent(event, viewer) : null;
+  return canReadWithRelationshipPolicy(event, viewer) ? toEvent(event, viewer) : null;
 }
 
 export async function createEvent(viewer, payload) {
@@ -329,7 +355,7 @@ export async function updateEvent(viewer, eventId, payload) {
 export async function toggleEventField(viewer, eventId, field) {
   const { store, result } = await transact(viewer.tenantId, (store) => {
     const event = findEvent(store, viewer, eventId);
-    if (!event || event.status !== "published" || !canRead(event, viewer)) throw new Error("This event could not be found.");
+    if (!event || event.status !== "published" || !canReadWithRelationshipPolicy(event, viewer)) throw new Error("This event could not be found.");
     if (field === "interestedUserIds" && event.responseMode !== "interest") {
       throw new Error("This event requires registration instead of simple interest.");
     }
@@ -350,7 +376,8 @@ export async function registerEvent(viewer, eventId, payload) {
   let removableAttachments = [];
   const { store } = await transact(viewer.tenantId, (store) => {
     const event = findEvent(store, viewer, eventId);
-    if (!event || !canRead(event, viewer) || event.status !== "published") throw new Error("This event could not be found.");
+    if (!event || !canReadWithRelationshipPolicy(event, viewer) || event.status !== "published") throw new Error("This event could not be found.");
+    assertRelationshipAllowed(viewer, event.host?.userId, "This event could not be found.");
     if (event.host?.userId === viewer.userId) throw new Error("Hosts cannot register for their own event.");
     if (event.responseMode === "interest") throw new Error("This event only supports interest.");
     const existing = (event.registrations ?? []).find((item) => item.attendee?.userId === viewer.userId);
@@ -399,7 +426,7 @@ export async function registerEvent(viewer, eventId, payload) {
 
 export async function getViewerRegistration(viewer, eventId) {
   const event = findEvent(await readStore(viewer.tenantId), viewer, eventId);
-  if (!event || !canRead(event, viewer)) throw new Error("This event could not be found.");
+  if (!event || !canReadWithRelationshipPolicy(event, viewer)) throw new Error("This event could not be found.");
   if (event.host?.userId === viewer.userId) {
     throw new Error("Hosts do not have attendee registrations for their own event.");
   }
@@ -413,7 +440,7 @@ export async function getViewerRegistration(viewer, eventId) {
 export async function listRegistrations(viewer, eventId) {
   const event = findEvent(await readStore(viewer.tenantId), viewer, eventId);
   if (!event || event.host?.userId !== viewer.userId) throw new Error("Only the host can view registrations.");
-  return { event: toEvent(event, viewer), registrations: clone(event.registrations ?? []) };
+  return { event: toEvent(event, viewer), registrations: clone(getVisibleRegistrations(event, viewer)) };
 }
 
 export async function manageRegistration(viewer, eventId, registrationId, payload) {
@@ -421,7 +448,7 @@ export async function manageRegistration(viewer, eventId, registrationId, payloa
   const { store } = await transact(viewer.tenantId, (store) => {
     const event = findEvent(store, viewer, eventId);
     ensureHost(event, viewer);
-    const registration = (event.registrations ?? []).find((item) => item.id === registrationId);
+    const registration = getVisibleRegistrations(event, viewer).find((item) => item.id === registrationId);
     if (!registration) throw new Error("This registration could not be found.");
     if (payload.status === "approved" && event.capacity) {
       const approvedSeats = (event.registrations ?? [])
@@ -441,7 +468,7 @@ export async function manageRegistration(viewer, eventId, registrationId, payloa
     dashboard: dashboard(store, viewer),
     event: toEvent(event, viewer),
     registrations: clone(
-      [...(event.registrations ?? [])].sort(
+      [...getVisibleRegistrations(event, viewer)].sort(
         (left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt)
       )
     ),

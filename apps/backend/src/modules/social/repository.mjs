@@ -9,7 +9,9 @@ import { getFirebaseDataConnect } from "../../../../../packages/config/src/index
 import { getR2Bucket } from "../../lib/r2-bucket.mjs";
 import {
   connectorConfig as socialConnectorConfig,
+  activateFollow as activateFollowMutation,
   createComment as createCommentMutation,
+  createPostWithFeedChange as createPostWithFeedChangeMutation,
   createFollow as createFollowMutation,
   createUserBlock as createUserBlockMutation,
   createPostSave as createPostSaveMutation,
@@ -40,8 +42,9 @@ import {
   softDeleteFollow as softDeleteFollowMutation,
   softDeleteUserBlock as softDeleteUserBlockMutation,
   softDeletePostSave as softDeletePostSaveMutation,
-  softDeletePostWithPurge as softDeletePostMutation,
+  softDeletePostWithPurgeAndFeedChange as softDeletePostWithFeedChangeMutation,
   updateReaction as updateReactionMutation,
+  updatePostWithFeedChange as updatePostWithFeedChangeMutation,
   updateStoryReaction as updateStoryReactionMutation,
   upsertRecommendationFeedback as upsertRecommendationFeedbackMutation
 } from "../../../../../packages/dataconnect/social-admin-sdk/esm/index.esm.js";
@@ -686,63 +689,6 @@ const LIST_POST_MEDIA_BY_POST_IDS_PRIVATE_QUERY = `
   }
 `;
 
-const CREATE_POST_PRIVATE_MUTATION = `
-  mutation CreatePostPrivate(
-    $id: UUID!
-    $tenantId: UUID!
-    $communityId: UUID
-    $membershipId: UUID!
-    $authorUserId: UUID
-    $authorUsername: String! = "vyb_user"
-    $authorName: String! = "Vyb Student"
-    $authorEmail: String
-    $isAnonymous: Boolean!
-    $allowAnonymousComments: Boolean!
-    $visibility: String!
-    $placement: String! = "feed"
-    $kind: String!
-    $title: String
-    $body: String!
-    $mediaUrl: String
-    $storagePath: String
-    $mediaMimeType: String
-    $mediaSizeBytes: Int64
-    $location: String
-    $status: String!
-  ) {
-    post_insert(
-      data: {
-        id: $id
-        tenantId: $tenantId
-        communityId: $communityId
-        membershipId: $membershipId
-        authorUserId: $authorUserId
-        authorUsername: $authorUsername
-        authorName: $authorName
-        authorEmail: $authorEmail
-        isAnonymous: $isAnonymous
-        allowAnonymousComments: $allowAnonymousComments
-        visibility: $visibility
-        placement: $placement
-        kind: $kind
-        title: $title
-        body: $body
-        mediaUrl: $mediaUrl
-        storagePath: $storagePath
-        mediaMimeType: $mediaMimeType
-        mediaSizeBytes: $mediaSizeBytes
-        location: $location
-        status: $status
-        publishedAt_expr: "request.time"
-        createdAt_expr: "request.time"
-        updatedAt_expr: "request.time"
-      }
-    ) {
-      id
-    }
-  }
-`;
-
 const CREATE_POST_MEDIA_PRIVATE_MUTATION = `
   mutation CreatePostMediaPrivate(
     $tenantId: UUID!
@@ -904,50 +850,6 @@ const CREATE_STORY_VIEW_MUTATION = `
   }
 `;
 
-const UPDATE_POST_MUTATION = `
-  mutation UpdatePost($id: UUID!, $title: String, $body: String!, $location: String, $allowAnonymousComments: Boolean!) {
-    post_update(
-      key: { id: $id }
-      data: {
-        title: $title
-        body: $body
-        location: $location
-        allowAnonymousComments: $allowAnonymousComments
-        updatedAt_expr: "request.time"
-      }
-    ) {
-      id
-    }
-  }
-`;
-
-const CREATE_FEED_CHANGE_EVENT_MUTATION = `
-  mutation CreateFeedChangeEvent(
-    $id: UUID!
-    $eventKey: String!
-    $tenantId: UUID!
-    $entityType: String!
-    $entityId: UUID!
-    $eventType: String!
-    $actorUserId: UUID
-    $expiresAt: Timestamp!
-  ) {
-    feedChangeEvent_insert(
-      data: {
-        id: $id
-        eventKey: $eventKey
-        tenantId: $tenantId
-        entityType: $entityType
-        entityId: $entityId
-        eventType: $eventType
-        actorUserId: $actorUserId
-        createdAt_expr: "request.time"
-        expiresAt: $expiresAt
-      }
-    ) { id createdAt }
-  }
-`;
-
 const LIST_FEED_CHANGE_EVENTS_QUERY = `
   query ListFeedChangeEvents($tenantId: UUID!, $limit: Int!) {
     feedChangeEvents(
@@ -1054,16 +956,16 @@ function buildFeedChangeCursor(item) {
   return Buffer.from(JSON.stringify({ id: item.id, createdAt: toIsoString(item.createdAt) }), "utf8").toString("base64url");
 }
 
-async function recordFeedChange({ tenantId, entityType = "post", entityId, eventType, actorUserId = null }) {
+function createFeedChangeEvent({ tenantId, entityType = "post", entityId, eventType, actorUserId = null }) {
   if (!tenantId || !entityId || !eventType) {
-    return null;
+    throw new Error("A feed change event requires tenantId, entityId, and eventType.");
   }
 
   const id = randomUUID();
   const createdAt = new Date().toISOString();
   const event = {
     id,
-    eventKey: id,
+    eventKey: `${entityType}:${entityId}:${eventType}:${id}`,
     tenantId,
     entityType,
     entityId,
@@ -1073,29 +975,14 @@ async function recordFeedChange({ tenantId, entityType = "post", entityId, event
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
   };
 
-  try {
-    const response = await getSocialDc().executeGraphql(CREATE_FEED_CHANGE_EVENT_MUTATION, {
-      operationName: "CreateFeedChangeEvent",
-      variables: event
-    });
-    return { ...event, createdAt: response.data?.feedChangeEvent_insert?.createdAt ?? createdAt };
-  } catch (error) {
-    if (!isFallbackEligibleError(error)) {
-      console.warn("[social/repository] feed-change-event write skipped", {
-        tenantId,
-        entityType,
-        entityId,
-        eventType,
-        message: error instanceof Error ? error.message : String(error)
-      });
-      return null;
-    }
+  return event;
+}
 
-    const store = await ensureFallbackStore();
-    store.feedChangeEvents = [event, ...store.feedChangeEvents].slice(0, 1000);
-    await persistFallbackStore();
-    return event;
+function appendFallbackFeedChangeEvent(store, event) {
+  if (!event) {
+    return;
   }
+  store.feedChangeEvents = [event, ...store.feedChangeEvents].slice(0, 1000);
 }
 
 export async function listFeedChanges({ tenantId, after = null, limit = 100 }) {
@@ -3020,35 +2907,41 @@ export async function createPost(payload) {
     isSaved: false,
     createdAt: new Date().toISOString()
   };
+  const feedChangeEvent = createFeedChangeEvent({
+    tenantId: payload.tenantId,
+    entityId: id,
+    eventType: "post.created",
+    actorUserId: payload.userId
+  });
 
   let wroteFallbackPost = false;
 
   try {
-    await getSocialDc().executeGraphql(CREATE_POST_PRIVATE_MUTATION, {
-      operationName: "CreatePostPrivate",
-      variables: {
-        id,
-        tenantId: payload.tenantId,
-        communityId: payload.communityId ?? null,
-        membershipId: payload.membershipId,
-        authorUserId: payload.userId,
-        authorUsername: payload.authorUsername,
-        authorName: payload.authorName,
-        authorEmail: payload.authorEmail ?? null,
-        isAnonymous: Boolean(payload.isAnonymous),
-        allowAnonymousComments: payload.allowAnonymousComments !== false,
-        visibility: payload.visibility ?? "public",
-        placement,
-        kind: payload.kind,
-        title: typeof payload.title === "string" && payload.title.trim() ? payload.title.trim() : null,
-        body: payload.body,
-        mediaUrl: media.mediaUrl,
-        storagePath: media.storagePath,
-        mediaMimeType: media.mediaMimeType,
-        mediaSizeBytes: media.mediaSizeBytes === null ? null : String(media.mediaSizeBytes),
-        location: payload.location ?? null,
-        status: "published"
-      }
+    await createPostWithFeedChangeMutation(getSocialDc(), {
+      id,
+      tenantId: payload.tenantId,
+      communityId: payload.communityId ?? null,
+      membershipId: payload.membershipId,
+      authorUserId: payload.userId,
+      authorUsername: payload.authorUsername,
+      authorName: payload.authorName,
+      authorEmail: payload.authorEmail ?? null,
+      isAnonymous: Boolean(payload.isAnonymous),
+      allowAnonymousComments: payload.allowAnonymousComments !== false,
+      visibility: payload.visibility ?? "public",
+      placement,
+      kind: payload.kind,
+      title: typeof payload.title === "string" && payload.title.trim() ? payload.title.trim() : null,
+      body: payload.body,
+      mediaUrl: media.mediaUrl,
+      storagePath: media.storagePath,
+      mediaMimeType: media.mediaMimeType,
+      mediaSizeBytes: media.mediaSizeBytes === null ? null : String(media.mediaSizeBytes),
+      location: payload.location ?? null,
+      status: "published",
+      feedChangeId: feedChangeEvent.id,
+      feedChangeEventKey: feedChangeEvent.eventKey,
+      feedChangeExpiresAt: feedChangeEvent.expiresAt
     });
   } catch (error) {
     if (!isFallbackEligibleError(error)) {
@@ -3064,6 +2957,7 @@ export async function createPost(payload) {
 
       const store = await ensureFallbackStore();
       store.posts = [postRecord, ...store.posts.filter((item) => item.id !== id)];
+      appendFallbackFeedChangeEvent(store, feedChangeEvent);
       await persistFallbackStore();
       wroteFallbackPost = true;
     }
@@ -3072,13 +2966,6 @@ export async function createPost(payload) {
   if (!wroteFallbackPost) {
     await createPostMediaRows(id, buildPostMediaRows({ payload, media, mediaAssets: durableMediaAssets }));
   }
-
-  await recordFeedChange({
-    tenantId: payload.tenantId,
-    entityId: id,
-    eventType: "post.created",
-    actorUserId: payload.userId
-  });
 
   return mapPostRecord(
     postRecord,
@@ -3551,22 +3438,78 @@ export async function deleteComment(commentId, { tenantId = null, postId = null 
   };
 }
 
-export async function deletePost(postId, tenantId) {
+export async function deletePost(postId, tenantId, actorUserId = null) {
   const purgeRequestId = randomUUID();
-  await softDeletePostMutation(getSocialDc(), {
-    id: postId,
+  const feedChangeEvent = createFeedChangeEvent({
     tenantId,
-    purgeRequestId,
-    purgeKey: postId
+    entityId: postId,
+    eventType: "post.deleted",
+    actorUserId
   });
 
-  await recordFeedChange({ tenantId, entityId: postId, eventType: "post.deleted" });
+  try {
+    await softDeletePostWithFeedChangeMutation(getSocialDc(), {
+      id: postId,
+      tenantId,
+      purgeRequestId,
+      purgeKey: postId,
+      actorUserId,
+      feedChangeId: feedChangeEvent.id,
+      feedChangeEventKey: feedChangeEvent.eventKey,
+      feedChangeExpiresAt: feedChangeEvent.expiresAt
+    });
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) {
+      throw error;
+    }
+
+    const store = await ensureFallbackStore();
+    const post = store.posts.find((item) => item.id === postId && item.tenantId === tenantId);
+    if (!post) {
+      throw error;
+    }
+    const now = new Date().toISOString();
+    post.status = "removed";
+    post.deletedAt = now;
+    post.updatedAt = now;
+    appendFallbackFeedChangeEvent(store, feedChangeEvent);
+    await persistFallbackStore();
+  }
 
   return {
     postId,
     deleted: true,
     purgeRequestId
   };
+}
+
+export async function getSuggestionConnectionMetrics({ tenantId, viewerUserId, candidateUserIds }) {
+  const candidateIds = new Set((candidateUserIds ?? []).filter(Boolean));
+  const metrics = new Map([...candidateIds].map((userId) => [userId, { mutualConnections: 0 }]));
+  if (!tenantId || !viewerUserId || candidateIds.size === 0) {
+    return metrics;
+  }
+
+  const [follows, blockedUserIds] = await Promise.all([
+    listFollowsByTenantForStats(tenantId),
+    getBlockedUserIds({ tenantId, userId: viewerUserId })
+  ]);
+  const viewerFollowing = new Set(
+    follows
+      .filter((item) => item.followerUserId === viewerUserId)
+      .map((item) => item.followingUserId)
+      .filter((userId) => !blockedUserIds.has(userId))
+  );
+
+  for (const follow of follows) {
+    if (!candidateIds.has(follow.followingUserId) || !viewerFollowing.has(follow.followerUserId)) {
+      continue;
+    }
+    const current = metrics.get(follow.followingUserId);
+    if (current) current.mutualConnections += 1;
+  }
+
+  return metrics;
 }
 
 function normalizeFallbackUserBlockRecord(item) {
@@ -3688,23 +3631,44 @@ export async function findCommentRecordById(commentId, { tenantId = null } = {})
 }
 
 export async function updatePost(postId, payload, { tenantId = null, viewerMembershipId = null, viewerUserId = null } = {}) {
-  await getSocialDc().executeGraphql(UPDATE_POST_MUTATION, {
-    operationName: "UpdatePost",
-    variables: {
-      id: postId,
-      title: payload.title ?? null,
-      body: payload.body,
-      location: payload.location ?? null,
-      allowAnonymousComments: payload.allowAnonymousComments !== false
-    }
-  });
-
-  await recordFeedChange({
+  const feedChangeEvent = createFeedChangeEvent({
     tenantId,
     entityId: postId,
     eventType: "post.updated",
     actorUserId: viewerUserId
   });
+
+  try {
+    await updatePostWithFeedChangeMutation(getSocialDc(), {
+      id: postId,
+      tenantId,
+      title: payload.title ?? null,
+      body: payload.body,
+      location: payload.location ?? null,
+      allowAnonymousComments: payload.allowAnonymousComments !== false,
+      actorUserId: viewerUserId,
+      feedChangeId: feedChangeEvent.id,
+      feedChangeEventKey: feedChangeEvent.eventKey,
+      feedChangeExpiresAt: feedChangeEvent.expiresAt
+    });
+  } catch (error) {
+    if (!isFallbackEligibleError(error)) {
+      throw error;
+    }
+
+    const store = await ensureFallbackStore();
+    const post = store.posts.find((item) => item.id === postId && item.tenantId === tenantId);
+    if (!post) {
+      throw error;
+    }
+    post.title = payload.title ?? null;
+    post.body = payload.body;
+    post.location = payload.location ?? null;
+    post.allowAnonymousComments = payload.allowAnonymousComments !== false;
+    post.updatedAt = new Date().toISOString();
+    appendFallbackFeedChangeEvent(store, feedChangeEvent);
+    await persistFallbackStore();
+  }
 
   return findPostById(postId, { tenantId, viewerMembershipId, viewerUserId });
 }
@@ -4136,7 +4100,13 @@ export async function followUser({ tenantId, followerUserId, followingUserId }) 
   const followKey = buildFollowKey(followerUserId, followingUserId);
   try {
     const existing = await getFollowByKeyQuery(getSocialDc(), { followKey });
-    if (existing.data.follows[0]) {
+    const current = existing.data.follows[0] ?? null;
+    if (current && !current.deletedAt) {
+      return true;
+    }
+
+    if (current?.deletedAt) {
+      await activateFollowMutation(getSocialDc(), { id: current.id });
       return true;
     }
 
@@ -4188,7 +4158,7 @@ export async function unfollowUser({ tenantId, followerUserId, followingUserId }
     const existing = await getFollowByKeyQuery(getSocialDc(), { followKey });
     const current = existing.data.follows[0] ?? null;
 
-    if (!current) {
+    if (!current || current.deletedAt) {
       return false;
     }
 
@@ -4232,7 +4202,7 @@ export async function isFollowing({ tenantId, followerUserId, followingUserId })
   const followKey = buildFollowKey(followerUserId, followingUserId);
   try {
     const existing = await getFollowByKeyQuery(getSocialDc(), { followKey });
-    return Boolean(existing.data.follows[0]);
+    return Boolean(existing.data.follows[0] && !existing.data.follows[0].deletedAt);
   } catch (error) {
     if (!isFallbackEligibleError(error)) {
       throw error;

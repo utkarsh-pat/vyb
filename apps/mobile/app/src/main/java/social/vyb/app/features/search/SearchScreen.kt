@@ -3,8 +3,15 @@ package social.vyb.app.features.search
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.launch
+import social.vyb.app.features.messages.ChatRepository
 
 @Composable
 fun SearchScreen(
@@ -13,9 +20,15 @@ fun SearchScreen(
     onOpenPost: (String) -> Unit = {},
     onOpenVibe: (String) -> Unit = {},
     onOpenMarket: (MarketSearchItem) -> Unit = {},
+    onOpenConversation: (String) -> Unit = {},
     searchViewModel: SearchViewModel = viewModel()
 ) {
     val state by searchViewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val chatRepository = remember(context) { ChatRepository(context) }
+    val scope = rememberCoroutineScope()
+    var openingChat by remember { mutableStateOf(false) }
+    var chatError by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(initialUsername) {
         initialUsername?.takeIf(String::isNotBlank)?.let(searchViewModel::openProfile)
     }
@@ -32,6 +45,21 @@ fun SearchScreen(
                         stats = selectedProfile.stats
                     )
                 )
+            },
+            openingChat = openingChat,
+            chatError = chatError,
+            onMessage = {
+                if (!openingChat) {
+                    openingChat = true
+                    chatError = null
+                    scope.launch {
+                        runCatching {
+                            chatRepository.openDirectConversation(selectedProfile.profile.username)
+                        }.onSuccess(onOpenConversation)
+                            .onFailure { chatError = it.message ?: "Could not open this conversation." }
+                        openingChat = false
+                    }
+                }
             },
             onOpenPost = onOpenPost,
             onOpenVibe = onOpenVibe

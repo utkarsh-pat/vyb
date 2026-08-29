@@ -2,11 +2,16 @@ import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { WebSocketServer } from "ws";
+import { buildPublicRealtimeSocketUrl } from "../../lib/realtime-url.mjs";
 import { getFirebaseDataConnect } from "../../../../../packages/config/src/index.mjs";
 import { getConfiguredInternalApiKey } from "../../lib/internal-auth.mjs";
 import { sendError as sendHttpError, sendJson } from "../../lib/http.mjs";
 import { getProfileByUserId } from "../identity/profile-repository.mjs";
 import { resolveLiveContext } from "../shared/viewer-context.mjs";
+import {
+  hydrateViewerRelationshipPolicy,
+  normalizeBlockedUserIds
+} from "../shared/relationship-policy.mjs";
 
 const SCRIBBLE_SOCKET_PATH = "/ws/games/scribble";
 const SCRIBBLE_PUBLIC_ROOMS_PATH = "/v1/games/scribble/public-rooms";
@@ -590,10 +595,31 @@ function getSystemPublicRooms(tenantId) {
     .sort((left, right) => (left.publicRoomIndex ?? 1) - (right.publicRoomIndex ?? 1));
 }
 
-function ensureAvailableSystemPublicRoom(tenantId) {
+function getAuthBlockedUserIds(auth) {
+  return normalizeBlockedUserIds(auth?.blockedUserIds);
+}
+
+function roomHasRelationshipConflict(room, auth) {
+  if (!room || !auth) return false;
+  const authBlockedUserIds = getAuthBlockedUserIds(auth);
+  return getConnectedMembershipIds(room).some((membershipId) => {
+    const player = room.players.get(membershipId);
+    if (!player || player.userId === auth.userId) return false;
+    return (
+      authBlockedUserIds.has(player.userId) ||
+      normalizeBlockedUserIds(player.blockedUserIds).has(auth.userId)
+    );
+  });
+}
+
+function ensureAvailableSystemPublicRoom(tenantId, auth = null) {
   ensureSystemPublicRoom(tenantId);
   const publicRooms = getSystemPublicRooms(tenantId);
-  const openRoom = publicRooms.find((room) => getConnectedMembershipIds(room).length < room.settings.maxPlayers);
+  const openRoom = publicRooms.find(
+    (room) =>
+      getConnectedMembershipIds(room).length < room.settings.maxPlayers &&
+      !roomHasRelationshipConflict(room, auth)
+  );
   if (openRoom) {
     return openRoom;
   }
@@ -608,6 +634,7 @@ function toPlayer(auth, connected = true) {
     membershipId: auth.membershipId,
     username: auth.username,
     displayName: auth.displayName || auth.username,
+    blockedUserIds: [...getAuthBlockedUserIds(auth)],
     connected,
     score: 0,
     scoreAtTurnStart: 0,
@@ -660,6 +687,7 @@ function addOrUpdatePlayer(room, auth) {
   player.userId = auth.userId;
   player.username = auth.username;
   player.displayName = auth.displayName || auth.username;
+  player.blockedUserIds = [...getAuthBlockedUserIds(auth)];
   player.connected = true;
   scribbleLog("player.reconnected", {
     auth: summarizeAuth(auth),
@@ -1022,12 +1050,12 @@ function buildPublicRoomSummary(room) {
   };
 }
 
-function buildCatalogPayload(tenantId) {
-  ensureAvailableSystemPublicRoom(tenantId);
+function buildCatalogPayload(tenantId, auth = null) {
+  ensureAvailableSystemPublicRoom(tenantId, auth);
 
   return {
     rooms: [...rooms.values()]
-      .filter((room) => room.tenantId === tenantId)
+      .filter((room) => room.tenantId === tenantId && !roomHasRelationshipConflict(room, auth))
       .map((room) => buildPublicRoomSummary(room))
       .filter(Boolean)
       .sort((left, right) => Number(right.isSystemPublic) - Number(left.isSystemPublic) || right.playerCount - left.playerCount || left.roomId.localeCompare(right.roomId))
@@ -1043,7 +1071,7 @@ function emitCatalog(targetTenantId = null) {
 
     sendSocket(ws, {
       type: "scribble.catalog",
-      payload: buildCatalogPayload(auth.tenantId)
+      payload: buildCatalogPayload(auth.tenantId, auth)
     });
   }
 }
@@ -1822,11 +1850,24 @@ function updateRoomSettings(room, auth, payload) {
   });
 }
 
-function recordRoomInviteTarget(room, auth, targetUserId) {
+async function recordRoomInviteTarget(room, auth, targetUserId) {
+  const currentPolicy = await hydrateViewerRelationshipPolicy({
+    tenantId: auth.tenantId,
+    userId: auth.userId
+  });
+  auth.blockedUserIds = [...currentPolicy.blockedUserIds];
   const normalizedUserId = normalizeUserId(targetUserId);
   if (!normalizedUserId || normalizedUserId === auth.userId) {
     scribbleLog("room.invite-target.ignored", {
       reason: !normalizedUserId ? "invalid-user-id" : "self",
+      auth: summarizeAuth(auth),
+      room: summarizeRoom(room)
+    }, "warn");
+    return;
+  }
+  if (getAuthBlockedUserIds(auth).has(normalizedUserId)) {
+    scribbleLog("room.invite-target.ignored", {
+      reason: "relationship-blocked",
       auth: summarizeAuth(auth),
       room: summarizeRoom(room)
     }, "warn");
@@ -1842,7 +1883,12 @@ function recordRoomInviteTarget(room, auth, targetUserId) {
   maybeNotifySquadActive(room, auth);
 }
 
-function handleJoinRoom(ws, auth, roomId) {
+async function handleJoinRoom(ws, auth, roomId) {
+  const currentPolicy = await hydrateViewerRelationshipPolicy({
+    tenantId: auth.tenantId,
+    userId: auth.userId
+  });
+  auth.blockedUserIds = [...currentPolicy.blockedUserIds];
   scribbleLog("room.join.requested", {
     requestedRoomId: roomId,
     auth: summarizeAuth(auth)
@@ -1860,7 +1906,9 @@ function handleJoinRoom(ws, auth, roomId) {
 
   // The public alias always routes to the first room with a free seat. Direct room
   // codes still join that exact room so invited/private-room behaviour is unchanged.
-  const room = isSystemPublicRoomAlias(normalizedRoomId) ? ensureAvailableSystemPublicRoom(auth.tenantId) : getRoom(auth.tenantId, normalizedRoomId);
+  const room = isSystemPublicRoomAlias(normalizedRoomId)
+    ? ensureAvailableSystemPublicRoom(auth.tenantId, auth)
+    : getRoom(auth.tenantId, normalizedRoomId);
   if (!room || room.tenantId !== auth.tenantId) {
     scribbleLog("room.join.rejected", {
       reason: "room-not-found",
@@ -1868,6 +1916,16 @@ function handleJoinRoom(ws, auth, roomId) {
       normalizedRoomId,
       auth: summarizeAuth(auth),
       activeRoomIds: [...rooms.values()].filter((candidate) => candidate.tenantId === auth.tenantId).map((candidate) => candidate.roomId)
+    }, "warn");
+    sendError(ws, "ROOM_NOT_FOUND", "That Scribble room is not active.");
+    return;
+  }
+  if (roomHasRelationshipConflict(room, auth)) {
+    scribbleLog("room.join.rejected", {
+      reason: "relationship-blocked",
+      normalizedRoomId,
+      auth: summarizeAuth(auth),
+      room: summarizeRoom(room)
     }, "warn");
     sendError(ws, "ROOM_NOT_FOUND", "That Scribble room is not active.");
     return;
@@ -1967,11 +2025,11 @@ async function handleClientMessage(ws, auth, rawMessage) {
   if (type === "scribble.catalog.subscribe") {
     sendSocket(ws, {
       type: "scribble.catalog",
-      payload: buildCatalogPayload(auth.tenantId)
+      payload: buildCatalogPayload(auth.tenantId, auth)
     });
     scribbleLog("catalog.sent", {
       auth: summarizeAuth(auth),
-      roomCount: buildCatalogPayload(auth.tenantId).rooms.length
+      roomCount: buildCatalogPayload(auth.tenantId, auth).rooms.length
     });
     return;
   }
@@ -1982,7 +2040,7 @@ async function handleClientMessage(ws, auth, rawMessage) {
   }
 
   if (type === "scribble.room.join") {
-    handleJoinRoom(ws, auth, payload.roomId);
+    await handleJoinRoom(ws, auth, payload.roomId);
     return;
   }
 
@@ -2000,7 +2058,7 @@ async function handleClientMessage(ws, auth, rawMessage) {
   touchRoom(room);
 
   if (type === "scribble.room.inviteTarget") {
-    recordRoomInviteTarget(room, auth, payload.userId);
+    await recordRoomInviteTarget(room, auth, payload.userId);
     return;
   }
 
@@ -2311,18 +2369,28 @@ export function getScribbleModuleHealth() {
   };
 }
 
-export function handleScribblePublicRoomsRoute({ request, response, url }) {
+export async function handleScribblePublicRoomsRoute({ request, response, url, context }) {
   if (request.method !== "GET" || url.pathname !== SCRIBBLE_PUBLIC_ROOMS_PATH) {
     return false;
   }
 
-  const tenantId = typeof url.searchParams.get("tenantId") === "string" && url.searchParams.get("tenantId")?.trim()
-    ? url.searchParams.get("tenantId").trim()
-    : "tenant-demo";
+  if (!context.actor) {
+    sendHttpError(response, 401, "UNAUTHENTICATED", "Sign in before browsing Scribble rooms.");
+    return true;
+  }
+  const resolved = await resolveLiveContext(context.actor);
+  if (!resolved?.live?.tenant || !resolved.live.user || !resolved.live.membership) {
+    sendHttpError(response, 401, "UNAUTHENTICATED", "A verified campus membership is required.");
+    return true;
+  }
+  const viewer = await hydrateViewerRelationshipPolicy({
+    tenantId: resolved.live.tenant.id,
+    userId: resolved.live.user.id
+  });
 
-  const payload = buildCatalogPayload(tenantId);
+  const payload = buildCatalogPayload(viewer.tenantId, viewer);
   scribbleLog("public-rooms.request", {
-    tenantId,
+    tenantId: viewer.tenantId,
     roomCount: payload.rooms.length
   });
   sendJson(response, 200, payload);
@@ -2365,16 +2433,22 @@ export async function handleScribbleSocketTokenRoute({ request, response, url, c
     membershipId: resolved.live.membership.id,
     displayName: profile.fullName || context.actor.displayName || "Vyb Student",
     username: profile.username || context.actor.email?.split("@")[0] || resolved.live.user.id,
-    exp: expiresAt
+    exp: expiresAt,
+    blockedUserIds: [
+      ...(await hydrateViewerRelationshipPolicy({
+        tenantId: resolved.live.tenant.id,
+        userId: resolved.live.user.id
+      })).blockedUserIds
+    ]
   };
   const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
   const signature = createHmac("sha256", secret).update(encoded).digest("base64url");
-  const forwardedProto = String(request.headers["x-forwarded-proto"] ?? "").split(",")[0].trim();
-  const forwardedHost = String(request.headers["x-forwarded-host"] ?? "").split(",")[0].trim();
-  const secure = forwardedProto ? forwardedProto === "https" : Boolean(request.socket?.encrypted);
-  const host = forwardedHost || request.headers.host;
-  const token = encodeURIComponent(`${encoded}.${signature}`);
-  const wsUrl = `${secure ? "wss" : "ws"}://${host}${SCRIBBLE_SOCKET_PATH}?token=${token}`;
+  const token = `${encoded}.${signature}`;
+  const wsUrl = buildPublicRealtimeSocketUrl({
+    request,
+    path: SCRIBBLE_SOCKET_PATH,
+    token
+  });
 
   sendJson(response, 200, {
     wsUrl,
@@ -2458,12 +2532,12 @@ export function attachScribbleWebSocketServer(server) {
       });
       sendSocket(ws, {
         type: "scribble.catalog",
-        payload: buildCatalogPayload(auth.tenantId)
+        payload: buildCatalogPayload(auth.tenantId, auth)
       });
       scribbleLog("socket.connected", {
         auth: summarizeAuth(auth),
         connectedSockets: connectedSockets.size,
-        catalogRooms: buildCatalogPayload(auth.tenantId).rooms.length
+        catalogRooms: buildCatalogPayload(auth.tenantId, auth).rooms.length
       });
     });
   });

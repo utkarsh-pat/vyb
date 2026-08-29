@@ -3,4 +3,7 @@
     <external-files-path
         name="updates"
         path="Download/" />
+    <cache-path
+        name="chat_camera"
+        path="chat-camera/" />
 </paths>

@@ -3,6 +3,8 @@ package social.vyb.app.features.messages
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import android.net.Uri
+import android.os.SystemClock
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -12,6 +14,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import social.vyb.app.features.realtime.ChatRealtimeEvent
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.UUID
 
 data class InboxUiState(
     val isLoading: Boolean = true,
@@ -177,11 +183,16 @@ data class ConversationUiState(
     val isSending: Boolean = false,
     val peerName: String = "",
     val peerHandle: String = "",
+    val peerAvatarUrl: String? = null,
     val isOnline: Boolean = false,
     val isRealtimeConnected: Boolean = false,
     val isPeerTyping: Boolean = false,
     val messages: List<ChatMessageItem> = emptyList(),
     val draft: String = "",
+    val durationKey: String = "30d",
+    val viewOnceEnabled: Boolean = false,
+    val mediaInFlight: Boolean = false,
+    val activeMediaMessageId: String? = null,
     val error: String? = null
 )
 
@@ -189,19 +200,47 @@ class ConversationViewModel(
     private val conversationId: String,
     private val repository: ChatRepository
 ) : ViewModel() {
-    private val _state = MutableStateFlow(ConversationUiState())
+    private val _state = MutableStateFlow(
+        ConversationUiState(durationKey = repository.loadDefaultDuration(conversationId))
+    )
     val state: StateFlow<ConversationUiState> = _state.asStateFlow()
     private var viewerUserId: String? = null
     private var typingStopJob: Job? = null
     private var peerTypingExpiryJob: Job? = null
+    private var refreshJob: Job? = null
+    private var refreshPending = false
 
     init {
         refresh()
         observeRealtime()
+        observeScreenshots()
+    }
+
+    private fun observeScreenshots() {
+        viewModelScope.launch {
+            var lastAlertAt = 0L
+            ChatScreenshotEvents.events.collect {
+                val now = System.currentTimeMillis()
+                if (now - lastAlertAt < 90_000L) return@collect
+                lastAlertAt = now
+                val actor = repository.currentViewerName()
+                val body = "Suspected screenshot: $actor may have captured this chat."
+                runCatching { repository.sendText(conversationId, body, state.value.durationKey) }
+                    .onSuccess { message ->
+                        _state.update { current ->
+                            current.copy(messages = upsertMessage(current.messages, message))
+                        }
+                    }
+            }
+        }
     }
 
     fun refresh(silent: Boolean = false) {
-        viewModelScope.launch {
+        if (refreshJob?.isActive == true) {
+            refreshPending = true
+            return
+        }
+        refreshJob = viewModelScope.launch {
             _state.update { it.copy(isLoading = if (silent) it.isLoading else true, error = null) }
             runCatching { repository.loadConversation(conversationId) }
                 .onSuccess { result ->
@@ -211,6 +250,7 @@ class ConversationViewModel(
                             isLoading = false,
                             peerName = result.peerName,
                             peerHandle = result.peerHandle,
+                            peerAvatarUrl = result.peerAvatarUrl,
                             isOnline = result.isOnline,
                             messages = result.messages
                         )
@@ -219,12 +259,23 @@ class ConversationViewModel(
                         conversationId,
                         result.messages.filterNot(ChatMessageItem::isMine).map(ChatMessageItem::id)
                     )
+                    hydrateVisibleMedia(result.messages)
                 }
                 .onFailure { error ->
                     _state.update {
                         it.copy(isLoading = false, error = error.message ?: "Conversation could not load.")
                     }
                 }
+        }.also { job ->
+            job.invokeOnCompletion {
+                if (refreshJob === job) {
+                    refreshJob = null
+                    if (refreshPending) {
+                        refreshPending = false
+                        refresh(silent = true)
+                    }
+                }
+            }
         }
     }
 
@@ -241,24 +292,222 @@ class ConversationViewModel(
         }
     }
 
+    fun updateDurationKey(value: String) {
+        if (value in setOf("instant", "1h", "24h", "7d", "30d", "90d")) {
+            repository.saveDefaultDuration(conversationId, value)
+            _state.update { it.copy(durationKey = value) }
+        }
+    }
+
+    fun toggleViewOnce() {
+        _state.update { it.copy(viewOnceEnabled = !it.viewOnceEnabled) }
+    }
+
+    fun sendMedia(
+        source: Uri,
+        fileName: String,
+        mimeType: String,
+        width: Int? = null,
+        height: Int? = null,
+        durationMs: Int? = null
+    ) = sendMediaBatch(listOf(ChatMediaDraft(source, fileName, mimeType, width, height, durationMs)))
+
+    fun sendMediaBatch(media: List<ChatMediaDraft>) {
+        val selected = media.take(8)
+        if (selected.isEmpty() || state.value.mediaInFlight) return
+        val viewOnceEnabled = state.value.viewOnceEnabled
+        val optimistic = selected.map { item ->
+            val viewOnce = viewOnceEnabled && !item.mimeType.startsWith("audio/")
+            val label = when {
+                item.mimeType.startsWith("audio/") -> "Voice note"
+                item.mimeType.startsWith("video/") -> "Video"
+                else -> "Photo"
+            }
+            ChatMessageItem(
+                id = "local-media-${UUID.randomUUID()}",
+                body = label,
+                timestamp = DateTimeFormatter.ofPattern("h:mm a")
+                    .withZone(ZoneId.systemDefault()).format(Instant.now()),
+                isMine = true,
+                isReadable = true,
+                deliveryState = ChatDeliveryState.Pending,
+                messageKind = "image",
+                attachment = ChatAttachmentDto(
+                    kind = when {
+                        item.mimeType.startsWith("audio/") -> "audio"
+                        item.mimeType.startsWith("video/") -> "video"
+                        else -> "image"
+                    },
+                    url = "",
+                    mimeType = item.mimeType,
+                    width = item.width,
+                    height = item.height,
+                    durationMs = item.durationMs,
+                    viewOnce = viewOnce
+                ),
+                localMediaUri = item.uri.toString()
+            )
+        }
+        val durationKey = state.value.durationKey
+        val caption = state.value.draft
+        _state.update {
+            it.copy(
+                draft = "",
+                mediaInFlight = true,
+                error = null,
+                messages = it.messages + optimistic
+            )
+        }
+        viewModelScope.launch {
+            selected.forEachIndexed { index, item ->
+                val optimisticId = optimistic[index].id
+                val telemetryStartedAt = SystemClock.elapsedRealtime()
+                runCatching {
+                    repository.sendMedia(
+                        conversationId = conversationId,
+                        source = item.uri,
+                        fileName = item.fileName,
+                        mimeType = item.mimeType,
+                        width = item.width,
+                        height = item.height,
+                        durationMs = item.durationMs,
+                        viewOnce = viewOnceEnabled && !item.mimeType.startsWith("audio/"),
+                        caption = if (index == 0) caption else "",
+                        durationKey = durationKey
+                    )
+                }.onSuccess { sent ->
+                    ChatTelemetry.apiAccepted(sent.id, telemetryStartedAt)
+                    _state.update {
+                        it.copy(messages = upsertMessage(
+                            it.messages.filterNot { candidate -> candidate.id == optimisticId },
+                            sent
+                        ))
+                    }
+                }.onFailure { error ->
+                    _state.update {
+                        it.copy(
+                            error = error.message ?: "Media could not be sent.",
+                            messages = it.messages.map { candidate ->
+                                if (candidate.id == optimisticId) candidate.copy(deliveryState = ChatDeliveryState.Failed)
+                                else candidate
+                            }
+                        )
+                    }
+                }
+            }
+            _state.update { it.copy(mediaInFlight = false, viewOnceEnabled = false) }
+        }
+    }
+
+    fun openMedia(message: ChatMessageItem) {
+        if (message.attachment == null || message.mediaLoading || message.mediaConsumed) return
+        if (message.localMediaUri != null) {
+            _state.update { it.copy(activeMediaMessageId = message.id) }
+            return
+        }
+        _state.update { current ->
+            current.copy(messages = current.messages.map {
+                if (it.id == message.id) it.copy(mediaLoading = true) else it
+            })
+        }
+        viewModelScope.launch {
+            runCatching {
+                repository.loadAttachment(
+                    conversationId,
+                    message,
+                    consumeViewOnce = message.attachment.viewOnce
+                )
+            }.onSuccess { uri ->
+                _state.update { current ->
+                    current.copy(
+                        activeMediaMessageId = message.id,
+                        messages = current.messages.map {
+                            if (it.id == message.id) it.copy(localMediaUri = uri, mediaLoading = false) else it
+                        }
+                    )
+                }
+            }.onFailure { error ->
+                _state.update { current ->
+                    current.copy(
+                        error = error.message ?: "Media could not be opened.",
+                        messages = current.messages.map {
+                            if (it.id == message.id) it.copy(mediaLoading = false) else it
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    fun closeViewOnce() {
+        val messageId = state.value.activeMediaMessageId ?: return
+        val activeMessage = state.value.messages.firstOrNull { it.id == messageId }
+        _state.update { current ->
+            current.copy(
+                activeMediaMessageId = null,
+                messages = current.messages.map {
+                    if (it.id == messageId && activeMessage?.attachment?.viewOnce == true) {
+                        it.copy(localMediaUri = null, mediaConsumed = true)
+                    } else it
+                }
+            )
+        }
+    }
+
+    private fun hydrateVisibleMedia(messages: List<ChatMessageItem>) {
+        messages.filter { it.attachment != null && !it.attachment.viewOnce && it.localMediaUri == null }
+            .forEach(::openMedia)
+    }
+
     fun send() {
         val text = state.value.draft.trim()
-        if (text.isEmpty() || state.value.isSending) return
+        if (text.isEmpty()) return
+        val optimisticId = "local-${UUID.randomUUID()}"
+        val optimisticMessage = ChatMessageItem(
+            id = optimisticId,
+            body = text,
+            timestamp = DateTimeFormatter.ofPattern("h:mm a")
+                .withZone(ZoneId.systemDefault())
+                .format(Instant.now()),
+            isMine = true,
+            isReadable = true,
+            deliveryState = ChatDeliveryState.Pending
+        )
+        val durationKey = state.value.durationKey
+        _state.update {
+            it.copy(
+                isSending = false,
+                draft = "",
+                error = null,
+                messages = it.messages + optimisticMessage
+            )
+        }
+        val telemetryStartedAt = SystemClock.elapsedRealtime()
         viewModelScope.launch {
-            _state.update { it.copy(isSending = true, error = null) }
-            runCatching { repository.sendText(conversationId, text) }
+            runCatching { repository.sendText(conversationId, text, durationKey) }
                 .onSuccess { message ->
+                    ChatTelemetry.apiAccepted(message.id, telemetryStartedAt)
                     _state.update {
                         it.copy(
                             isSending = false,
-                            draft = "",
-                            messages = it.messages + message
+                            messages = upsertMessage(
+                                it.messages.filterNot { candidate -> candidate.id == optimisticId },
+                                message
+                            )
                         )
                     }
                 }
                 .onFailure { error ->
                     _state.update {
-                        it.copy(isSending = false, error = error.message ?: "Message could not be sent.")
+                        it.copy(
+                            isSending = false,
+                            error = error.message ?: "Message could not be sent.",
+                            messages = it.messages.map { candidate ->
+                                if (candidate.id == optimisticId) {
+                                    candidate.copy(deliveryState = ChatDeliveryState.Failed)
+                                } else candidate
+                            }
+                        )
                     }
                 }
         }
@@ -266,16 +515,27 @@ class ConversationViewModel(
 
     private fun observeRealtime() {
         viewModelScope.launch {
+            var connectingAt = 0L
             repository.realtimeEvents(conversationId).collect { event ->
                 when (event) {
-                    ChatRealtimeEvent.Connecting ->
+                    ChatRealtimeEvent.Connecting -> {
+                        connectingAt = SystemClock.elapsedRealtime()
+                        ChatTelemetry.transport("connecting")
                         _state.update { it.copy(isRealtimeConnected = false) }
-                    ChatRealtimeEvent.Connected ->
+                    }
+                    ChatRealtimeEvent.Connected -> {
+                        ChatTelemetry.transport(
+                            "connected",
+                            if (connectingAt > 0) SystemClock.elapsedRealtime() - connectingAt else null
+                        )
                         _state.update { it.copy(isRealtimeConnected = true) }
-                    is ChatRealtimeEvent.Disconnected ->
+                    }
+                    is ChatRealtimeEvent.Disconnected -> {
+                        ChatTelemetry.transport("disconnected")
                         _state.update {
                             it.copy(isRealtimeConnected = false, isPeerTyping = false)
                         }
+                    }
                     is ChatRealtimeEvent.PeerTyping -> {
                         if (event.userId != viewerUserId) {
                             _state.update { it.copy(isPeerTyping = event.isTyping) }
@@ -288,8 +548,54 @@ class ConversationViewModel(
                             }
                         }
                     }
-                    is ChatRealtimeEvent.MessageChanged,
-                    is ChatRealtimeEvent.ReadChanged,
+                    is ChatRealtimeEvent.MessageChanged -> viewModelScope.launch {
+                        val message = runCatching {
+                            repository.receiveRealtimeMessage(conversationId, event.item)
+                        }.getOrNull()
+                        if (message == null) {
+                            refresh(silent = true)
+                        } else {
+                            if (!message.isMine) {
+                                peerTypingExpiryJob?.cancel()
+                            }
+                            _state.update { current ->
+                                current.copy(
+                                    messages = upsertMessage(current.messages, message),
+                                    isPeerTyping = if (message.isMine) current.isPeerTyping else false
+                                )
+                            }
+                            if (message.attachment != null && !message.attachment.viewOnce) openMedia(message)
+                            if (!message.isMine) {
+                                repository.acknowledgeDelivered(conversationId, listOf(message.id))
+                                // Receipt persistence must never block the incoming bubble. The
+                                // active conversation renders the decrypted envelope first, then
+                                // records read state independently.
+                                viewModelScope.launch {
+                                    runCatching { repository.markRead(conversationId, message.id) }
+                                }
+                            }
+                        }
+                    }
+                    is ChatRealtimeEvent.ReceiptChanged -> {
+                        event.messageIds.forEach { ChatTelemetry.receipt(event.kind, it) }
+                        val receiptState = if (event.kind == "chat.read") {
+                            ChatDeliveryState.Read
+                        } else {
+                            ChatDeliveryState.Delivered
+                        }
+                        _state.update { current ->
+                            val lastReceiptIndex = current.messages.indexOfLast {
+                                it.id in event.messageIds
+                            }
+                            if (lastReceiptIndex < 0) current else current.copy(
+                                messages = current.messages.mapIndexed { index, message ->
+                                    if (message.isMine && index <= lastReceiptIndex &&
+                                        message.deliveryState != ChatDeliveryState.Read
+                                    ) message.copy(deliveryState = receiptState) else message
+                                }
+                            )
+                        }
+                    }
                     ChatRealtimeEvent.SyncRequired -> refresh(silent = true)
                 }
             }
@@ -299,8 +605,18 @@ class ConversationViewModel(
     override fun onCleared() {
         typingStopJob?.cancel()
         peerTypingExpiryJob?.cancel()
+        refreshJob?.cancel()
         repository.sendTyping(conversationId, false)
         super.onCleared()
+    }
+
+    private fun upsertMessage(
+        messages: List<ChatMessageItem>,
+        incoming: ChatMessageItem
+    ): List<ChatMessageItem> {
+        val index = messages.indexOfFirst { it.id == incoming.id }
+        if (index < 0) return messages + incoming
+        return messages.toMutableList().apply { set(index, incoming) }
     }
 }
 

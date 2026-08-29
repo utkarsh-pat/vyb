@@ -1,0 +1,2 @@
+GAME_SESSION_SECRET=replace-with-the-same-32-byte-secret-used-by-the-web-app
+SOCIAL_FANOUT_SECRET=replace-with-the-same-32-byte-secret-used-by-web-and-backend

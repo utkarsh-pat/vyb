@@ -156,6 +156,12 @@ export function createPost(dcOrVarsOrOptions, varsOrOptions, options) {
   return dcInstance.executeMutation('CreatePost', inputVars, inputOpts);
 }
 
+export function createPostWithFeedChange(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('CreatePostWithFeedChange', inputVars, inputOpts);
+}
+
 export function createPostMedia(dcOrVarsOrOptions, varsOrOptions, options) {
   const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
   dcInstance.useGen(true);
@@ -240,10 +246,22 @@ export function updatePost(dcOrVarsOrOptions, varsOrOptions, options) {
   return dcInstance.executeMutation('UpdatePost', inputVars, inputOpts);
 }
 
+export function updatePostWithFeedChange(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('UpdatePostWithFeedChange', inputVars, inputOpts);
+}
+
 export function createFollow(dcOrVarsOrOptions, varsOrOptions, options) {
   const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
   dcInstance.useGen(true);
   return dcInstance.executeMutation('CreateFollow', inputVars, inputOpts);
+}
+
+export function activateFollow(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('ActivateFollow', inputVars, inputOpts);
 }
 
 export function softDeleteFollow(dcOrVarsOrOptions, varsOrOptions, options) {
@@ -322,6 +340,12 @@ export function softDeletePostWithPurge(dcOrVarsOrOptions, varsOrOptions, option
   const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
   dcInstance.useGen(true);
   return dcInstance.executeMutation('SoftDeletePostWithPurge', inputVars, inputOpts);
+}
+
+export function softDeletePostWithPurgeAndFeedChange(dcOrVarsOrOptions, varsOrOptions, options) {
+  const { dc: dcInstance, vars: inputVars, options: inputOpts} = validateAdminArgs(connectorConfig, dcOrVarsOrOptions, varsOrOptions, options, true, true);
+  dcInstance.useGen(true);
+  return dcInstance.executeMutation('SoftDeletePostWithPurgeAndFeedChange', inputVars, inputOpts);
 }
 
 export function getContentEventByKey(dcOrVarsOrOptions, varsOrOptions, options) {

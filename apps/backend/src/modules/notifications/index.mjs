@@ -1,5 +1,6 @@
 import { readJson, sendError, sendJson } from "../../lib/http.mjs";
 import { resolveLiveContext } from "../shared/viewer-context.mjs";
+import { hydrateViewerRelationshipPolicy } from "../shared/relationship-policy.mjs";
 import {
   listNotifications,
   markAllRead,
@@ -24,7 +25,10 @@ export async function handleNotificationsRoute({ request, response, url, context
     sendError(response, 401, "UNAUTHENTICATED", "An authenticated membership is required.");
     return true;
   }
-  const viewer = { tenantId: resolved.live.tenant.id, userId: resolved.live.user.id };
+  const viewer = await hydrateViewerRelationshipPolicy({
+    tenantId: resolved.live.tenant.id,
+    userId: resolved.live.user.id
+  });
 
   try {
     if (request.method === "GET" && url.pathname === "/v1/notifications") {

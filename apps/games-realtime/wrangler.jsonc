@@ -1,0 +1,37 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "vyb-games-realtime",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-08",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "vars": {
+    "GAME_ALLOWED_ORIGINS": "http://localhost:3000,http://10.0.2.2:3000,https://vybnet.app,https://www.vybnet.app,https://vyb-vybnet.vercel.app",
+    "SOCIAL_FANOUT_SHARDS": "16"
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "GAME_ROOMS",
+        "class_name": "GameRoom"
+      },
+      {
+        "name": "SOCIAL_FEED_HUBS",
+        "class_name": "SocialFeedHub"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["GameRoom"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["SocialFeedHub"]
+    }
+  ]
+}

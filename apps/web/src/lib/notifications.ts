@@ -22,6 +22,7 @@ import type {
   RegisterNotificationDeviceResponse
 } from "@vyb/contracts";
 import type { DevSession } from "./dev-session";
+import { getInternalRelationshipVisibleUserIds } from "./backend";
 
 type NotificationEmitInput = {
   eventKey: string;
@@ -72,7 +73,7 @@ type NotificationPushDelivery = {
     notificationId: string;
     eventKey: string;
   };
-  status: "pending" | "sent" | "failed";
+  status: "pending" | "sent" | "failed" | "suppressed";
   attempts: number;
   nextAttemptAt: string;
   lastAttemptAt: string | null;
@@ -113,6 +114,38 @@ let writeQueue = Promise.resolve();
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function getNotificationActorUserId(item: NotificationRecord) {
+  return typeof item.actor?.user_id === "string" && item.actor.user_id.trim()
+    ? item.actor.user_id.trim()
+    : null;
+}
+
+async function getVisibleNotificationActorIds(
+  tenantId: string,
+  viewerUserId: string,
+  items: NotificationRecord[]
+) {
+  const candidateUserIds = [...new Set(items.map(getNotificationActorUserId).filter((value): value is string => Boolean(value)))];
+  if (candidateUserIds.length === 0) return new Set<string>();
+  try {
+    const result = await getInternalRelationshipVisibleUserIds({ tenantId, viewerUserId, candidateUserIds });
+    return new Set(result.visibleUserIds);
+  } catch (error) {
+    console.warn("[notifications] relationship visibility unavailable; hiding actor notifications", {
+      tenantId,
+      viewerUserId,
+      candidateCount: candidateUserIds.length,
+      message: error instanceof Error ? error.message : "unknown"
+    });
+    return new Set<string>();
+  }
+}
+
+function isNotificationRelationshipVisible(item: NotificationRecord, visibleActorIds: Set<string>) {
+  const actorUserId = getNotificationActorUserId(item);
+  return !actorUserId || visibleActorIds.has(actorUserId);
 }
 
 function getWorkspaceDataPath(fileName: string) {
@@ -770,7 +803,7 @@ export async function runNotificationDeliveryOutbox(options?: { tenantId?: strin
   const limit = Math.max(1, Math.min(100, options?.limit ?? 25));
   const due = store.pushDeliveries
     .filter((delivery) => {
-      if (delivery.status === "sent" || delivery.attempts >= PUSH_DELIVERY_MAX_ATTEMPTS) {
+      if (delivery.status === "sent" || delivery.status === "suppressed" || delivery.attempts >= PUSH_DELIVERY_MAX_ATTEMPTS) {
         return false;
       }
 
@@ -784,8 +817,32 @@ export async function runNotificationDeliveryOutbox(options?: { tenantId?: strin
 
   let sent = 0;
   let failed = 0;
+  const relationshipVisibilityCache = new Map<string, Promise<boolean>>();
 
   for (const delivery of due) {
+    const notification = store.notifications.find((item) => item.id === delivery.notificationId);
+    const actorUserId = notification ? getNotificationActorUserId(notification) : null;
+    if (actorUserId) {
+      const cacheKey = `${delivery.tenantId}:${delivery.userId}:${actorUserId}`;
+      if (!relationshipVisibilityCache.has(cacheKey)) {
+        relationshipVisibilityCache.set(
+          cacheKey,
+          getInternalRelationshipVisibleUserIds({
+            tenantId: delivery.tenantId,
+            viewerUserId: delivery.userId,
+            candidateUserIds: [actorUserId]
+          })
+            .then((result) => result.visibleUserIds.includes(actorUserId))
+            .catch(() => false)
+        );
+      }
+      if (!await relationshipVisibilityCache.get(cacheKey)) {
+        delivery.status = "suppressed";
+        delivery.lastAttemptAt = new Date().toISOString();
+        delivery.lastError = "Suppressed by relationship privacy policy.";
+        continue;
+      }
+    }
     const device = store.devices.find(
       (candidate) =>
         candidate.tenantId === delivery.tenantId &&
@@ -859,8 +916,12 @@ export async function listNotifications(
   const category = options?.category?.trim() || null;
   const limit = Math.max(1, Math.min(100, options?.limit ?? 30));
   const offset = Math.max(0, Number(options?.cursor ?? "0") || 0);
-  const allItems = store.notifications
-    .filter((item) => item.tenant_id === viewer.tenantId && item.recipient_user_ids.includes(viewer.userId))
+  const ownedItems = store.notifications.filter(
+    (item) => item.tenant_id === viewer.tenantId && item.recipient_user_ids.includes(viewer.userId)
+  );
+  const visibleActorIds = await getVisibleNotificationActorIds(viewer.tenantId, viewer.userId, ownedItems);
+  const relationshipVisibleItems = ownedItems.filter((item) => isNotificationRelationshipVisible(item, visibleActorIds));
+  const allItems = relationshipVisibleItems
     .filter((item) => {
       if (category && item.category !== category) {
         return false;
@@ -887,10 +948,8 @@ export async function listNotifications(
   return {
     tenantId: viewer.tenantId,
     items,
-    unreadCount: store.notifications.filter(
+    unreadCount: relationshipVisibleItems.filter(
       (item) =>
-        item.tenant_id === viewer.tenantId &&
-        item.recipient_user_ids.includes(viewer.userId) &&
         item.state.read_at === null &&
         item.state.archived_at === null
     ).length,
@@ -983,6 +1042,10 @@ export async function markNotificationRead(viewer: DevSession, notificationId: s
   if (!item) {
     throw new Error("Notification not found.");
   }
+  const visibleActorIds = await getVisibleNotificationActorIds(viewer.tenantId, viewer.userId, [item]);
+  if (!isNotificationRelationshipVisible(item, visibleActorIds)) {
+    throw new Error("Notification not found.");
+  }
 
   const wasUnread = item.state.read_at === null;
   const timestamp = new Date().toISOString();
@@ -1006,11 +1069,14 @@ export async function markAllNotificationsRead(
   const timestamp = new Date().toISOString();
   let updatedCount = 0;
   const category = options?.category?.trim() || null;
+  const ownedItems = store.notifications.filter(
+    (item) => item.tenant_id === viewer.tenantId && item.recipient_user_ids.includes(viewer.userId)
+  );
+  const visibleActorIds = await getVisibleNotificationActorIds(viewer.tenantId, viewer.userId, ownedItems);
 
-  for (const item of store.notifications) {
+  for (const item of ownedItems) {
     if (
-      item.tenant_id === viewer.tenantId &&
-      item.recipient_user_ids.includes(viewer.userId) &&
+      isNotificationRelationshipVisible(item, visibleActorIds) &&
       item.state.archived_at === null &&
       item.state.read_at === null &&
       (!category || item.category === category)

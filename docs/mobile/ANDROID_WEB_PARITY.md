@@ -1,6 +1,6 @@
 # Android and Web Product Parity
 
-Last audited: 2026-07-30
+Last audited: 2026-08-08
 
 This document is the release gate for the native Android app. Android is not
 considered release-equivalent until every launch-user web route is either:
@@ -62,7 +62,7 @@ for push registration.
 | `/create` | `CreatePostComposer`, `MediaComposerScreen`, `StoryBuilderScreen` | Post/story/vibe composition and media upload implemented; device-local drafts/scheduling intentionally removed | Partial | Add a backend-owned scheduling contract before exposing scheduled publishing |
 | `/search` | `SearchScreen` | Debounced People, Posts, Vibes and Market discovery with UID-scoped bounded cache, partial-failure isolation, media cards, follow state and safe destination callbacks | Close | Production dataset and destination-selection device QA |
 | `/notifications` | `NotificationScreen` | Direct backend inbox, per-recipient read state, FID registration, foreground/data-only rendering, filters/read actions, allowlisted native deep links, and cold/warm activity handoff implemented | Close | Verify real FCM taps from background/terminated states and every allowlisted destination |
-| `/messages`, `/messages/[id]` | `MessagesFeatureScreen` | Inbox, encrypted conversation, realtime typing/delivery implemented; API 31+ uses Keystore ECDH and API 26-30 wraps the EC private key with Keystore AES-GCM | Close | Attachments and multi-account privacy verification |
+| `/messages`, `/messages/[id]` | `MessagesFeatureScreen` | Inbox, public-profile direct-message entry, encrypted conversation, realtime typing/delivery/read updates, canonical conversation de-duplication and unread previews implemented; PWA-parity intrinsic bubbles, inline time/receipt metadata, mirrored bottom-corner direction, and persistent Instant/1h/24h/7d/30d/90d auto-destruct settings sheet are included; API 31+ uses Keystore ECDH and API 26-30 wraps the EC private key with Keystore AES-GCM | Close | Attachments, voice-note transport, process-recreation and the complete privacy-policy matrix |
 | `/messages/community/[slug]` | `MessagesFeatureScreen` community mode | Membership-filtered discovery, chronological conversation, refresh, text send and deep navigation implemented against web-compatible backend contracts | Partial | Multi-account/device QA; add native realtime after a Firebase-Bearer social socket-token endpoint exists |
 | `/vibes`, `/reels` | `NativeVibesScreen` | Live feed, playback, like/save/share/repost/report, threaded comments/replies/reactions and owner controls implemented through shared social-actions state; loading is lifecycle-aware and duplicate guarded | Close | Paging, realtime state, and process-recreation QA |
 | `/market` | `MarketFeatureScreen` | Browse, create, save, contact, and mark-sold implemented; client discovery now includes search, category and price/recent sorting, saved filtering, and listing/request image-video display | Close | Verify production data, filters and media on device; creation-time image attachments remain a gap |
@@ -75,6 +75,9 @@ for push registration.
 | `/hub/gameshub/connect` | `FunHubScreen` | Daily, hint and submit aligned to tenant/user-bound Bearer backend contracts | Partial | Deploy/device-test; add durable leaderboard/run persistence |
 | `/hub/gameshub/queens` | `FunHubScreen` | Daily, hint and submit aligned to tenant/user-bound Bearer backend contracts with server-side validation | Partial | Deploy/device-test; add Queens-aware durable leaderboard/run schema |
 | `/hub/gameshub/scribble`, `/join/scribble` | `ScribbleScreen` in `FunHubScreen` | Bearer socket-token exchange, public/private lobby, create/join, reconnect/rejoin, round state, word selection, guess, timer, canvas stroke batching, clear/skip/retry/leave implemented | Partial | Deploy backend token route; device/multi-account QA; settings, invites, reactions, eraser, share/result posting |
+| `/hub/gameshub/chess` | `ChessGameScreen` | Native legal local chess with castling, en passant, promotion, check/checkmate, move history, board flip and history navigation; Online opens the shared authenticated multiplayer runtime | Close | Deploy the current web game route and Durable Object runtime; run two-device room/chat/invite QA |
+| `/hub/gameshub/ludo`, `/hub/gameshub/uno` | `AuthenticatedWebGameScreen` | Authenticated isolated WebView reuses the authoritative web room, invite, chat and game protocol without duplicating multiplayer state in the APK | Partial | Production web game deployment currently returns a Server Component error; deploy and run two-device room QA |
+| `/hub/gameshub/color-sort`, `/hub/gameshub/word-puzzle` | `LocalHtmlGameScreen` | Self-contained offline HTML games bundled in APK assets with local device persistence and no backend cost | Close | Release-device smoke test |
 | `/admin` | None | Intentionally web-only | N/A | Keep restricted to the administrative web surface |
 
 ## Implementation batches
@@ -131,9 +134,23 @@ for push registration.
 
 ### Batch 4 — chat, marketplace, and games
 
+- [x] Direct-message entry from public profiles with tenant-safe conversation creation.
+- [x] Two-account Android chat round trip: encrypted ID1-to-ID2 and ID2-to-ID1
+  messages render live without manual refresh; cold inbox reload shows the
+  decrypted preview and unread badge.
+- [x] Chat realtime feedback-loop guard: delivery/read acknowledgements no
+  longer trigger recursive conversation reloads, and overlapping message
+  events are serialized into one pending refresh.
+- [x] Canonical conversation/participant de-duplication prevents duplicate
+  Compose keys and cross-tenant direct-conversation reuse.
 - [x] Community chat discovery, membership-safe conversation, refresh, text send, and navigation.
 - [ ] Community chat realtime after a Firebase-Bearer socket-token endpoint is available.
-- [ ] Message attachments.
+- [x] Encrypted image/voice-note attachments and the view-once delivery
+  lifecycle passed the fresh two-device matrix. R2 upload/download, recipient
+  socket fanout, asynchronous voice preparation, play/pause, seeking, elapsed
+  time, and media-only view-once composer visibility were verified. Android
+  14+ screenshot notices remain a best-effort platform signal, not a prevention
+  guarantee.
 - [ ] Trusted-device/privacy controls.
 - [x] Marketplace discovery controls and existing listing/request media display.
 - [ ] Marketplace creation-time image attachments and production device QA.
@@ -154,7 +171,7 @@ Each batch must pass:
 - loading, empty, error, offline, retry, and signed-out state checks
 - TalkBack labels and 48 dp minimum interactive targets
 
-Current verification status (2026-07-30):
+Current verification status (2026-08-09):
 
 - The earlier `0.1.3` baseline passed `:app:assembleDebug`,
   `:app:testDebugUnitTest`, and `:app:lintDebug` with 13 unit tests.
@@ -169,6 +186,38 @@ Current verification status (2026-07-30):
   API fallback.
 - Notification push-tap, marketplace discovery/media, story/vibe interactions,
   and community chat still require their complete authenticated device matrix.
+- Direct chat passed an API 35 two-emulator authenticated matrix at 1080x2400
+  and 720x1600: both peers opened the same tenant-scoped conversation, sent and
+  decrypted messages in both directions in real time, and the backgrounded
+  recipient recovered the latest preview with unread count `1` after a cold
+  reload. A five-second idle trace after delivery produced zero additional
+  backend requests, confirming the former read/delivery refresh storm is closed.
+- Android now sends a lifecycle-aware 30-second presence heartbeat while the
+  Messages surface is visible. Debug builds emit content-free timing events for
+  API acceptance, recipient socket arrival, delivered/read receipts, socket
+  reconnect, and presence RTT. `scripts/measure-chat-latency.ps1` aggregates a
+  bounded two-emulator run into p50/p95/p99 and raw CSV evidence.
+- Web and Android now show the peer typing state as a waving three-dot incoming
+  bubble. An incoming realtime message atomically clears that placeholder and
+  inserts the message bubble, preserving the perceived position without
+  delaying delivery.
+- Local R2 S3 authentication was verified by listing
+  `vyb-media-production`. The production Cloud Run `/ready` contract reports
+  `r2Media: true`; its access key and secret remain Secret Manager references,
+  and the bucket's public `r2.dev` endpoint remains disabled.
+- Production realtime revision `vyb-backend-00022-bz2` now issues direct Cloud
+  Run WebSocket URLs instead of routing upgrades through Firebase Hosting.
+  Both emulators connected successfully. A reverse-direction text message was
+  accepted in 1066 ms, read in 1556 ms, and appeared at the peer from the
+  realtime event without polling. Image and 27-second voice-note delivery also
+  passed. The remaining media performance improvement is direct presigned R2
+  upload; the current encrypted base64 JSON upload works but adds avoidable
+  request size and backend transit.
+- Generated attachment labels (`Photo`, `Video`, `Voice note`) are no longer
+  rendered as fake captions. Native voice bubbles now expose compact
+  play/pause, seek, elapsed and total-time controls without blocking Compose's
+  main thread. The view-once control appears only after eligible media is
+  selected.
 - Authenticated Vibes QA found a production media-route `404` for one migrated
   Vibe. Native loading/error fallback is verified; media backup recovery or
   record repair remains an operations/data task.
@@ -195,3 +244,41 @@ restrictions, or device changes and therefore violated the persistence rule.
 No parity row may be marked complete solely because a composable exists. The
 backing API action, persistence, navigation, error handling, and cleanup path
 must all be verified.
+
+## Chat media parity follow-up — 2026-08-16
+
+- Android and PWA now keep message metadata in the bottom-right corner of each
+  bubble. Android uses a compact translucent metadata pill so timestamps and
+  delivered/read state remain legible over text, media and voice notes.
+- Android message rows preserve a visible opposite-side gutter, use a thin
+  media surround, and size text bubbles to their content up to the responsive
+  maximum width.
+- Android voice notes expose play/pause, a draggable waveform seek surface,
+  elapsed/total time and `1x`/`1.5x`/`2x` playback speed. Hold-to-record and
+  slide-to-cancel remain composer gestures rather than persistent labels.
+- Android and PWA support staged multi-media selection, per-image editing,
+  direct camera capture, explicit view-once close/consumption, and fullscreen
+  media viewing. Normal media uses a swipeable fullscreen carousel; images are
+  zoomable.
+- PWA chat copy and the newly touched controls were checked against the current
+  Vercel Web Interface Guidelines. New icon-only controls have accessible
+  labels, async recording state is announced, the fullscreen viewer contains
+  overscroll, and loading/typing copy uses the ellipsis character.
+- `DESIGN.md` is the repository-level Vercel-inspired UI reference. Installed
+  mobile and Android skills are development guidance only; they add no runtime
+  dependency or production bundle cost.
+
+Verification:
+
+- `pnpm --filter @vyb/web check` — passed.
+- `:app:testDebugUnitTest :app:assembleDebug` — passed on version `0.1.24 (24)`.
+- The final APK was upgrade-installed and launched on API 35 emulators
+  `emulator-5554` and `emulator-5556`; both retained their distinct authenticated
+  accounts and opened the same secure thread.
+- Both devices rendered the waveform player, content-sized incoming/outgoing
+  bubbles and bottom-right message metadata. No `social.vyb.app` crash appeared
+  in the crash buffer. One headless emulator experienced a Google Play
+  Services/System UI resource ANR while both AVDs ran concurrently; choosing
+  **Wait** recovered the system UI and Vyb remained stable.
+- Artifact: `artifacts/Vyb-0.1.24-debug.apk`, SHA-256
+  `2294614B4C9E61977E977971D1C3F175BD7E9249BAC2658ED12170DDD17A91BF`.

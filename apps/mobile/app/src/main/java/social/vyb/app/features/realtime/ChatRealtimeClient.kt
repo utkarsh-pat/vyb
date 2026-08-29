@@ -14,6 +14,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import okhttp3.OkHttpClient
@@ -96,13 +98,21 @@ class ChatRealtimeClient(
                         val payload = envelope.payload
                         val event = when (envelope.type) {
                             "chat.connected", "chat.pong" -> ChatRealtimeEvent.Connected
-                            "chat.message", "chat.message.updated", "chat.delivered" ->
+                            "chat.message", "chat.message.updated" ->
                                 ChatRealtimeEvent.MessageChanged(
-                                    payload?.get("messageId")?.jsonPrimitive?.contentOrNull
+                                    messageId = payload?.get("messageId")?.jsonPrimitive?.contentOrNull,
+                                    item = payload?.get("item")?.runCatching { jsonObject }?.getOrNull()
                                 )
-                            "chat.read" -> ChatRealtimeEvent.ReadChanged(
-                                payload?.get("messageId")?.jsonPrimitive?.contentOrNull
-                            )
+                            "chat.read", "chat.delivered" -> {
+                                val messageIds = payload?.get("messageIds")
+                                    ?.runCatching { jsonArray }?.getOrNull()
+                                    ?.mapNotNull { it.jsonPrimitive.contentOrNull }
+                                    .orEmpty()
+                                    .ifEmpty {
+                                        listOfNotNull(payload?.get("messageId")?.jsonPrimitive?.contentOrNull)
+                                    }
+                                ChatRealtimeEvent.ReceiptChanged(envelope.type, messageIds)
+                            }
                             "chat.sync" -> ChatRealtimeEvent.SyncRequired
                             "chat.typing" -> ChatRealtimeEvent.PeerTyping(
                                 userId = payload?.get("userId")?.jsonPrimitive?.contentOrNull,

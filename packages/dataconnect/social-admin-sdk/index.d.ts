@@ -8,6 +8,14 @@ export type Int64String = string;
 export type DateString = string;
 
 
+export interface ActivateFollowData {
+  follow_update?: Follow_Key | null;
+}
+
+export interface ActivateFollowVariables {
+  id: UUIDString;
+}
+
 export interface ActivateUserBlockData {
   userBlock_update?: UserBlock_Key | null;
 }
@@ -285,6 +293,38 @@ export interface CreatePostVariables {
   status: string;
 }
 
+export interface CreatePostWithFeedChangeData {
+  post_insert: Post_Key;
+  feedChangeEvent_insert: FeedChangeEvent_Key;
+}
+
+export interface CreatePostWithFeedChangeVariables {
+  id: UUIDString;
+  tenantId: UUIDString;
+  communityId?: UUIDString | null;
+  membershipId: UUIDString;
+  authorUserId?: UUIDString | null;
+  authorUsername?: string;
+  authorName?: string;
+  authorEmail?: string | null;
+  isAnonymous?: boolean;
+  allowAnonymousComments?: boolean;
+  visibility?: string;
+  placement?: string;
+  kind: string;
+  title?: string | null;
+  body: string;
+  mediaUrl?: string | null;
+  storagePath?: string | null;
+  mediaMimeType?: string | null;
+  mediaSizeBytes?: Int64String | null;
+  location?: string | null;
+  status: string;
+  feedChangeId: UUIDString;
+  feedChangeEventKey: string;
+  feedChangeExpiresAt: TimestampString;
+}
+
 export interface CreateReactionData {
   reaction_insert: Reaction_Key;
 }
@@ -502,6 +542,7 @@ export interface GetFollowByKeyData {
     followerUserId: UUIDString;
     followingUserId: UUIDString;
     createdAt: TimestampString;
+    deletedAt?: TimestampString | null;
   } & Follow_Key)[];
 }
 
@@ -1344,6 +1385,23 @@ export interface SoftDeletePostVariables {
   id: UUIDString;
 }
 
+export interface SoftDeletePostWithPurgeAndFeedChangeData {
+  post_update?: Post_Key | null;
+  contentPurgeRequest_insert: ContentPurgeRequest_Key;
+  feedChangeEvent_insert: FeedChangeEvent_Key;
+}
+
+export interface SoftDeletePostWithPurgeAndFeedChangeVariables {
+  id: UUIDString;
+  tenantId: UUIDString;
+  purgeRequestId: UUIDString;
+  purgeKey: string;
+  actorUserId?: UUIDString | null;
+  feedChangeId: UUIDString;
+  feedChangeEventKey: string;
+  feedChangeExpiresAt: TimestampString;
+}
+
 export interface SoftDeletePostWithPurgeData {
   post_update?: Post_Key | null;
   contentPurgeRequest_insert: ContentPurgeRequest_Key;
@@ -1449,6 +1507,24 @@ export interface UpdatePostVariables {
   title?: string | null;
   body: string;
   location?: string | null;
+}
+
+export interface UpdatePostWithFeedChangeData {
+  post_update?: Post_Key | null;
+  feedChangeEvent_insert: FeedChangeEvent_Key;
+}
+
+export interface UpdatePostWithFeedChangeVariables {
+  id: UUIDString;
+  tenantId: UUIDString;
+  title?: string | null;
+  body: string;
+  location?: string | null;
+  allowAnonymousComments?: boolean;
+  actorUserId?: UUIDString | null;
+  feedChangeId: UUIDString;
+  feedChangeEventKey: string;
+  feedChangeExpiresAt: TimestampString;
 }
 
 export interface UpdateReactionData {
@@ -1634,6 +1710,11 @@ export function createPost(dc: DataConnect, vars: CreatePostVariables, options?:
 /** Generated Node Admin SDK operation action function for the 'CreatePost' Mutation. Allow users to pass in custom DataConnect instances. */
 export function createPost(vars: CreatePostVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreatePostData>>;
 
+/** Generated Node Admin SDK operation action function for the 'CreatePostWithFeedChange' Mutation. Allow users to execute without passing in DataConnect. */
+export function createPostWithFeedChange(dc: DataConnect, vars: CreatePostWithFeedChangeVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreatePostWithFeedChangeData>>;
+/** Generated Node Admin SDK operation action function for the 'CreatePostWithFeedChange' Mutation. Allow users to pass in custom DataConnect instances. */
+export function createPostWithFeedChange(vars: CreatePostWithFeedChangeVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreatePostWithFeedChangeData>>;
+
 /** Generated Node Admin SDK operation action function for the 'CreatePostMedia' Mutation. Allow users to execute without passing in DataConnect. */
 export function createPostMedia(dc: DataConnect, vars: CreatePostMediaVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreatePostMediaData>>;
 /** Generated Node Admin SDK operation action function for the 'CreatePostMedia' Mutation. Allow users to pass in custom DataConnect instances. */
@@ -1704,10 +1785,20 @@ export function updatePost(dc: DataConnect, vars: UpdatePostVariables, options?:
 /** Generated Node Admin SDK operation action function for the 'UpdatePost' Mutation. Allow users to pass in custom DataConnect instances. */
 export function updatePost(vars: UpdatePostVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpdatePostData>>;
 
+/** Generated Node Admin SDK operation action function for the 'UpdatePostWithFeedChange' Mutation. Allow users to execute without passing in DataConnect. */
+export function updatePostWithFeedChange(dc: DataConnect, vars: UpdatePostWithFeedChangeVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpdatePostWithFeedChangeData>>;
+/** Generated Node Admin SDK operation action function for the 'UpdatePostWithFeedChange' Mutation. Allow users to pass in custom DataConnect instances. */
+export function updatePostWithFeedChange(vars: UpdatePostWithFeedChangeVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<UpdatePostWithFeedChangeData>>;
+
 /** Generated Node Admin SDK operation action function for the 'CreateFollow' Mutation. Allow users to execute without passing in DataConnect. */
 export function createFollow(dc: DataConnect, vars: CreateFollowVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateFollowData>>;
 /** Generated Node Admin SDK operation action function for the 'CreateFollow' Mutation. Allow users to pass in custom DataConnect instances. */
 export function createFollow(vars: CreateFollowVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<CreateFollowData>>;
+
+/** Generated Node Admin SDK operation action function for the 'ActivateFollow' Mutation. Allow users to execute without passing in DataConnect. */
+export function activateFollow(dc: DataConnect, vars: ActivateFollowVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ActivateFollowData>>;
+/** Generated Node Admin SDK operation action function for the 'ActivateFollow' Mutation. Allow users to pass in custom DataConnect instances. */
+export function activateFollow(vars: ActivateFollowVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<ActivateFollowData>>;
 
 /** Generated Node Admin SDK operation action function for the 'SoftDeleteFollow' Mutation. Allow users to execute without passing in DataConnect. */
 export function softDeleteFollow(dc: DataConnect, vars: SoftDeleteFollowVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<SoftDeleteFollowData>>;
@@ -1773,6 +1864,11 @@ export function upsertRecommendationFeedback(vars: UpsertRecommendationFeedbackV
 export function softDeletePostWithPurge(dc: DataConnect, vars: SoftDeletePostWithPurgeVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<SoftDeletePostWithPurgeData>>;
 /** Generated Node Admin SDK operation action function for the 'SoftDeletePostWithPurge' Mutation. Allow users to pass in custom DataConnect instances. */
 export function softDeletePostWithPurge(vars: SoftDeletePostWithPurgeVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<SoftDeletePostWithPurgeData>>;
+
+/** Generated Node Admin SDK operation action function for the 'SoftDeletePostWithPurgeAndFeedChange' Mutation. Allow users to execute without passing in DataConnect. */
+export function softDeletePostWithPurgeAndFeedChange(dc: DataConnect, vars: SoftDeletePostWithPurgeAndFeedChangeVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<SoftDeletePostWithPurgeAndFeedChangeData>>;
+/** Generated Node Admin SDK operation action function for the 'SoftDeletePostWithPurgeAndFeedChange' Mutation. Allow users to pass in custom DataConnect instances. */
+export function softDeletePostWithPurgeAndFeedChange(vars: SoftDeletePostWithPurgeAndFeedChangeVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<SoftDeletePostWithPurgeAndFeedChangeData>>;
 
 /** Generated Node Admin SDK operation action function for the 'GetContentEventByKey' Query. Allow users to execute without passing in DataConnect. */
 export function getContentEventByKey(dc: DataConnect, vars: GetContentEventByKeyVariables, options?: OperationOptions): Promise<ExecuteOperationResponse<GetContentEventByKeyData>>;

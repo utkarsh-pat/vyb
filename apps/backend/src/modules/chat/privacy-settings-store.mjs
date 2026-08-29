@@ -69,9 +69,12 @@ async function getChatPrivacySettingsFromStorage({ tenantId, userId }) {
     return normalizeChatPrivacySettings();
   }
 
-  const file = getChatBucket().file(buildChatPrivacySettingsStoragePath(tenantId, userId));
-
   try {
+    // Privacy reads must remain available when optional R2-backed persistence
+    // is not configured (for example local QA). Constructing the bucket can
+    // throw, so it belongs inside the same default-producing boundary as the
+    // storage read itself.
+    const file = getChatBucket().file(buildChatPrivacySettingsStoragePath(tenantId, userId));
     const [exists] = await file.exists();
     if (!exists) {
       return normalizeChatPrivacySettings();

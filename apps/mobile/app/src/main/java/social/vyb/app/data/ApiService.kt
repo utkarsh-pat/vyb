@@ -120,6 +120,29 @@ data class FeedEnvelope(
 )
 
 @Serializable
+data class FeedChangeEnvelope(
+    val items: List<FeedChangeItem> = emptyList(),
+    val highWater: String? = null,
+    val nextCursor: String? = null,
+    val resetRequired: Boolean = false,
+    val hasChanges: Boolean = false
+)
+
+@Serializable
+data class FeedChangeItem(
+    val entityType: String,
+    val entityId: String,
+    val eventType: String,
+    val occurredAt: String
+)
+
+@Serializable
+data class FeedRealtimeSessionEnvelope(
+    val wsUrl: String,
+    val expiresAt: Long
+)
+
+@Serializable
 data class RemotePost(
     val id: String,
     val placement: String = "feed",
@@ -195,4 +218,17 @@ interface ApiService {
         @Query("limit") limit: Int = 24,
         @Query("cursor") cursor: String? = null
     ): FeedEnvelope
+
+    @GET("v1/feed/changes")
+    suspend fun feedChanges(
+        @Header("Authorization") bearerToken: String,
+        @Query("after") after: String? = null,
+        @Query("limit") limit: Int = 1,
+        @Query("summary") summary: Int = 1
+    ): FeedChangeEnvelope
+
+    @GET("v1/feed/realtime/session")
+    suspend fun feedRealtimeSession(
+        @Header("Authorization") bearerToken: String
+    ): FeedRealtimeSessionEnvelope
 }

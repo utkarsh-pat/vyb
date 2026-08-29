@@ -1,5 +1,6 @@
 package social.vyb.app.features.messages
 
+import android.net.Uri
 import kotlinx.serialization.Serializable
 import social.vyb.app.data.RemotePost
 
@@ -53,6 +54,7 @@ internal data class ChatMessageDto(
     val cipherIv: String,
     val cipherAlgorithm: String,
     val replyToMessageId: String? = null,
+    val attachment: ChatAttachmentDto? = null,
     val createdAt: String,
     val updatedAt: String? = null,
     val expiresAt: String? = null,
@@ -75,6 +77,41 @@ internal data class ChatPreviewDto(
 internal data class ChatInboxDto(
     val viewer: ChatViewerDto,
     val items: List<ChatPreviewDto> = emptyList()
+)
+
+@Serializable
+data class ChatAttachmentDto(
+    val kind: String,
+    val url: String,
+    val storagePath: String? = null,
+    val mimeType: String,
+    val sizeBytes: Long = 0,
+    val width: Int? = null,
+    val height: Int? = null,
+    val durationMs: Int? = null,
+    val viewOnce: Boolean = false,
+    val cipherAlgorithm: String? = null,
+    val cipherIv: String? = null,
+    val senderPublicKey: String? = null,
+    val recipientPublicKey: String? = null
+)
+
+data class ChatMediaDraft(
+    val uri: Uri,
+    val fileName: String,
+    val mimeType: String,
+    val width: Int? = null,
+    val height: Int? = null,
+    val durationMs: Int? = null
+)
+
+@Serializable
+internal data class CreateDirectChatRequestDto(val recipientUsername: String)
+
+@Serializable
+internal data class CreateDirectChatResponseDto(
+    val created: Boolean = false,
+    val conversation: ChatConversationDto
 )
 
 @Serializable
@@ -102,8 +139,36 @@ internal data class SendChatMessageRequestDto(
     val cipherText: String,
     val cipherIv: String,
     val cipherAlgorithm: String,
+    val attachment: ChatAttachmentDto? = null,
     val durationKey: String = "30d"
 )
+
+@Serializable
+internal data class UploadChatAttachmentRequestDto(
+    val fileName: String,
+    val mimeType: String,
+    val base64Data: String,
+    val width: Int? = null,
+    val height: Int? = null,
+    val durationMs: Int? = null,
+    val viewOnce: Boolean = false,
+    val cipherAlgorithm: String,
+    val cipherIv: String,
+    val senderPublicKey: String,
+    val recipientPublicKey: String
+)
+
+@Serializable
+internal data class UploadChatAttachmentResponseDto(val attachment: ChatAttachmentDto)
+
+@Serializable
+internal data class UpdateChatMessageLifecycleRequestDto(
+    val consumeViewOnce: Boolean? = null,
+    val durationKey: String? = null
+)
+
+@Serializable
+internal data class UpdateChatMessageLifecycleResponseDto(val item: ChatMessageDto? = null)
 
 @Serializable
 internal data class SendChatMessageResponseDto(
@@ -161,8 +226,24 @@ data class ChatMessageItem(
     val body: String,
     val timestamp: String,
     val isMine: Boolean,
-    val isReadable: Boolean
+    val isReadable: Boolean,
+    val deliveryState: ChatDeliveryState = ChatDeliveryState.Sent,
+    val expiresAt: String? = null,
+    val messageKind: String = "text",
+    val attachment: ChatAttachmentDto? = null,
+    val localMediaUri: String? = null,
+    val mediaLoading: Boolean = false,
+    val mediaConsumed: Boolean = false
 )
+
+@Serializable
+internal data class ChatPresenceHeartbeatResponseDto(
+    val ok: Boolean = true,
+    val lastActiveAt: String,
+    val activePath: String? = null
+)
+
+enum class ChatDeliveryState { Pending, Sent, Delivered, Read, Failed }
 
 @Serializable
 internal data class SendCommunityMessageRequestDto(

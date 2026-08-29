@@ -1,6 +1,6 @@
 "use client";
 
-import type { CommentItem, DeleteCommentResponse, FeedCard, ReactionKind, ReactionResponse, UpdateCommentResponse } from "@vyb/contracts";
+import type { CommentItem, DeleteCommentResponse, FeedCard, FeedChangesResponse, ReactionKind, ReactionResponse, UpdateCommentResponse } from "@vyb/contracts";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type CommentMediaKind = "gif" | "sticker";
@@ -19,6 +19,7 @@ type SocialRealtimeEvent =
   | { type: "social.post.created"; payload?: { item?: FeedCard } }
   | { type: "social.post.updated"; payload?: { item?: FeedCard } }
   | { type: "social.post.deleted"; payload?: { postId?: string } }
+  | { type: "social.feed.invalidated"; payload?: { placement?: FeedCard["placement"] | null } }
   | { type: "social.post.reaction.updated"; payload?: { postId?: string; aggregateCount?: number } }
   | { type: "social.comment.created"; payload?: { postId?: string; item?: CommentItem } }
   | { type: "social.comment.updated"; payload?: { postId?: string; item?: CommentItem } }
@@ -53,6 +54,8 @@ export function useSocialPostEngagement(
   options: SocialEngagementOptions = {}
 ) {
   const [posts, setPosts] = useState(initialPosts);
+  const [pendingRealtimePosts, setPendingRealtimePosts] = useState<FeedCard[]>([]);
+  const [hasPendingFeedInvalidation, setHasPendingFeedInvalidation] = useState(false);
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
   const [commentsByPost, setCommentsByPost] = useState<Record<string, CommentItem[]>>({});
   const [threadDraft, setThreadDraft] = useState("");
@@ -67,10 +70,14 @@ export function useSocialPostEngagement(
   const [threadDeletingCommentId, setThreadDeletingCommentId] = useState<string | null>(null);
   const [realtimeState, setRealtimeState] = useState<RealtimeState>("idle");
   const seenRealtimeCommentIdsRef = useRef<Set<string>>(new Set());
+  const knownPostIdsRef = useRef<Set<string>>(new Set(initialPosts.map((post) => post.id)));
   const communityIdFilter = options.communityId?.trim() || null;
 
   useEffect(() => {
     setPosts(initialPosts);
+    setPendingRealtimePosts([]);
+    setHasPendingFeedInvalidation(false);
+    knownPostIdsRef.current = new Set(initialPosts.map((post) => post.id));
   }, [initialPosts]);
 
   useEffect(() => {
@@ -80,6 +87,7 @@ export function useSocialPostEngagement(
 
     let socket: WebSocket | null = null;
     let reconnectTimer: number | null = null;
+    let reconcileTimer: number | null = null;
     let reconnectAttempt = 0;
     let connectInFlight = false;
     let closedByCleanup = false;
@@ -91,8 +99,36 @@ export function useSocialPostEngagement(
       }
     }
 
+    function clearReconcileTimer() {
+      if (reconcileTimer) {
+        window.clearInterval(reconcileTimer);
+        reconcileTimer = null;
+      }
+    }
+
     function canKeepSocketAlive() {
       return navigator.onLine && document.visibilityState === "visible";
+    }
+
+    const feedDeltaEnabled = placementFilter === "feed" && !communityIdFilter && Boolean(viewer.viewerUserId);
+    const feedCursorKey = viewer.viewerUserId ? `vyb:feed-change-cursor:${viewer.viewerUserId}` : null;
+
+    async function reconcileFeedDelta() {
+      if (!feedDeltaEnabled || !feedCursorKey || !canKeepSocketAlive()) return;
+      const after = window.localStorage.getItem(feedCursorKey);
+      const params = new URLSearchParams();
+      if (after) params.set("after", after);
+      try {
+        const response = await fetch(`/api/feed/changes?${params.toString()}`, { cache: "no-store" });
+        if (!response.ok) return;
+        const payload = (await response.json()) as FeedChangesResponse;
+        if (payload.highWater) window.localStorage.setItem(feedCursorKey, payload.highWater);
+        if (after && (payload.hasChanges || payload.resetRequired || payload.highWater !== after)) {
+          setHasPendingFeedInvalidation(true);
+        }
+      } catch {
+        // Keep the old cursor. Foreground, reconnect, and the bounded timer retry safely.
+      }
     }
 
     function scheduleReconnect() {
@@ -124,6 +160,15 @@ export function useSocialPostEngagement(
 
     function applyRealtimeEvent(event: SocialRealtimeEvent) {
       if (event.type === "social.connected") {
+        void reconcileFeedDelta();
+        return;
+      }
+
+      if (event.type === "social.feed.invalidated") {
+        if (event.payload?.placement && event.payload.placement !== placementFilter) {
+          return;
+        }
+        setHasPendingFeedInvalidation(true);
         return;
       }
 
@@ -133,7 +178,15 @@ export function useSocialPostEngagement(
           return;
         }
 
-        setPosts((current) => (current.some((post) => post.id === item.id) ? current : [item, ...current]));
+        if (knownPostIdsRef.current.has(item.id)) {
+          return;
+        }
+        knownPostIdsRef.current.add(item.id);
+        if (document.visibilityState === "visible" && window.scrollY <= 64) {
+          setPosts((current) => [item, ...current.filter((post) => post.id !== item.id)]);
+        } else {
+          setPendingRealtimePosts((current) => [item, ...current]);
+        }
         return;
       }
 
@@ -155,6 +208,7 @@ export function useSocialPostEngagement(
               : post
           )
         );
+        setPendingRealtimePosts((current) => current.map((post) => (post.id === item.id ? item : post)));
         return;
       }
 
@@ -165,6 +219,8 @@ export function useSocialPostEngagement(
         }
 
         setPosts((current) => current.filter((post) => post.id !== postId));
+        setPendingRealtimePosts((current) => current.filter((post) => post.id !== postId));
+        knownPostIdsRef.current.delete(postId);
         setCommentsByPost((current) => {
           if (!current[postId]) {
             return current;
@@ -356,6 +412,7 @@ export function useSocialPostEngagement(
         socket.onopen = () => {
           reconnectAttempt = 0;
           setRealtimeState("live");
+          void reconcileFeedDelta();
         };
 
         socket.onmessage = (message) => {
@@ -383,6 +440,7 @@ export function useSocialPostEngagement(
 
     function handleVisibilityOrNetworkChange() {
       if (canKeepSocketAlive()) {
+        void reconcileFeedDelta();
         void connect();
         return;
       }
@@ -391,7 +449,9 @@ export function useSocialPostEngagement(
       setRealtimeState("offline");
     }
 
+    void reconcileFeedDelta();
     void connect();
+    reconcileTimer = window.setInterval(() => void reconcileFeedDelta(), 45_000);
     window.addEventListener("online", handleVisibilityOrNetworkChange);
     window.addEventListener("offline", handleVisibilityOrNetworkChange);
     document.addEventListener("visibilitychange", handleVisibilityOrNetworkChange);
@@ -399,17 +459,34 @@ export function useSocialPostEngagement(
     return () => {
       closedByCleanup = true;
       clearReconnectTimer();
+      clearReconcileTimer();
       closeSocket();
       window.removeEventListener("online", handleVisibilityOrNetworkChange);
       window.removeEventListener("offline", handleVisibilityOrNetworkChange);
       document.removeEventListener("visibilitychange", handleVisibilityOrNetworkChange);
     };
-  }, [placementFilter, communityIdFilter]);
+  }, [placementFilter, communityIdFilter, viewer.viewerUserId]);
 
   const selectedPost = useMemo(
     () => posts.find((post) => post.id === selectedPostId) ?? null,
     [posts, selectedPostId]
   );
+
+  function revealPendingPosts() {
+    if (pendingRealtimePosts.length === 0) {
+      return;
+    }
+
+    setPosts((current) => {
+      const existingIds = new Set(current.map((post) => post.id));
+      return [...pendingRealtimePosts.filter((post) => !existingIds.has(post.id)), ...current];
+    });
+    setPendingRealtimePosts([]);
+  }
+
+  function clearPendingFeedInvalidation() {
+    setHasPendingFeedInvalidation(false);
+  }
 
   useEffect(() => {
     if (selectedPost?.allowAnonymousComments === false) {
@@ -1065,6 +1142,10 @@ export function useSocialPostEngagement(
     threadSubmitting,
     threadDeletingCommentId,
     realtimeState,
+    pendingRealtimePostCount: pendingRealtimePosts.length,
+    hasPendingFeedInvalidation,
+    revealPendingPosts,
+    clearPendingFeedInvalidation,
     loadComments,
     openThread,
     closeThread,

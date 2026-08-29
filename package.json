@@ -4,7 +4,7 @@
   "private": true,
   "packageManager": "pnpm@10.33.0",
   "scripts": {
-    "dev": "turbo run dev --filter=@vyb/web",
+    "dev": "turbo run dev --filter=@vyb/web --filter=@vyb/games-realtime",
     "dev:web": "pnpm --filter @vyb/web dev",
     "dev:backend": "pnpm --filter @vyb/backend dev",
     "dc:services": "node scripts/run-firebase-cli.mjs dataconnect:services:list",

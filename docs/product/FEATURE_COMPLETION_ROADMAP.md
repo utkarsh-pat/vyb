@@ -1,7 +1,7 @@
 # Feature Completion Roadmap
 
 Owner: Product and Engineering
-Last Updated: 2026-08-07
+Last Updated: 2026-08-26
 Status: feature-completion in progress; M0 measurement is provisioned in production
 
 ## Governing order
@@ -55,6 +55,24 @@ pairs. Block enforcement is not yet universal: Marketplace, Notifications,
 Events, Games, search, share-card resolution, and remaining secondary Chat
 actions must use the same policy before launch.
 
+Implementation checkpoint (2026-08-08): re-follow now reactivates the unique
+soft-deleted follow edge, connection lists reject either block direction, and
+people suggestions exclude existing follows while ranking mutual and
+course/stream affinity. The Social Data Connect operation still requires live
+deployment and two-account verification.
+
+Implementation checkpoint (2026-08-25): one shared two-direction relationship
+policy now protects Marketplace discovery, saves, contacts and aggregate
+counts; Event discovery, registration and host registration views;
+backend/native and PWA notification lists, unread counts and push delivery;
+Scribble public/private admission and invitations; and Chess/Ludo/UNO room
+admission. Search and suggestions were confirmed already block-filtered.
+Backend regression tests cover both direction semantics and cross-domain
+filtering, while the Durable Object suite verifies that a blocked pair cannot
+join the same online room. Remaining FC-1 gates are live deployment, retained
+two-account/two-tenant evidence, remaining secondary Chat action review, and
+permission-aware share-card resolution under FC-3.
+
 ### FC-2 - Audience enforcement and live feed delta
 
 - Normalize Campus/Followers/Community scope on publish and every downstream action.
@@ -68,11 +86,37 @@ Exit: a second account publishes while the first account stays open; the first
 account updates without manual refresh and converges after an offline/reconnect test.
 
 Implementation checkpoint (2026-08-07): post create/update/delete writes now
-record a durable 24-hour `FeedChangeEvent`; `GET /v1/feed/changes` provides a
+record a bounded-retention `FeedChangeEvent`; `GET /v1/feed/changes` provides a
 bounded opaque cursor and rechecks current tenant, audience, follow, community,
 and block eligibility before returning an entity id. Clients do not yet consume
 this endpoint, and the record is not a transactional outbox or shared realtime
 fanout; those remain required before this batch can exit.
+
+Implementation checkpoint (2026-08-08): public realtime cards are buffered
+behind a new-post pill so the reading position does not jump. Restricted
+followers/community entities are no longer broadcast tenant-wide; clients
+receive only a content-free invalidation and refresh through normal audience
+authorization. Durable delta consumption for reconnect/offline gaps remains
+required.
+
+Implementation checkpoint (2026-08-26): PWA and Android now persist a
+per-user feed-change high-water cursor and reconcile it on foreground,
+realtime reconnect, network recovery, and a bounded 45-second safety interval.
+At the top of the feed, eligible public realtime posts prepend immediately and
+authorized delta changes trigger a refresh; while the reader is scrolled, both
+clients preserve position behind an uncounted **New posts** control. Delta
+summary polling is content-free and skips per-post authorization queries;
+refreshing the full authorized feed also purges deleted, blocked, moderated, or
+newly out-of-scope cached cards without leaking hidden entity ids. Post create,
+update, and delete now use dedicated Data Connect `@transaction` operations that
+commit the business mutation and content-free `FeedChangeEvent` together; the
+local fallback follows the same one-snapshot invariant. Existing connector
+operations remain backward-compatible, and the generated Admin SDK is refreshed.
+The shared cross-instance invalidation hub is now implemented across the
+Cloudflare Worker, backend, PWA, and Android. Remaining FC-2 gates are deployment
+of the new connector operations and Worker configuration, plus retained
+two-account offline/reconnect evidence against the deployed stack. See
+`docs/architecture/ADR_008_SOCIAL_FEED_REALTIME_FANOUT.md`.
 
 ### FC-3 - Universal actionable sharing
 

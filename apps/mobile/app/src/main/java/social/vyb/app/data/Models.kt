@@ -49,5 +49,6 @@ data class VybUiState(
     val feedLoading: Boolean = false,
     val feedLoadingMore: Boolean = false,
     val feedNextCursor: String? = null,
-    val feedError: String? = null
+    val feedError: String? = null,
+    val hasPendingFeedChanges: Boolean = false
 )

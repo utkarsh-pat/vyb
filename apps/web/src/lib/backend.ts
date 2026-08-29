@@ -31,6 +31,7 @@ import type {
   CreateStoryResponse,
   DeletePostResponse,
   FeedListResponse,
+  FeedChangesResponse,
   GetChatKeyBackupResponse,
   GetChatKeyBackupPinAttemptResponse,
   GetChatDevicePairingResponse,
@@ -110,6 +111,11 @@ export type UploadedSocialMediaAsset = {
   sizeBytes: number;
   storagePath: string;
   url: string;
+};
+
+export type SocialRealtimeSessionResponse = {
+  wsUrl: string;
+  expiresAt: number;
 };
 
 const API_BASE_URL =
@@ -275,15 +281,18 @@ async function requestBackendResponse(
     method = "GET",
     payload,
     viewer,
+    internal = false,
     allowBridgeFallback = true
   }: {
     method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
     payload?: unknown;
     viewer?: DevSession;
+    internal?: boolean;
     allowBridgeFallback?: boolean;
   } = {}
 ) {
   const headers = buildBackendHeaders(viewer);
+  if (internal) headers["x-vyb-internal-key"] = getInternalApiKey();
   const body = payload === undefined ? undefined : JSON.stringify(payload);
 
   const maxAttempts = method === "GET" ? 4 : 1;
@@ -756,9 +765,56 @@ export async function getCampusUserConnections(
   );
 }
 
+export async function getCampusFeedChanges(viewer: DevSession, after?: string | null) {
+  const params = new URLSearchParams({
+    tenantId: viewer.tenantId,
+    limit: "1",
+    summary: "1"
+  });
+  if (after?.trim()) params.set("after", after.trim());
+  return fetchBackendJson<FeedChangesResponse>(`/v1/feed/changes?${params.toString()}`, viewer);
+}
+
+export async function getSocialRealtimeSession(viewer: DevSession) {
+  return fetchBackendJson<SocialRealtimeSessionResponse>(
+    "/v1/feed/realtime/session",
+    viewer,
+    { allowBridgeFallback: false }
+  );
+}
+
 export async function getBlockedCampusUsers(viewer: DevSession, limit = 50) {
   const params = new URLSearchParams({ limit: String(limit) });
   return fetchBackendJson<BlockedProfilesResponse>(`/v1/users/blocked?${params.toString()}`, viewer);
+}
+
+export async function getInternalRelationshipVisibleUserIds(input: {
+  tenantId: string;
+  viewerUserId: string;
+  candidateUserIds: string[];
+}) {
+  const response = await requestBackendResponse("/v1/internal/relationships/visibility", {
+    method: "POST",
+    payload: input,
+    internal: true,
+    allowBridgeFallback: false
+  });
+  if (!response.ok) throw await buildBackendRequestError(response, "/v1/internal/relationships/visibility");
+  return readResponseJson<{ visibleUserIds: string[] }>(response);
+}
+
+export async function getInternalRelationshipBlockedUserIds(input: {
+  tenantId: string;
+  viewerUserId: string;
+}) {
+  const response = await requestBackendResponse("/v1/internal/relationships/visibility", {
+    method: "POST",
+    payload: { ...input, includeBlockedUserIds: true },
+    internal: true,
+    allowBridgeFallback: false
+  });
+  if (!response.ok) throw await buildBackendRequestError(response, "/v1/internal/relationships/visibility");
+  return readResponseJson<{ visibleUserIds: string[]; blockedUserIds: string[] }>(response);
 }
 
 export async function getContentMeasurementPreference(viewer: DevSession) {
