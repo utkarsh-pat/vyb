@@ -67,6 +67,24 @@ internal interface SearchApi {
         @Header("Authorization") bearer: String,
         @Path("username") username: String
     ): FollowResponse
+
+    @PUT("v1/users/{username}/block")
+    suspend fun block(
+        @Header("Authorization") bearer: String,
+        @Path("username") username: String
+    ): BlockResponse
+
+    @DELETE("v1/users/{username}/block")
+    suspend fun unblock(
+        @Header("Authorization") bearer: String,
+        @Path("username") username: String
+    ): BlockResponse
+
+    @GET("v1/users/blocked")
+    suspend fun blocked(
+        @Header("Authorization") bearer: String,
+        @Query("limit") limit: Int = 50
+    ): BlockedPeopleResponse
 }
 
 class SearchRepository(
@@ -133,6 +151,11 @@ class SearchRepository(
 
     internal suspend fun setFollowing(username: String, following: Boolean): FollowResponse =
         if (following) api.follow(bearer(), username) else api.unfollow(bearer(), username)
+
+    suspend fun setBlocked(username: String, blocked: Boolean): BlockResponse =
+        if (blocked) api.block(bearer(), username) else api.unblock(bearer(), username)
+
+    suspend fun blockedPeople(): List<BlockedPerson> = api.blocked(bearer()).items
 
     fun invalidateDiscovery() {
         discoveryCache = null

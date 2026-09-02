@@ -153,7 +153,8 @@ fun ProfileFeatureScreen(
                 onChange = profileViewModel::setPrivacy,
                 onSave = profileViewModel::savePrivacy,
                 onMeasurementChange = profileViewModel::setContentMeasurementEnabled,
-                onEraseMeasurement = profileViewModel::eraseContentMeasurement
+                onEraseMeasurement = profileViewModel::eraseContentMeasurement,
+                onUnblock = profileViewModel::unblockUser
             )
             ProfilePanel.Security -> SecuritySettings(
                 state = state,
@@ -411,7 +412,8 @@ private fun PrivacySettings(
     onChange: (ChatPrivacySettings) -> Unit,
     onSave: () -> Unit,
     onMeasurementChange: (Boolean) -> Unit,
-    onEraseMeasurement: () -> Unit
+    onEraseMeasurement: () -> Unit,
+    onUnblock: (social.vyb.app.features.search.BlockedPerson) -> Unit
 ) {
     val settings = state.privacy
     ProfilePage("Chat privacy", onBack) {
@@ -454,6 +456,45 @@ private fun PrivacySettings(
             enabled = !state.busy,
             modifier = Modifier.fillMaxWidth()
         ) { Text("Erase raw measurement history", color = MaterialTheme.colorScheme.error) }
+        Text(
+            "Blocked accounts",
+            color = VybText,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(top = 18.dp, bottom = 6.dp)
+        )
+        when {
+            state.blockedUsersLoading -> CircularProgressIndicator(
+                modifier = Modifier.align(Alignment.CenterHorizontally).padding(12.dp),
+                strokeWidth = 2.dp
+            )
+            state.blockedUsers.isEmpty() -> Text(
+                "No blocked accounts.",
+                color = VybMuted,
+                modifier = Modifier.padding(vertical = 10.dp)
+            )
+            else -> state.blockedUsers.forEach { user ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    color = VybPanel,
+                    border = BorderStroke(1.dp, VybBorder),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        InitialAvatar(user.displayName, 38, user.avatarUrl)
+                        Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                            Text(user.displayName, color = VybText, fontWeight = FontWeight.SemiBold)
+                            Text("@${user.username}", color = VybMuted)
+                        }
+                        TextButton(onClick = { onUnblock(user) }, enabled = !state.busy) {
+                            Text("Unblock")
+                        }
+                    }
+                }
+            }
+        }
         MessageBanner(state)
         PrimaryAction("Save privacy", state.busy, onSave)
     }

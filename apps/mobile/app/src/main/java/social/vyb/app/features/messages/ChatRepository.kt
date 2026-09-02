@@ -9,6 +9,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.put
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import retrofit2.HttpException
 import social.vyb.app.data.RemotePost
 import social.vyb.app.data.network.VybNetwork
@@ -24,6 +26,16 @@ class ChatRepository(
     private val context: Context,
     private val auth: FirebaseAuth = FirebaseAuth.getInstance()
 ) {
+    class IdentityRecoveryRequired(
+        val backupAvailable: Boolean
+    ) : IllegalStateException(
+        if (backupAvailable) {
+            "Restore secure chat with your 6-digit PIN or 24-word recovery phrase."
+        } else {
+            "Secure chat is linked to another device. Pair this phone from a trusted device."
+        }
+    )
+
     fun currentViewerName(): String = auth.currentUser?.displayName
         ?.trim()?.takeIf(String::isNotBlank)
         ?: auth.currentUser?.email?.substringBefore('@')
@@ -487,8 +499,10 @@ class ChatRepository(
     private suspend fun resolveOrProvisionIdentity(viewer: ChatViewerDto): ChatCrypto.LocalIdentity {
         val local = ChatCrypto.findLocalIdentity(context, viewer.userId)
         if (viewer.activeIdentity != null) {
-            check(local?.publicKey == viewer.activeIdentity.publicKey) {
-                "Secure chat is already linked to another device key. Restore or pair this device before sending."
+            if (local?.publicKey != viewer.activeIdentity.publicKey) {
+                val hasBackup = runCatching { api.keyBackup(bearer()).backup != null }
+                    .getOrDefault(false)
+                throw IdentityRecoveryRequired(hasBackup)
             }
             return local
         }
@@ -498,6 +512,49 @@ class ChatRepository(
             UpsertChatIdentityRequestDto(publicKey = created.publicKey)
         )
         return created
+    }
+
+    suspend fun restoreIdentity(conversationId: String, secret: String) = apiCall {
+        val authorization = bearer()
+        val conversation = api.conversation(authorization, conversationId)
+        val activeIdentity = conversation.viewer.activeIdentity
+            ?: error("Secure chat has no server identity to restore.")
+        val backup = api.keyBackup(authorization).backup
+            ?: error("No encrypted backup exists. Pair this phone from a trusted device.")
+        val isPin = secret.trim().matches(Regex("\\d{6}"))
+        if (isPin) {
+            val gate = api.keyBackupAttempts(authorization).attemptState
+            if (gate.isLocked) {
+                error("Too many wrong PIN attempts. Try again after the security lock expires.")
+            }
+        }
+        try {
+            val restored = withContext(Dispatchers.Default) {
+                ChatCrypto.restoreIdentity(context, conversation.viewer.userId, backup, secret)
+            }
+            check(restored.publicKey == activeIdentity.publicKey) {
+                "This backup does not match the secure-chat identity linked to this account."
+            }
+            if (isPin) api.clearKeyBackupAttempts(authorization)
+            conversationSessions.clear()
+        } catch (error: Throwable) {
+            if (isPin && error !is HttpException) {
+                val attempts = runCatching {
+                    api.recordFailedKeyBackupAttempt(authorization).attemptState
+                }.getOrNull()
+                if (attempts?.isLocked == true) {
+                    throw IllegalArgumentException(
+                        "Too many wrong PIN attempts. Secure-chat restore is locked for 1 hour."
+                    )
+                }
+                if (attempts != null) {
+                    throw IllegalArgumentException(
+                        "Wrong PIN. ${attempts.remainingAttempts} attempts remain before a 1-hour lock."
+                    )
+                }
+            }
+            throw error
+        }
     }
 
     private suspend fun loadConversationSession(conversationId: String): ConversationSession {

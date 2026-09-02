@@ -26,6 +26,9 @@ import social.vyb.app.features.media.ContentUriRequestBody
 import social.vyb.app.features.media.measureContentBytes
 import social.vyb.app.features.search.FollowResponse
 import social.vyb.app.features.search.PublicProfileResponse
+import social.vyb.app.features.search.BlockResponse
+import social.vyb.app.features.search.BlockedPerson
+import social.vyb.app.features.search.BlockedPeopleResponse
 
 internal interface ProfileApi {
     @GET("v1/profile")
@@ -76,6 +79,18 @@ internal interface ProfileApi {
         @Header("Authorization") bearer: String,
         @Path("username") username: String
     ): FollowResponse
+
+    @GET("v1/users/blocked")
+    suspend fun blockedUsers(
+        @Header("Authorization") bearer: String,
+        @Query("limit") limit: Int = 50
+    ): BlockedPeopleResponse
+
+    @DELETE("v1/users/{username}/block")
+    suspend fun unblockUser(
+        @Header("Authorization") bearer: String,
+        @Path("username") username: String
+    ): BlockResponse
 
     @GET("v1/chats/privacy-settings")
     suspend fun privacy(@Header("Authorization") bearer: String): ChatPrivacyEnvelope
@@ -185,6 +200,12 @@ class ProfileRepository(
                 typingIndicator = settings.typingIndicator
             )
         ).settings
+
+    suspend fun blockedUsers(): List<BlockedPerson> =
+        api.blockedUsers(auth.requireBearerToken()).items
+
+    suspend fun unblockUser(username: String): BlockResponse =
+        api.unblockUser(auth.requireBearerToken(), username)
 
     suspend fun revokeDevice(deviceId: String): List<TrustedDevice> =
         api.revokeDevice(auth.requireBearerToken(), deviceId).items.filter { it.revokedAt == null }

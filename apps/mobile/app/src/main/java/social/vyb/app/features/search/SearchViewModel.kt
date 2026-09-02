@@ -142,6 +142,29 @@ class SearchViewModel(
         }
     }
 
+    fun blockSelectedProfile() {
+        val selected = _state.value.selectedProfile ?: return
+        val username = selected.profile.username
+        if (username in _state.value.mutatingUsers) return
+        _state.update { it.copy(mutatingUsers = it.mutatingUsers + username, error = null) }
+        viewModelScope.launch {
+            runCatching { repository.setBlocked(username, true) }
+                .onSuccess {
+                    repository.invalidateDiscovery()
+                    _state.update { current ->
+                        current.copy(
+                            selectedProfile = null,
+                            suggestions = current.suggestions.filterNot { it.username == username },
+                            results = current.results.filterNot { it.username == username },
+                            mutatingUsers = current.mutatingUsers - username,
+                            error = null
+                        )
+                    }
+                }
+                .onFailure { fail(it, "Account could not be blocked.", username) }
+        }
+    }
+
     private fun loadSuggestions() {
         viewModelScope.launch {
             _state.update { it.copy(loading = true, error = null) }
@@ -171,7 +194,10 @@ class SearchViewModel(
     private fun applyFollowResponse(response: FollowResponse) {
         fun update(person: CampusPerson): CampusPerson =
             if (person.username == response.username) {
-                person.copy(isFollowing = response.isFollowing, stats = response.stats)
+                person.copy(
+                    isFollowing = response.isFollowing,
+                    stats = person.stats.withFollowCounts(response.stats)
+                )
             } else {
                 person
             }
@@ -185,7 +211,7 @@ class SearchViewModel(
                     selected.copy(
                         profile = update(selected.profile),
                         isFollowing = response.isFollowing,
-                        stats = response.stats
+                        stats = selected.stats.withFollowCounts(response.stats)
                     )
                 } else {
                     selected

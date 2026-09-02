@@ -1,6 +1,7 @@
 package social.vyb.app.features.messages
 
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.POST
@@ -108,4 +109,24 @@ internal interface ChatApi {
         @Header("Authorization") authorization: String,
         @Body body: UpsertChatIdentityRequestDto
     ): UpsertChatIdentityResponseDto
+
+    @GET("v1/chats/key-backup")
+    suspend fun keyBackup(
+        @Header("Authorization") authorization: String
+    ): ChatKeyBackupEnvelopeDto
+
+    @GET("v1/chats/key-backup/attempts")
+    suspend fun keyBackupAttempts(
+        @Header("Authorization") authorization: String
+    ): ChatPinAttemptEnvelopeDto
+
+    @PUT("v1/chats/key-backup/attempts")
+    suspend fun recordFailedKeyBackupAttempt(
+        @Header("Authorization") authorization: String
+    ): ChatPinAttemptEnvelopeDto
+
+    @DELETE("v1/chats/key-backup/attempts")
+    suspend fun clearKeyBackupAttempts(
+        @Header("Authorization") authorization: String
+    ): ChatPinAttemptEnvelopeDto
 }

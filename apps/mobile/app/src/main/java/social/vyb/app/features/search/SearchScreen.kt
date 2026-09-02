@@ -29,6 +29,7 @@ fun SearchScreen(
     val scope = rememberCoroutineScope()
     var openingChat by remember { mutableStateOf(false) }
     var chatError by remember { mutableStateOf<String?>(null) }
+    var confirmBlock by remember { mutableStateOf(false) }
     LaunchedEffect(initialUsername) {
         initialUsername?.takeIf(String::isNotBlank)?.let(searchViewModel::openProfile)
     }
@@ -46,6 +47,7 @@ fun SearchScreen(
                     )
                 )
             },
+            onBlock = { confirmBlock = true },
             openingChat = openingChat,
             chatError = chatError,
             onMessage = {
@@ -64,6 +66,28 @@ fun SearchScreen(
             onOpenPost = onOpenPost,
             onOpenVibe = onOpenVibe
         )
+        if (confirmBlock) {
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { confirmBlock = false },
+                title = { androidx.compose.material3.Text("Block @${selectedProfile.profile.username}?") },
+                text = {
+                    androidx.compose.material3.Text(
+                        "You will unfollow each other. Their posts, profile and direct chat will be hidden until you unblock them in Privacy settings."
+                    )
+                },
+                confirmButton = {
+                    androidx.compose.material3.TextButton(onClick = {
+                        confirmBlock = false
+                        searchViewModel.blockSelectedProfile()
+                    }) { androidx.compose.material3.Text("Block") }
+                },
+                dismissButton = {
+                    androidx.compose.material3.TextButton(onClick = { confirmBlock = false }) {
+                        androidx.compose.material3.Text("Cancel")
+                    }
+                }
+            )
+        }
         return
     }
 

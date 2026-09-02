@@ -13,6 +13,7 @@ import kotlinx.coroutines.launch
 import social.vyb.app.data.ProfileRecord
 import social.vyb.app.data.UpsertProfileRequest
 import social.vyb.app.features.search.PublicProfileResponse
+import social.vyb.app.features.search.BlockedPerson
 import social.vyb.app.features.social.SocialPost
 import social.vyb.app.features.social.SavedPostsSync
 
@@ -115,6 +116,8 @@ data class ProfileUiState(
     val savedError: String? = null,
     val connectionScope: String = "followers",
     val connections: List<ProfileConnection> = emptyList(),
+    val blockedUsers: List<BlockedPerson> = emptyList(),
+    val blockedUsersLoading: Boolean = false,
     val editDraft: ProfileEditDraft = ProfileEditDraft(),
     val error: String? = null,
     val notice: String? = null
@@ -176,6 +179,7 @@ class ProfileViewModel(
 
     fun open(panel: ProfilePanel) {
         _state.update { it.copy(panel = panel, error = null, notice = null) }
+        if (panel == ProfilePanel.Privacy) loadBlockedUsers()
     }
 
     fun back() {
@@ -324,6 +328,44 @@ class ProfileViewModel(
                     }
                 }
                 .onFailure { fail(it, "Privacy settings could not be saved.") }
+        }
+    }
+
+    private fun loadBlockedUsers() {
+        if (_state.value.blockedUsersLoading) return
+        viewModelScope.launch {
+            _state.update { it.copy(blockedUsersLoading = true) }
+            runCatching { repository.blockedUsers() }
+                .onSuccess { users ->
+                    _state.update { it.copy(blockedUsers = users, blockedUsersLoading = false) }
+                }
+                .onFailure { error ->
+                    _state.update {
+                        it.copy(
+                            blockedUsersLoading = false,
+                            error = error.message?.takeIf(String::isNotBlank)
+                                ?: "Blocked accounts could not be loaded."
+                        )
+                    }
+                }
+        }
+    }
+
+    fun unblockUser(user: BlockedPerson) {
+        if (_state.value.busy) return
+        viewModelScope.launch {
+            _state.update { it.copy(busy = true, error = null, notice = null) }
+            runCatching { repository.unblockUser(user.username) }
+                .onSuccess {
+                    _state.update { state ->
+                        state.copy(
+                            busy = false,
+                            blockedUsers = state.blockedUsers.filterNot { it.userId == user.userId },
+                            notice = "@${user.username} unblocked."
+                        )
+                    }
+                }
+                .onFailure { fail(it, "Account could not be unblocked.") }
         }
     }
 

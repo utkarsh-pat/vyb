@@ -46,6 +46,28 @@ data class FollowResponse(
     val stats: ProfileStats = ProfileStats()
 )
 
+@Serializable
+data class BlockResponse(
+    val username: String,
+    val isBlocked: Boolean
+)
+
+@Serializable
+data class BlockedPerson(
+    val userId: String,
+    val username: String,
+    val displayName: String,
+    val avatarUrl: String? = null
+)
+
+@Serializable
+internal data class BlockedPeopleResponse(val items: List<BlockedPerson> = emptyList())
+
+internal fun ProfileStats.withFollowCounts(followStats: ProfileStats): ProfileStats = copy(
+    followers = followStats.followers,
+    following = followStats.following
+)
+
 enum class SearchCategory(val label: String) {
     People("People"),
     Posts("Posts"),

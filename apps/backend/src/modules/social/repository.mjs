@@ -1324,12 +1324,12 @@ function applyPostMedia(records, mediaByPostId) {
   });
 }
 
-function buildFollowKey(followerUserId, followingUserId) {
-  return `${followerUserId}:${followingUserId}`;
+export function buildFollowKey(tenantId, followerUserId, followingUserId) {
+  return `${tenantId}:${followerUserId}:${followingUserId}`;
 }
 
-function buildUserBlockKey(blockerUserId, blockedUserId) {
-  return `${blockerUserId}:${blockedUserId}`;
+export function buildUserBlockKey(tenantId, blockerUserId, blockedUserId) {
+  return `${tenantId}:${blockerUserId}:${blockedUserId}`;
 }
 
 function buildRecommendationFeedbackKey(userId, postId) {
@@ -3956,7 +3956,7 @@ export async function blockUser({ tenantId, blockerUserId, blockedUserId }) {
     return false;
   }
 
-  const blockKey = buildUserBlockKey(blockerUserId, blockedUserId);
+  const blockKey = buildUserBlockKey(tenantId, blockerUserId, blockedUserId);
   try {
     const existing = await getUserBlockByKeyQuery(getSocialDc(), { blockKey });
     const current = existing.data.userBlocks[0] ?? null;
@@ -4005,7 +4005,7 @@ export async function blockUser({ tenantId, blockerUserId, blockedUserId }) {
 }
 
 export async function unblockUser({ tenantId, blockerUserId, blockedUserId }) {
-  const blockKey = buildUserBlockKey(blockerUserId, blockedUserId);
+  const blockKey = buildUserBlockKey(tenantId, blockerUserId, blockedUserId);
   try {
     const existing = await getUserBlockByKeyQuery(getSocialDc(), { blockKey });
     const current = existing.data.userBlocks[0] ?? null;
@@ -4097,7 +4097,7 @@ export async function followUser({ tenantId, followerUserId, followingUserId }) 
     return false;
   }
 
-  const followKey = buildFollowKey(followerUserId, followingUserId);
+  const followKey = buildFollowKey(tenantId, followerUserId, followingUserId);
   try {
     const existing = await getFollowByKeyQuery(getSocialDc(), { followKey });
     const current = existing.data.follows[0] ?? null;
@@ -4153,7 +4153,7 @@ export async function followUser({ tenantId, followerUserId, followingUserId }) 
 }
 
 export async function unfollowUser({ tenantId, followerUserId, followingUserId }) {
-  const followKey = buildFollowKey(followerUserId, followingUserId);
+  const followKey = buildFollowKey(tenantId, followerUserId, followingUserId);
   try {
     const existing = await getFollowByKeyQuery(getSocialDc(), { followKey });
     const current = existing.data.follows[0] ?? null;
@@ -4199,7 +4199,7 @@ export async function isFollowing({ tenantId, followerUserId, followingUserId })
   if (await isUserBlocked({ tenantId, firstUserId: followerUserId, secondUserId: followingUserId })) {
     return false;
   }
-  const followKey = buildFollowKey(followerUserId, followingUserId);
+  const followKey = buildFollowKey(tenantId, followerUserId, followingUserId);
   try {
     const existing = await getFollowByKeyQuery(getSocialDc(), { followKey });
     return Boolean(existing.data.follows[0] && !existing.data.follows[0].deletedAt);

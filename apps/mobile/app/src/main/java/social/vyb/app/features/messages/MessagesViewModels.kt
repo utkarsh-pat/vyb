@@ -193,6 +193,10 @@ data class ConversationUiState(
     val viewOnceEnabled: Boolean = false,
     val mediaInFlight: Boolean = false,
     val activeMediaMessageId: String? = null,
+    val identityRecoveryRequired: Boolean = false,
+    val identityBackupAvailable: Boolean = false,
+    val recoverySecret: String = "",
+    val isRecoveringIdentity: Boolean = false,
     val error: String? = null
 )
 
@@ -252,7 +256,12 @@ class ConversationViewModel(
                             peerHandle = result.peerHandle,
                             peerAvatarUrl = result.peerAvatarUrl,
                             isOnline = result.isOnline,
-                            messages = result.messages
+                            messages = result.messages,
+                            identityRecoveryRequired = false,
+                            identityBackupAvailable = false,
+                            recoverySecret = "",
+                            isRecoveringIdentity = false,
+                            error = null
                         )
                     }
                     repository.acknowledgeDelivered(
@@ -263,7 +272,13 @@ class ConversationViewModel(
                 }
                 .onFailure { error ->
                     _state.update {
-                        it.copy(isLoading = false, error = error.message ?: "Conversation could not load.")
+                        val recovery = error as? ChatRepository.IdentityRecoveryRequired
+                        it.copy(
+                            isLoading = false,
+                            identityRecoveryRequired = recovery != null,
+                            identityBackupAvailable = recovery?.backupAvailable == true,
+                            error = error.message ?: "Conversation could not load."
+                        )
                     }
                 }
         }.also { job ->
@@ -276,6 +291,37 @@ class ConversationViewModel(
                     }
                 }
             }
+        }
+    }
+
+    fun updateRecoverySecret(value: String) {
+        _state.update { it.copy(recoverySecret = value.take(220), error = null) }
+    }
+
+    fun restoreIdentity() {
+        val secret = state.value.recoverySecret.trim()
+        if (secret.isBlank() || state.value.isRecoveringIdentity) return
+        viewModelScope.launch {
+            _state.update { it.copy(isRecoveringIdentity = true, error = null) }
+            runCatching { repository.restoreIdentity(conversationId, secret) }
+                .onSuccess {
+                    _state.update {
+                        it.copy(
+                            isRecoveringIdentity = false,
+                            identityRecoveryRequired = false,
+                            recoverySecret = ""
+                        )
+                    }
+                    refresh()
+                }
+                .onFailure { error ->
+                    _state.update {
+                        it.copy(
+                            isRecoveringIdentity = false,
+                            error = error.message ?: "Secure-chat identity could not be restored."
+                        )
+                    }
+                }
         }
     }
 

@@ -23,12 +23,14 @@ import java.security.spec.ECParameterSpec
 import java.security.spec.ECPoint
 import java.security.spec.ECPublicKeySpec
 import java.security.spec.PKCS8EncodedKeySpec
+import javax.crypto.SecretKeyFactory
 import javax.crypto.Cipher
 import javax.crypto.KeyAgreement
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
+import javax.crypto.spec.PBEKeySpec
 
 internal object ChatCrypto {
     const val IDENTITY_ALGORITHM = "ECDH-P256"
@@ -50,8 +52,9 @@ internal object ChatCrypto {
     )
 
     fun findLocalIdentity(context: Context, userId: String): LocalIdentity? {
+        findWrappedIdentity(context, userId)?.let { return it }
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-            return findWrappedLegacyIdentity(context, userId)
+            return null
         }
         val store = KeyStore.getInstance(KEYSTORE).apply { load(null) }
         val alias = alias(userId)
@@ -102,11 +105,80 @@ internal object ChatCrypto {
             publicKey = encodeRawPublicKey(pair.public as ECPublicKey),
             privateKey = pair.private
         )
+        persistWrappedIdentity(context, userId, identity)
+        return identity
+    }
+
+    fun restoreIdentity(
+        context: Context,
+        userId: String,
+        backup: ChatKeyBackupDto,
+        secret: String
+    ): LocalIdentity {
+        require(backup.wrappingAlgorithm == "PBKDF2-SHA-256/AES-GCM") {
+            "This secure-chat backup uses an unsupported format."
+        }
+        val normalizedPin = secret.filter(Char::isDigit).take(6)
+        val normalizedPhrase = secret.lowercase().trim()
+            .replace(Regex("[^a-z\\s]"), " ")
+            .split(Regex("\\s+")).filter(String::isNotBlank).joinToString(" ")
+        val isPin = secret.trim().all(Char::isDigit) && normalizedPin.length == 6
+        val isPhrase = normalizedPhrase.split(' ').filter(String::isNotBlank).size == 24
+
+        val (cipherText, iv, key) = when {
+            backup.version >= 2 && isPin -> Triple(
+                backup.pinWrappedPrivateKey ?: backup.wrappedPrivateKey,
+                backup.pinIv ?: backup.iv,
+                deriveBackupKey(
+                    normalizedPin,
+                    String(decode(backup.pinSalt ?: backup.salt), StandardCharsets.UTF_8),
+                    backup.pinIterations ?: BACKUP_ITERATIONS
+                )
+            )
+            backup.version >= 2 && isPhrase &&
+                backup.recoveryWrappedPrivateKey != null &&
+                backup.recoverySalt != null && backup.recoveryIv != null -> Triple(
+                    backup.recoveryWrappedPrivateKey,
+                    backup.recoveryIv,
+                    deriveBackupKey(
+                        normalizedPhrase,
+                        decode(backup.recoverySalt),
+                        backup.recoveryIterations ?: BACKUP_ITERATIONS
+                    )
+                )
+            backup.version < 2 && secret.trim().length >= 16 -> Triple(
+                backup.wrappedPrivateKey,
+                backup.iv,
+                deriveBackupKey(secret.trim(), decode(backup.salt), backup.iterations)
+            )
+            else -> error("Enter your 6-digit security PIN or full 24-word recovery phrase.")
+        }
+        val plaintext = Cipher.getInstance("AES/GCM/NoPadding").run {
+            init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, decode(iv)))
+            doFinal(decode(cipherText))
+        }
+        val restored = json.decodeFromString(
+            BackupIdentity.serializer(),
+            plaintext.toString(StandardCharsets.UTF_8)
+        )
+        require(restored.userId == userId && restored.publicKey == backup.publicKey) {
+            "This backup belongs to a different secure-chat identity."
+        }
+        val identity = LocalIdentity(
+            publicKey = restored.publicKey,
+            privateKey = KeyFactory.getInstance("EC")
+                .generatePrivate(PKCS8EncodedKeySpec(decode(restored.privateKey)))
+        )
+        persistWrappedIdentity(context, userId, identity)
+        return identity
+    }
+
+    private fun persistWrappedIdentity(context: Context, userId: String, identity: LocalIdentity) {
         val plaintext = json.encodeToString(
             WrappedIdentity.serializer(),
             WrappedIdentity(
                 publicKey = identity.publicKey,
-                privateKey = encode(pair.private.encoded)
+                privateKey = encode(identity.privateKey.encoded)
             )
         ).toByteArray(StandardCharsets.UTF_8)
         val iv = ByteArray(12).also(SecureRandom()::nextBytes)
@@ -119,10 +191,9 @@ internal object ChatCrypto {
             .edit {
                 putString(preferenceKey(userId), "${encode(iv)}.${encode(encrypted)}")
             }
-        return identity
     }
 
-    private fun findWrappedLegacyIdentity(context: Context, userId: String): LocalIdentity? =
+    private fun findWrappedIdentity(context: Context, userId: String): LocalIdentity? =
         runCatching {
             val encodedIdentity = context.applicationContext
                 .getSharedPreferences(LEGACY_PREFERENCES, Context.MODE_PRIVATE)
@@ -148,6 +219,17 @@ internal object ChatCrypto {
                     .generatePrivate(PKCS8EncodedKeySpec(decode(stored.privateKey)))
             )
         }.getOrNull()
+
+    private fun deriveBackupKey(secret: String, salt: String, iterations: Int): SecretKey =
+        deriveBackupKey(secret, salt.toByteArray(StandardCharsets.UTF_8), iterations)
+
+    private fun deriveBackupKey(secret: String, salt: ByteArray, iterations: Int): SecretKey {
+        require(iterations in 100_000..1_000_000) { "Secure-chat backup work factor is invalid." }
+        val keyBytes = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+            .generateSecret(PBEKeySpec(secret.toCharArray(), salt, iterations, 256))
+            .encoded
+        return SecretKeySpec(keyBytes, "AES")
+    }
 
     private fun legacyWrappingKey(
         userId: String,
@@ -301,9 +383,22 @@ internal object ChatCrypto {
     private fun encode(value: ByteArray) = Base64.encodeToString(value, Base64.NO_WRAP)
     private fun decode(value: String) = Base64.decode(value, Base64.DEFAULT)
 
+    private const val BACKUP_ITERATIONS = 250_000
+
     @Serializable
     private data class WrappedIdentity(
         val publicKey: String,
         val privateKey: String
+    )
+
+    @Serializable
+    private data class BackupIdentity(
+        val userId: String,
+        val identityId: String? = null,
+        val publicKey: String,
+        val privateKey: String,
+        val algorithm: String = IDENTITY_ALGORITHM,
+        val keyVersion: Int = 1,
+        val updatedAt: String = ""
     )
 }

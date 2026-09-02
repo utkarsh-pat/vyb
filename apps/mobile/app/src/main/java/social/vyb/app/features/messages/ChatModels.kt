@@ -201,6 +201,44 @@ internal data class UpsertChatIdentityRequestDto(
 internal data class UpsertChatIdentityResponseDto(val identity: ChatIdentityDto)
 
 @Serializable
+internal data class ChatKeyBackupDto(
+    val version: Int = 1,
+    val publicKey: String,
+    val algorithm: String,
+    val keyVersion: Int = 1,
+    val wrappingAlgorithm: String,
+    val wrappedPrivateKey: String,
+    val salt: String,
+    val iv: String,
+    val iterations: Int,
+    val updatedAt: String,
+    val credentialType: String? = null,
+    val pinWrappedPrivateKey: String? = null,
+    val pinSalt: String? = null,
+    val pinIv: String? = null,
+    val pinIterations: Int? = null,
+    val recoveryWrappedPrivateKey: String? = null,
+    val recoverySalt: String? = null,
+    val recoveryIv: String? = null,
+    val recoveryIterations: Int? = null
+)
+
+@Serializable
+internal data class ChatKeyBackupEnvelopeDto(val backup: ChatKeyBackupDto? = null)
+
+@Serializable
+internal data class ChatPinAttemptStateDto(
+    val attempts: Int = 0,
+    val lockedUntil: String? = null,
+    val maxAttempts: Int = 5,
+    val remainingAttempts: Int = 5,
+    val isLocked: Boolean = false
+)
+
+@Serializable
+internal data class ChatPinAttemptEnvelopeDto(val attemptState: ChatPinAttemptStateDto)
+
+@Serializable
 internal data class ChatCipherEnvelope(
     val version: Int = 1,
     val cipherText: String,

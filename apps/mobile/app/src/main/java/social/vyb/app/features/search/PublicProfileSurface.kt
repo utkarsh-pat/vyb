@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.PersonSearch
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -30,7 +31,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,11 +63,13 @@ internal fun PublicProfileContent(
     chatError: String?,
     onBack: () -> Unit,
     onToggleFollow: () -> Unit,
+    onBlock: () -> Unit,
     onMessage: () -> Unit,
     onOpenPost: (String) -> Unit,
     onOpenVibe: (String) -> Unit
 ) {
     val person = response.profile
+    var profileMenuOpen by remember(person.username) { mutableStateOf(false) }
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
         modifier = Modifier.fillMaxSize(),
@@ -77,6 +86,26 @@ internal fun PublicProfileContent(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = VybText)
                     }
                     Text("@${person.username}", color = VybText, fontWeight = FontWeight.Black)
+                    Spacer(Modifier.weight(1f))
+                    if (!response.isViewerProfile) {
+                        Box {
+                            IconButton(onClick = { profileMenuOpen = true }) {
+                                Icon(Icons.Default.MoreVert, "Profile options", tint = VybText)
+                            }
+                            DropdownMenu(
+                                expanded = profileMenuOpen,
+                                onDismissRequest = { profileMenuOpen = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Block @${person.username}") },
+                                    onClick = {
+                                        profileMenuOpen = false
+                                        onBlock()
+                                    }
+                                )
+                            }
+                        }
+                    }
                 }
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp),

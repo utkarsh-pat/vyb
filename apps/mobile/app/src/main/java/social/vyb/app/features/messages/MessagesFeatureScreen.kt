@@ -116,6 +116,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -263,6 +265,8 @@ fun MessagesFeatureScreen(
             onSendMediaBatch = conversationViewModel::sendMediaBatch,
             onOpenMedia = conversationViewModel::openMedia,
             onCloseViewOnce = conversationViewModel::closeViewOnce,
+            onRecoverySecretChange = conversationViewModel::updateRecoverySecret,
+            onRestoreIdentity = conversationViewModel::restoreIdentity,
             modifier = modifier
         )
     }
@@ -651,6 +655,8 @@ private fun ConversationContent(
     onSendMediaBatch: (List<ChatMediaDraft>) -> Unit,
     onOpenMedia: (ChatMessageItem) -> Unit,
     onCloseViewOnce: () -> Unit,
+    onRecoverySecretChange: (String) -> Unit,
+    onRestoreIdentity: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -816,6 +822,12 @@ private fun ConversationContent(
         }
         when {
             state.isLoading -> CenterStatus { VybLoadingMark(width = 96.dp) }
+            state.identityRecoveryRequired && state.messages.isEmpty() -> SecureChatRecoveryStatus(
+                state = state,
+                onSecretChange = onRecoverySecretChange,
+                onRestore = onRestoreIdentity,
+                onRetry = onRetry
+            )
             state.error != null && state.messages.isEmpty() -> ErrorStatus(state.error, onRetry)
             else -> {
                 val listState = rememberLazyListState()
@@ -1780,6 +1792,113 @@ private fun ErrorStatus(message: String, onRetry: () -> Unit) {
         )
         IconButton(onClick = onRetry) {
             Icon(Icons.Default.Refresh, contentDescription = "Retry")
+        }
+    }
+}
+
+@Composable
+private fun SecureChatRecoveryStatus(
+    state: ConversationUiState,
+    onSecretChange: (String) -> Unit,
+    onRestore: () -> Unit,
+    onRetry: () -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Surface(
+            color = VybTeal.copy(alpha = 0.12f),
+            border = BorderStroke(1.dp, VybTeal.copy(alpha = 0.35f)),
+            shape = CircleShape
+        ) {
+            Icon(
+                Icons.Default.Lock,
+                contentDescription = null,
+                modifier = Modifier.padding(16.dp).size(28.dp),
+                tint = VybTeal
+            )
+        }
+        Text(
+            "Restore secure chat",
+            modifier = Modifier.padding(top = 18.dp),
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            if (state.identityBackupAvailable) {
+                "This reinstall does not have your private chat key. Enter the 6-digit backup PIN or full 24-word recovery phrase."
+            } else {
+                "No encrypted cloud backup is available. Open Vyb on a trusted device and pair this phone from Chat privacy settings."
+            },
+            modifier = Modifier.padding(top = 8.dp),
+            color = VybMuted,
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+        if (state.identityBackupAvailable) {
+            OutlinedTextField(
+                value = state.recoverySecret,
+                onValueChange = onSecretChange,
+                modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
+                enabled = !state.isRecoveringIdentity,
+                singleLine = true,
+                label = { Text("Security PIN or recovery phrase") },
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Password,
+                    imeAction = ImeAction.Done
+                ),
+                keyboardActions = KeyboardActions(onDone = { onRestore() }),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = VybTeal,
+                    cursorColor = VybTeal
+                )
+            )
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp).clickable(
+                    enabled = state.recoverySecret.isNotBlank() && !state.isRecoveringIdentity,
+                    onClick = onRestore
+                ),
+                color = VybIndigo,
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(vertical = 13.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (state.isRecoveringIdentity) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = Color.White
+                        )
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Text("Restore on this phone", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+        state.error?.takeIf {
+            it != "Restore secure chat with your 6-digit PIN or 24-word recovery phrase."
+        }?.let { message ->
+            Text(
+                message,
+                modifier = Modifier.padding(top = 12.dp),
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+        }
+        Surface(
+            modifier = Modifier.padding(top = 12.dp).clickable(onClick = onRetry),
+            color = Color.Transparent,
+            border = BorderStroke(1.dp, VybBorder),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Text("Check again", modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp))
         }
     }
 }
