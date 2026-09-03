@@ -53,7 +53,6 @@ export async function handleGamesRoute({
     return true;
   }
 
-  const [, game, action] = match;
   const viewer = {
     userId: resolved.live.user.id,
     tenantId: resolved.live.tenant.id,
@@ -81,6 +80,8 @@ export async function handleGamesRoute({
     }
     return true;
   }
+
+  const [, game, action] = match;
 
   if (action === "daily") {
     if (request.method !== "GET") {

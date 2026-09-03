@@ -1762,11 +1762,16 @@ private fun readPickedMediaMetadata(context: Context, uri: Uri): PickedMediaMeta
         }
     } else if (mimeType.startsWith("video/") || mimeType.startsWith("audio/")) {
         runCatching {
-            MediaMetadataRetriever().use { retriever ->
+            val retriever = MediaMetadataRetriever()
+            try {
                 retriever.setDataSource(context, uri)
                 width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull()
                 height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull()
                 durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toIntOrNull()
+            } finally {
+                // MediaMetadataRetriever only implements AutoCloseable from API 29.
+                // release() is supported by every API level targeted by Vyb.
+                retriever.release()
             }
         }
     }
