@@ -198,29 +198,11 @@ private fun GameWebView(
                             }
                         }
                     }
-                    if (bootstrapToken != null) {
-                        // WebView cookies are process-global. A previous embedded web flow can
-                        // leave an authenticated session behind, which makes /login redirect to
-                        // the full home feed before the native game bootstrap runs. Clear only
-                        // the WebView cookie jar (native Firebase auth is unaffected), then create
-                        // a fresh short-lived web session for this game.
-                        var bootstrapPageStarted = false
-                        val startBootstrapPage = {
-                            if (!bootstrapPageStarted) {
-                                bootstrapPageStarted = true
-                                CookieManager.getInstance().flush()
-                                loadUrl(initialUrl)
-                            }
-                        }
-                        CookieManager.getInstance().removeAllCookies {
-                            post(startBootstrapPage)
-                        }
-                        // Some WebView builds do not invoke the cookie callback when the jar
-                        // is already empty. Never leave the authenticated game on a blank view.
-                        postDelayed(startBootstrapPage, 500)
-                    } else {
-                        loadUrl(initialUrl)
-                    }
+                    // Always bootstrap over the existing first-party cookie jar. The successful
+                    // session response overwrites every Vyb auth cookie before navigation. An
+                    // asynchronous removeAllCookies call can finish after that response and erase
+                    // the newly-created session, leaving online games unauthenticated.
+                    loadUrl(initialUrl)
                     webView = this
                 }
             },

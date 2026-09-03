@@ -284,6 +284,7 @@ private fun MarketListing.toSearchItem() = MarketSearchItem(
     priceLabel = if (priceAmount > 0) "Rs $priceAmount" else "Contact seller",
     location = campusSpot.ifBlank { location },
     ownerName = seller.displayName.ifBlank { seller.username },
+    ownerUsername = seller.username,
     mediaUrl = media.firstOrNull()?.url,
     createdAt = createdAt
 )
@@ -299,6 +300,7 @@ private fun MarketRequest.toSearchItem() = MarketSearchItem(
     },
     location = campusSpot,
     ownerName = requester.displayName.ifBlank { requester.username },
+    ownerUsername = requester.username,
     mediaUrl = media.firstOrNull()?.url,
     createdAt = createdAt
 )

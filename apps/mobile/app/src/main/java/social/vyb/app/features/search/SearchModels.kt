@@ -103,6 +103,7 @@ data class MarketSearchItem(
     val priceLabel: String,
     val location: String,
     val ownerName: String,
+    val ownerUsername: String = "",
     val mediaUrl: String? = null,
     val createdAt: String = ""
 )

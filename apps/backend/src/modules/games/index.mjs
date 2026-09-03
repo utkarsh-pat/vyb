@@ -1,8 +1,13 @@
 import { readJson, sendError, sendJson } from "../../lib/http.mjs";
 import { resolveLiveContext } from "../shared/viewer-context.mjs";
 import { dailyGamesService, GamesContractError } from "./daily-games.mjs";
+import {
+  multiplayerSessionService,
+  MultiplayerSessionError
+} from "./multiplayer-session.mjs";
 
 const GAME_ROUTE = /^\/v1\/games\/(connect|queens)\/(daily|hint|submit)$/u;
+const MULTIPLAYER_SESSION_ROUTE = "/v1/games/multiplayer/session";
 
 export function getGamesModuleHealth() {
   return {
@@ -14,7 +19,7 @@ export function getGamesModuleHealth() {
 }
 
 function sendGamesFailure(response, error) {
-  if (error instanceof GamesContractError) {
+  if (error instanceof GamesContractError || error instanceof MultiplayerSessionError) {
     sendError(response, error.status, error.code, error.message);
     return;
   }
@@ -30,10 +35,12 @@ export async function handleGamesRoute({
   url,
   context,
   service = dailyGamesService,
+  multiplayerService = multiplayerSessionService,
   resolveViewer = resolveLiveContext
 }) {
   const match = url.pathname.match(GAME_ROUTE);
-  if (!match) return false;
+  const isMultiplayerSession = url.pathname === MULTIPLAYER_SESSION_ROUTE;
+  if (!match && !isMultiplayerSession) return false;
 
   if (!context.actor) {
     sendError(response, 401, "UNAUTHENTICATED", "Sign in with your campus account to play.");
@@ -50,8 +57,30 @@ export async function handleGamesRoute({
   const viewer = {
     userId: resolved.live.user.id,
     tenantId: resolved.live.tenant.id,
+    membershipId: resolved.live.membership.id,
+    email: resolved.viewer.primaryEmail,
     displayName: resolved.viewer.displayName
   };
+
+  if (isMultiplayerSession) {
+    if (request.method !== "POST") {
+      sendError(response, 405, "METHOD_NOT_ALLOWED", "Use POST to prepare an online game room.");
+      return true;
+    }
+    const body = await readJson(request);
+    if (body === null || !body || typeof body !== "object" || Array.isArray(body)) {
+      sendError(response, 400, "INVALID_JSON", "Request body must be valid JSON.");
+      return true;
+    }
+    try {
+      sendJson(response, 200, await multiplayerService.create(viewer, body), {
+        "cache-control": "private, no-store"
+      });
+    } catch (error) {
+      sendGamesFailure(response, error);
+    }
+    return true;
+  }
 
   if (action === "daily") {
     if (request.method !== "GET") {

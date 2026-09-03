@@ -38,6 +38,14 @@ data class SearchUiState(
         SearchCategory.Vibes -> vibes.size
         SearchCategory.Marketplace -> marketplace.size
     }
+
+    internal fun withoutBlockedUser(username: String): SearchUiState = copy(
+        suggestions = suggestions.filterNot { it.username.equals(username, ignoreCase = true) },
+        results = results.filterNot { it.username.equals(username, ignoreCase = true) },
+        posts = posts.filterNot { it.authorUsername.equals(username, ignoreCase = true) },
+        vibes = vibes.filterNot { it.authorUsername.equals(username, ignoreCase = true) },
+        marketplace = marketplace.filterNot { it.ownerUsername.equals(username, ignoreCase = true) }
+    )
 }
 
 class SearchViewModel(
@@ -152,10 +160,8 @@ class SearchViewModel(
                 .onSuccess {
                     repository.invalidateDiscovery()
                     _state.update { current ->
-                        current.copy(
+                        current.withoutBlockedUser(username).copy(
                             selectedProfile = null,
-                            suggestions = current.suggestions.filterNot { it.username == username },
-                            results = current.results.filterNot { it.username == username },
                             mutatingUsers = current.mutatingUsers - username,
                             error = null
                         )
