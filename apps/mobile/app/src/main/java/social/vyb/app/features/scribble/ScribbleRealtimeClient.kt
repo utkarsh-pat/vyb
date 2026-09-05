@@ -149,7 +149,13 @@ internal class ScribbleRealtimeClient(
                     override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                         if (activeSocket === webSocket) activeSocket = null
                         if (!stopped.get()) {
-                            trySend(ScribbleRealtimeEvent.Error(t.message ?: "Scribble connection failed."))
+                            // A Cloud Run/WebSocket transport can end while the room state is
+                            // still perfectly valid. Rejoin from the last authoritative room
+                            // snapshot without covering the game with a stale failure banner.
+                            // Initial handshakes still surface an actionable error.
+                            if (activeRoomId == null) {
+                                trySend(ScribbleRealtimeEvent.Error(t.message ?: "Scribble connection failed."))
+                            }
                             val retryDelay = retryDelayMillis(reconnectAttempt++)
                             trySend(ScribbleRealtimeEvent.Disconnected(retrying = true))
                             connectJob = null

@@ -102,6 +102,10 @@ internal class ScribbleViewModel(
                     snapshot = mergeScribbleSnapshot(it.snapshot, event.snapshot),
                     connection = "live",
                     error = null,
+                    notice = it.notice.takeUnless { message ->
+                        event.snapshot.players.count(ScribblePlayer::connected) >= 2 &&
+                            message?.startsWith("Everyone else left.") == true
+                    },
                 )
             }
             is ScribbleRealtimeEvent.Catalog -> _state.update {

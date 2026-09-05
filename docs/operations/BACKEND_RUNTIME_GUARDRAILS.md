@@ -4,8 +4,10 @@
 
 The backend deploy keeps `min-instances=0` so an idle MVP does not pay for an
 always-on instance. The declared baseline is one vCPU, 512 MiB memory, 80
-concurrent requests, a maximum of ten instances, CPU throttling, and the
-existing 300-second request timeout. These values make configuration drift
+concurrent requests, a maximum of ten instances, CPU throttling, and a
+3600-second request timeout. The one-hour timeout is required for the direct
+Chat and Scribble WebSocket transports; clients still reconnect and reconcile
+state when a socket reaches that limit. These values make configuration drift
 visible; change them only after observing Cloud Run CPU, memory, request
 latency, instance count, and WebSocket duration.
 
