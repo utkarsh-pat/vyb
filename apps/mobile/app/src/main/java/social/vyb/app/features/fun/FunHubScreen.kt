@@ -3,7 +3,9 @@ package social.vyb.app.features.funhub
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -54,7 +57,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -385,39 +392,17 @@ private fun ConnectPane(state: FunUiState, viewModel: FunViewModel) {
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        GameHeading("Daily Connect #${game.dailyIndex}", level.difficulty, "Tap dots in route order.")
-        Grid(level.gridSize) { x, y ->
-            val dot = level.dots.firstOrNull { it.x == x && it.y == y }
-            val coordinate = Coordinate(x, y)
-            val index = state.connectPath.indexOf(coordinate)
-            Box(
-                Modifier.size(48.dp)
-                    .then(
-                        if (dot != null) Modifier.background(
-                            if (index >= 0) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.surfaceVariant,
-                            CircleShape
-                        )
-                            .semantics {
-                                contentDescription =
-                                    "Connect dot ${dot.id}, row ${y + 1}, column ${x + 1}"
-                                stateDescription =
-                                    if (index >= 0) "Selected ${index + 1}" else "Not selected"
-                                role = Role.Button
-                            }
-                            .clickable { viewModel.chooseConnect(dot) }
-                        else Modifier
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                if (dot != null) Text(
-                    if (index >= 0) "${index + 1}" else "${dot.id}",
-                    color = if (index >= 0) MaterialTheme.colorScheme.onPrimary
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
+        GameHeading(
+            "Daily Connect #${game.dailyIndex}",
+            level.difficulty,
+            "Drag through the dots in route order, or tap them one by one."
+        )
+        ConnectBoard(
+            size = level.gridSize,
+            dots = level.dots,
+            selectedPath = state.connectPath,
+            onDot = viewModel::chooseConnect
+        )
         Text("${state.connectPath.size}/${level.dots.size} dots selected", Modifier.padding(top = 14.dp))
         GameActions(
             busy = state.isActionRunning,
@@ -425,6 +410,107 @@ private fun ConnectPane(state: FunUiState, viewModel: FunViewModel) {
             onHint = viewModel::hintConnect,
             onSubmit = viewModel::submitConnect
         )
+    }
+}
+
+@Composable
+private fun ConnectBoard(
+    size: Int,
+    dots: List<ConnectDot>,
+    selectedPath: List<Coordinate>,
+    onDot: (ConnectDot) -> Unit
+) {
+    BoxWithConstraints(
+        modifier = Modifier.fillMaxWidth().padding(top = 18.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        val boardSize = minOf(maxWidth, 420.dp)
+        val cellSize = boardSize / size
+        val density = LocalDensity.current
+        val cellPx = with(density) { cellSize.toPx() }
+        val primary = MaterialTheme.colorScheme.primary
+        val unselected = MaterialTheme.colorScheme.surfaceVariant
+        val onPrimary = MaterialTheme.colorScheme.onPrimary
+        val onUnselected = MaterialTheme.colorScheme.onSurfaceVariant
+
+        fun nearestDot(position: Offset): ConnectDot? = dots.minByOrNull { dot ->
+            val centerX = (dot.x + 0.5f) * cellPx
+            val centerY = (dot.y + 0.5f) * cellPx
+            val dx = position.x - centerX
+            val dy = position.y - centerY
+            dx * dx + dy * dy
+        }?.takeIf { dot ->
+            val centerX = (dot.x + 0.5f) * cellPx
+            val centerY = (dot.y + 0.5f) * cellPx
+            val dx = position.x - centerX
+            val dy = position.y - centerY
+            dx * dx + dy * dy <= cellPx * cellPx * 0.36f
+        }
+
+        Box(
+            Modifier
+                .size(boardSize)
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.36f), RoundedCornerShape(22.dp))
+                .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f), RoundedCornerShape(22.dp))
+                .pointerInput(dots, cellPx) {
+                    var lastDraggedDot: ConnectDot? = null
+                    detectDragGestures(
+                        onDragStart = { position ->
+                            lastDraggedDot = nearestDot(position)
+                            lastDraggedDot?.let(onDot)
+                        },
+                        onDragEnd = { lastDraggedDot = null },
+                        onDragCancel = { lastDraggedDot = null },
+                        onDrag = { change, _ ->
+                            change.consume()
+                            nearestDot(change.position)?.let { dot ->
+                                if (dot != lastDraggedDot) {
+                                    lastDraggedDot = dot
+                                    onDot(dot)
+                                }
+                            }
+                        }
+                    )
+                }
+        ) {
+            Canvas(Modifier.matchParentSize()) {
+                selectedPath.zipWithNext().forEach { (from, to) ->
+                    drawLine(
+                        color = primary,
+                        start = Offset((from.x + 0.5f) * cellPx, (from.y + 0.5f) * cellPx),
+                        end = Offset((to.x + 0.5f) * cellPx, (to.y + 0.5f) * cellPx),
+                        strokeWidth = cellPx * 0.18f,
+                        cap = StrokeCap.Round
+                    )
+                }
+            }
+            dots.forEach { dot ->
+                val coordinate = Coordinate(dot.x, dot.y)
+                val index = selectedPath.indexOf(coordinate)
+                Box(
+                    Modifier
+                        .offset(x = cellSize * dot.x, y = cellSize * dot.y)
+                        .size(cellSize)
+                        .padding(cellSize * 0.12f)
+                        .background(if (index >= 0) primary else unselected, CircleShape)
+                        .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape)
+                        .semantics {
+                            contentDescription =
+                                "Connect dot ${dot.id}, row ${dot.y + 1}, column ${dot.x + 1}"
+                            stateDescription = if (index >= 0) "Selected ${index + 1}" else "Not selected"
+                            role = Role.Button
+                        }
+                        .clickable { onDot(dot) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        if (index >= 0) "${index + 1}" else "${dot.id}",
+                        color = if (index >= 0) onPrimary else onUnselected,
+                        fontWeight = FontWeight.Black
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -527,8 +613,9 @@ private fun StatusBanner(message: String, error: Boolean, modifier: Modifier = M
 
 private fun regionColor(region: Int): Color {
     val palette = listOf(
-        Color(0xFFE8DEF8), Color(0xFFFFDDB3), Color(0xFFC4EED0), Color(0xFFFFDAD6),
-        Color(0xFFC2E7FF), Color(0xFFF2D8FF), Color(0xFFE1E3A6), Color(0xFFFFD8E4)
+        Color(0xFFFF8A80), Color(0xFFFFD54F), Color(0xFF81C784), Color(0xFF64B5F6),
+        Color(0xFFBA68C8), Color(0xFFFF8A65), Color(0xFF4DD0E1), Color(0xFFAED581),
+        Color(0xFFF06292), Color(0xFF7986CB), Color(0xFF4DB6AC), Color(0xFFDCE775)
     )
     return palette[Math.floorMod(region, palette.size)]
 }
